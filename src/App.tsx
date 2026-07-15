@@ -11383,302 +11383,471 @@ export default function App() {
                 )}
 
                 {/* 6. PROMOTIONS AND DISCOUNTS PAGE */}
-                {adminSection === "promos" && (
-                  <div className="space-y-4">
-                    {/* General Promotion banner config */}
-                    <div className="bg-white dark:bg-zinc-950 p-5 rounded-xl border border-slate-200 dark:border-zinc-800 shadow-sm space-y-4">
-                      <div className="flex items-center gap-2 border-b border-zinc-800/10 dark:border-zinc-800 pb-3 mb-2">
-                        <Tag className="h-4 w-4 text-amber-500" />
-                        <h3 className="font-bold text-sm text-slate-900 dark:text-white">Conf. de Cintillo de Descuento (Barra Superior)</h3>
-                      </div>
+                {adminSection === "promos" && (() => {
+                  const activeCoupons = (store.coupons || []).filter(c => {
+                    return !c.expiration_date || new Date(c.expiration_date).getTime() >= Date.now();
+                  });
+                  const totalCouponsCount = (store.coupons || []).length;
+                  const avgDiscount = store.coupons && store.coupons.length > 0 
+                    ? Math.round(store.coupons.reduce((acc, curr) => acc + curr.discount_percent, 0) / store.coupons.length) 
+                    : 0;
+                  const isBannerActive = editingSettings.showPromotionBanner !== false;
 
-                      <div className="flex items-center justify-between p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs leading-relaxed">
-                        <div>
-                          <strong>¿Cómo funciona el slider superior?</strong> Los cintillos activos se alternan automáticamente cada 5 segundos en la parte superior del eCommerce, informando a los clientes sobre cupones de descuento y envíos sin costo.
-                        </div>
-                      </div>
-
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between">
-                          <div className="flex flex-col">
-                            <span className="text-xs font-semibold text-slate-800 dark:text-zinc-200">Activar Cintillo de Promoción General</span>
-                            <span className="text-[10px] text-zinc-400">Habilita un mensaje flotante con texto personalizado o cupones de tu elección.</span>
+                  return (
+                    <div className="space-y-6 animate-fade-in pb-10">
+                      {/* STATS OVERVIEW HEADER */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div className="bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 p-4 rounded-2xl flex items-center gap-4 shadow-sm">
+                          <div className="p-3 rounded-xl bg-indigo-500/10 text-indigo-500 dark:bg-indigo-500/20 dark:text-indigo-400">
+                            <Gift className="h-5 w-5" />
                           </div>
-                          
-                          <button
-                            type="button"
-                            onClick={() => setEditingSettings({
-                              ...editingSettings,
-                              showPromotionBanner: editingSettings.showPromotionBanner === false ? true : false
-                            })}
-                            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                              editingSettings.showPromotionBanner !== false ? 'bg-indigo-600' : 'bg-slate-200 dark:bg-zinc-800'
-                            }`}
-                          >
-                            <span
-                              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                                editingSettings.showPromotionBanner !== false ? 'translate-x-5' : 'translate-x-0'
-                              }`}
-                            />
-                          </button>
+                          <div>
+                            <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-zinc-500 tracking-widest block mb-0.5">Cintillo Superior</span>
+                            <span className="text-sm font-black flex items-center gap-1.5 text-slate-800 dark:text-white">
+                              {isBannerActive ? (
+                                <>
+                                  <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse inline-block" />
+                                  Activo y Visible
+                                </>
+                              ) : (
+                                <>
+                                  <span className="h-2 w-2 rounded-full bg-zinc-400 dark:bg-zinc-600 inline-block" />
+                                  Desactivado
+                                </>
+                              )}
+                            </span>
+                          </div>
                         </div>
 
-                        {editingSettings.showPromotionBanner !== false && (
-                          <div className="space-y-4 animate-fade-in border-t border-slate-100 dark:border-zinc-800/60 pt-4 mt-2">
-                            <div className="space-y-2">
-                              <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest">Texto de Ofertas 1 (Mensaje Principal)</label>
-                              <input
-                                type="text"
-                                value={editingSettings.promotionBannerText || ""}
-                                onChange={(e) => setEditingSettings({ ...editingSettings, promotionBannerText: e.target.value })}
-                                className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 dark:text-white"
-                                placeholder="p.ej. 🚚 ¡15% de DESCUENTO en toda la tienda! Código: BUELO15"
-                              />
-                            </div>
+                        <div className="bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 p-4 rounded-2xl flex items-center gap-4 shadow-sm">
+                          <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-500 dark:bg-emerald-500/20 dark:text-emerald-400">
+                            <Tag className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-zinc-500 tracking-widest block mb-0.5">Cupones de Descuento</span>
+                            <span className="text-sm font-black text-slate-800 dark:text-white flex items-baseline gap-1">
+                              {totalCouponsCount} <span className="text-[11px] font-medium text-slate-400 dark:text-zinc-500">({activeCoupons.length} válidos)</span>
+                            </span>
+                          </div>
+                        </div>
 
-                            <div className="space-y-2">
-                              <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest">Texto de Ofertas 2 (Mensaje Secundario de Rotación)</label>
-                              <input
-                                type="text"
-                                value={editingSettings.promotionBannerText2 || ""}
-                                onChange={(e) => setEditingSettings({ ...editingSettings, promotionBannerText2: e.target.value })}
-                                className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 dark:text-white"
-                                placeholder="p.ej. 🎁 ¡Envío GRATIS en compras mayores de $2000! Elige tu de agencia favorita y nosotros lo cubrimos."
-                              />
-                            </div>
+                        <div className="bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 p-4 rounded-2xl flex items-center gap-4 shadow-sm">
+                          <div className="p-3 rounded-xl bg-amber-500/10 text-amber-500 dark:bg-amber-500/20 dark:text-amber-400">
+                            <Percent className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-zinc-500 tracking-widest block mb-0.5">Descuento Promedio</span>
+                            <span className="text-sm font-black text-slate-800 dark:text-white">
+                              {avgDiscount}% <span className="text-[11px] font-medium text-slate-400 dark:text-zinc-500">OFF global</span>
+                            </span>
+                          </div>
+                        </div>
+                      </div>
 
-                            {/* Dynamic Extra Promotion Texts */}
-                            {Array.isArray(editingSettings.promotionBannerTexts) && editingSettings.promotionBannerTexts.map((text, index) => (
-                              <div key={index} className="space-y-2 animate-fade-in">
-                                <div className="flex items-center justify-between">
-                                  <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest">
-                                    Texto de Ofertas {index + 3} (Mensaje Adicional)
-                                  </label>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const newTexts = [...(editingSettings.promotionBannerTexts || [])];
-                                      newTexts.splice(index, 1);
-                                      setEditingSettings({
-                                        ...editingSettings,
-                                        promotionBannerTexts: newTexts
-                                      });
-                                    }}
-                                    className="text-[10px] font-bold text-rose-500 hover:text-rose-600 transition flex items-center gap-1 cursor-pointer"
-                                  >
-                                    <span>✕ Eliminar</span>
-                                  </button>
-                                </div>
-                                <input
-                                  type="text"
-                                  value={text || ""}
-                                  onChange={(e) => {
-                                    const newTexts = [...(editingSettings.promotionBannerTexts || [])];
-                                    newTexts[index] = e.target.value;
-                                    setEditingSettings({
-                                      ...editingSettings,
-                                      promotionBannerTexts: newTexts
-                                    });
-                                  }}
-                                  className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 dark:text-white"
-                                  placeholder={`p.ej. Oferta adicional ${index + 3}`}
-                                />
+                      {/* TWO PANEL CONTENT */}
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                        
+                        {/* LEFT COLUMN: BANNER CONFIG */}
+                        <div className="lg:col-span-5 space-y-4">
+                          <div className="bg-white dark:bg-zinc-950 rounded-2xl border border-slate-200 dark:border-zinc-800/80 p-5 shadow-sm space-y-4">
+                            <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800 pb-3">
+                              <div className="flex items-center gap-2">
+                                <Gift className="h-4.5 w-4.5 text-indigo-500" />
+                                <h3 className="font-bold text-sm text-slate-900 dark:text-white">Cintillo de Ofertas</h3>
                               </div>
-                            ))}
-
-                            {/* Add More Button */}
-                            <div className="pt-1">
+                              
+                              {/* MODERN TOGGLE SWITCH */}
                               <button
                                 type="button"
-                                onClick={() => {
-                                  const currentTexts = Array.isArray(editingSettings.promotionBannerTexts) ? editingSettings.promotionBannerTexts : [];
-                                  setEditingSettings({
-                                    ...editingSettings,
-                                    promotionBannerTexts: [...currentTexts, ""]
-                                  });
-                                }}
-                                className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-indigo-200 dark:border-zinc-800 text-indigo-600 dark:text-indigo-400 font-extrabold text-[10.5px] uppercase tracking-wide rounded-lg flex items-center gap-1.5 cursor-pointer active:scale-95 transition"
+                                onClick={() => setEditingSettings({
+                                  ...editingSettings,
+                                  showPromotionBanner: !isBannerActive
+                                })}
+                                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                  isBannerActive ? 'bg-indigo-600' : 'bg-slate-200 dark:bg-zinc-850'
+                                }`}
                               >
-                                <span>➕ Agregar más Texto de Ofertas</span>
+                                <span
+                                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                    isBannerActive ? 'translate-x-5' : 'translate-x-0'
+                                  }`}
+                                />
                               </button>
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-slate-100 dark:border-zinc-800/60 pt-4 mt-4">
-                              <div className="space-y-2">
-                                <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest">Color de Fondo</label>
-                                <div className="flex items-center gap-2">
-                                  <input
-                                    type="color"
-                                    value={editingSettings.promotionBannerBgColor || "#4f46e5"}
-                                    onChange={(e) => setEditingSettings({ ...editingSettings, promotionBannerBgColor: e.target.value })}
-                                    className="w-10 h-8 p-1 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg cursor-pointer"
-                                  />
-                                  <input
-                                    type="text"
-                                    value={editingSettings.promotionBannerBgColor || "#4f46e5"}
-                                    onChange={(e) => setEditingSettings({ ...editingSettings, promotionBannerBgColor: e.target.value })}
-                                    className="flex-1 px-3 py-1.5 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none text-slate-900 dark:text-white"
-                                    placeholder="#4f46e5"
-                                  />
+                            {/* LIVE PREVIEW CONTAINER */}
+                            {isBannerActive && (
+                              <div className="space-y-3 animate-fade-in bg-slate-50 dark:bg-zinc-900/40 p-4 rounded-xl border border-slate-100 dark:border-zinc-850">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[9.5px] font-extrabold uppercase tracking-widest text-slate-400 dark:text-zinc-500 flex items-center gap-1">
+                                    <Layout className="h-3 w-3 text-indigo-400" />
+                                    Vista Previa del Cintillo
+                                  </span>
+                                  <span className="text-[8px] px-1.5 py-0.5 font-bold uppercase rounded bg-indigo-500/15 text-indigo-500 dark:text-indigo-400 tracking-wide">Superior</span>
                                 </div>
-                              </div>
 
-                              <div className="space-y-2">
-                                <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest">Color de Texto</label>
-                                <div className="flex items-center gap-2">
-                                  <input
-                                    type="color"
-                                    value={editingSettings.promotionBannerTextColor || "#ffffff"}
-                                    onChange={(e) => setEditingSettings({ ...editingSettings, promotionBannerTextColor: e.target.value })}
-                                    className="w-10 h-8 p-1 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg cursor-pointer"
-                                  />
-                                  <input
-                                    type="text"
-                                    value={editingSettings.promotionBannerTextColor || "#ffffff"}
-                                    onChange={(e) => setEditingSettings({ ...editingSettings, promotionBannerTextColor: e.target.value })}
-                                    className="flex-1 px-3 py-1.5 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none text-slate-900 dark:text-white"
-                                    placeholder="#ffffff"
-                                  />
-                                </div>
-                              </div>
-
-                              <div className="space-y-2">
-                                <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest">Efecto de Transición</label>
-                                <select
-                                  value={editingSettings.promotionBannerTransition || 'slide'}
-                                  onChange={(e) => setEditingSettings({ ...editingSettings, promotionBannerTransition: e.target.value as any })}
-                                  className="w-full px-3 py-1.5 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none text-slate-900 dark:text-white"
+                                {/* Actual Banner Simulated element */}
+                                <div 
+                                  style={{ 
+                                    backgroundColor: editingSettings.promotionBannerBgColor || "#4f46e5", 
+                                    color: editingSettings.promotionBannerTextColor || "#ffffff" 
+                                  }}
+                                  className="w-full text-center py-2 px-3 rounded-lg text-[10px] font-bold shadow-sm flex items-center justify-center gap-2 transition-all duration-300 overflow-hidden min-h-[36px] border border-black/10"
                                 >
-                                  <option value="slide">Deslizar verticalmente (Slide)</option>
-                                  <option value="fade">Desvanecimiento (Fade)</option>
-                                  <option value="zoom">Efecto Escala / Zoom (Zoom)</option>
-                                </select>
+                                  <div className="animate-pulse h-1.5 w-1.5 rounded-full bg-current shrink-0" />
+                                  <span className="truncate">
+                                    {editingSettings.promotionBannerText || "🚚 ¡Descuento activo en compras online!"}
+                                  </span>
+                                </div>
+                                <p className="text-[9px] text-zinc-400 text-center italic mt-1">
+                                  Los textos adicionales se rotan automáticamente en la web cada 5 segundos.
+                                </p>
                               </div>
+                            )}
+
+                            {isBannerActive && (
+                              <div className="space-y-4 animate-fade-in pt-2">
+                                <div className="space-y-1.5">
+                                  <div className="flex items-center gap-1 text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest">
+                                    <Type className="h-3.5 w-3.5 text-zinc-400" />
+                                    <span>Texto de Ofertas 1 (Principal)</span>
+                                  </div>
+                                  <input
+                                    type="text"
+                                    value={editingSettings.promotionBannerText || ""}
+                                    onChange={(e) => setEditingSettings({ ...editingSettings, promotionBannerText: e.target.value })}
+                                    className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-indigo-500 text-slate-900 dark:text-white"
+                                    placeholder="p.ej. 🚚 ¡15% de DESCUENTO en toda la tienda! Código: BUELO15"
+                                  />
+                                </div>
+
+                                <div className="space-y-1.5">
+                                  <div className="flex items-center gap-1 text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest">
+                                    <Type className="h-3.5 w-3.5 text-zinc-400" />
+                                    <span>Texto de Ofertas 2 (Secundario)</span>
+                                  </div>
+                                  <input
+                                    type="text"
+                                    value={editingSettings.promotionBannerText2 || ""}
+                                    onChange={(e) => setEditingSettings({ ...editingSettings, promotionBannerText2: e.target.value })}
+                                    className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-indigo-500 text-slate-900 dark:text-white"
+                                    placeholder="p.ej. 🎁 ¡Envío GRATIS en compras mayores de $2000!"
+                                  />
+                                </div>
+
+                                {/* Dynamic Extra Promotion Texts */}
+                                {Array.isArray(editingSettings.promotionBannerTexts) && editingSettings.promotionBannerTexts.map((text, index) => (
+                                  <div key={index} className="space-y-1.5 animate-fade-in">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-1 text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest">
+                                        <Type className="h-3.5 w-3.5 text-zinc-400" />
+                                        <span>Texto de Ofertas {index + 3}</span>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const newTexts = [...(editingSettings.promotionBannerTexts || [])];
+                                          newTexts.splice(index, 1);
+                                          setEditingSettings({
+                                            ...editingSettings,
+                                            promotionBannerTexts: newTexts
+                                          });
+                                        }}
+                                        className="text-[10px] font-bold text-rose-500 hover:text-rose-600 transition flex items-center gap-1 cursor-pointer"
+                                      >
+                                        <span>✕ Eliminar</span>
+                                      </button>
+                                    </div>
+                                    <input
+                                      type="text"
+                                      value={text || ""}
+                                      onChange={(e) => {
+                                        const newTexts = [...(editingSettings.promotionBannerTexts || [])];
+                                        newTexts[index] = e.target.value;
+                                        setEditingSettings({
+                                          ...editingSettings,
+                                          promotionBannerTexts: newTexts
+                                        });
+                                      }}
+                                      className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-indigo-500 text-slate-900 dark:text-white"
+                                      placeholder={`p.ej. Oferta adicional ${index + 3}`}
+                                    />
+                                  </div>
+                                ))}
+
+                                {/* Add More Button */}
+                                <div className="pt-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const currentTexts = Array.isArray(editingSettings.promotionBannerTexts) ? editingSettings.promotionBannerTexts : [];
+                                      setEditingSettings({
+                                        ...editingSettings,
+                                        promotionBannerTexts: [...currentTexts, ""]
+                                      });
+                                    }}
+                                    className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-indigo-200 dark:border-zinc-800 text-indigo-600 dark:text-indigo-400 font-extrabold text-[10px] uppercase tracking-wider rounded-lg flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
+                                  >
+                                    <Plus className="h-3.5 w-3.5" />
+                                    <span>Agregar más Ofertas</span>
+                                  </button>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3 border-t border-slate-100 dark:border-zinc-800/60 pt-4 mt-2">
+                                  <div className="space-y-1.5">
+                                    <div className="flex items-center gap-1 text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest">
+                                      <Palette className="h-3 w-3 text-zinc-400" />
+                                      <span>Fondo</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                      <input
+                                        type="color"
+                                        value={editingSettings.promotionBannerBgColor || "#4f46e5"}
+                                        onChange={(e) => setEditingSettings({ ...editingSettings, promotionBannerBgColor: e.target.value })}
+                                        className="w-8 h-8 p-0.5 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg cursor-pointer shrink-0"
+                                      />
+                                      <input
+                                        type="text"
+                                        value={editingSettings.promotionBannerBgColor || "#4f46e5"}
+                                        onChange={(e) => setEditingSettings({ ...editingSettings, promotionBannerBgColor: e.target.value })}
+                                        className="w-full px-2 py-1.5 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-[11px] outline-none text-slate-900 dark:text-white font-mono"
+                                        placeholder="#4f46e5"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  <div className="space-y-1.5">
+                                    <div className="flex items-center gap-1 text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest">
+                                      <Palette className="h-3 w-3 text-zinc-400" />
+                                      <span>Texto</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                      <input
+                                        type="color"
+                                        value={editingSettings.promotionBannerTextColor || "#ffffff"}
+                                        onChange={(e) => setEditingSettings({ ...editingSettings, promotionBannerTextColor: e.target.value })}
+                                        className="w-8 h-8 p-0.5 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg cursor-pointer shrink-0"
+                                      />
+                                      <input
+                                        type="text"
+                                        value={editingSettings.promotionBannerTextColor || "#ffffff"}
+                                        onChange={(e) => setEditingSettings({ ...editingSettings, promotionBannerTextColor: e.target.value })}
+                                        className="w-full px-2 py-1.5 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-[11px] outline-none text-slate-900 dark:text-white font-mono"
+                                        placeholder="#ffffff"
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="space-y-1.5 pt-1">
+                                  <div className="flex items-center gap-1 text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest">
+                                    <Sliders className="h-3 w-3 text-zinc-400" />
+                                    <span>Efecto de Transición</span>
+                                  </div>
+                                  <select
+                                    value={editingSettings.promotionBannerTransition || 'slide'}
+                                    onChange={(e) => setEditingSettings({ ...editingSettings, promotionBannerTransition: e.target.value as any })}
+                                    className="w-full px-3 py-1.5 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none text-slate-900 dark:text-white cursor-pointer"
+                                  >
+                                    <option value="slide">Deslizar verticalmente (Slide)</option>
+                                    <option value="fade">Desvanecimiento (Fade)</option>
+                                    <option value="zoom">Efecto Escala / Zoom (Zoom)</option>
+                                  </select>
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="pt-3 border-t border-slate-100 dark:border-zinc-800 flex justify-end">
+                              <button
+                                onClick={handleSaveSettings}
+                                disabled={saving}
+                                className="py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer flex items-center gap-1.5 disabled:opacity-50 shadow-sm"
+                              >
+                                {saving ? (
+                                  <span>Guardando...</span>
+                                ) : (
+                                  <>
+                                    <Check className="h-4 w-4" />
+                                    <span>Guardar Cintillo</span>
+                                  </>
+                                )}
+                              </button>
                             </div>
                           </div>
-                        )}
-                      </div>
-
-                      <div className="pt-4 flex justify-end border-t border-slate-100 dark:border-zinc-800">
-                        <button
-                          onClick={handleSaveSettings}
-                          disabled={saving}
-                          className="py-2.5 px-6 bg-blue-600 text-white rounded-lg font-semibold text-xs transition-all hover:bg-blue-700 hover:scale-[1.01] cursor-pointer"
-                        >
-                          <span>{saving ? "Salvando..." : "Guardar Configuraciones de Cintillo"}</span>
-                        </button>
-                      </div>
-                    </div>
-
-                  {/* Dynamic coupon CRUD card */}
-                  <div className="bg-white dark:bg-zinc-950 p-5 rounded-xl border border-slate-200 dark:border-zinc-800 shadow-sm space-y-4">
-                    <div className="flex items-center gap-2 border-b border-zinc-800/10 dark:border-zinc-800 pb-3 mb-2">
-                      <Percent className="h-4 w-4 text-emerald-500" />
-                      <h3 className="font-bold text-sm text-slate-900 dark:text-white">Crear y Gestionar Cupones de Descuento</h3>
-                    </div>
-
-                    <form onSubmit={handleAddCoupon} className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end bg-slate-50 dark:bg-zinc-905/30 p-4 rounded-xl border border-slate-100 dark:border-zinc-800/40">
-                      <div>
-                        <div className="flex items-center justify-between gap-1 mb-1.5">
-                          <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest">Código Único (PK/Code)</label>
-                          <button
-                            type="button"
-                            onClick={handleGenerateRandomCouponCode}
-                            className="text-[9px] font-bold text-indigo-500 hover:text-indigo-600 bg-indigo-500/15 hover:bg-indigo-500/25 px-2 py-0.5 rounded transition cursor-pointer select-none"
-                            title="Generar Código Aleatorio"
-                          >
-                            ⚡ Auto Generar
-                          </button>
                         </div>
-                        <input
-                          type="text"
-                          required
-                          placeholder="Ej. MASFAST15"
-                          value={newCouponCode}
-                          onChange={(e) => setNewCouponCode(e.target.value)}
-                          className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 dark:text-white uppercase font-bold"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1.5">% Descuento Directo</label>
-                        <input
-                          type="number"
-                          required
-                          min="1"
-                          max="100"
-                          placeholder="p.ej. 15"
-                          value={newCouponDiscount}
-                          onChange={(e) => setNewCouponDiscount(Number(e.target.value))}
-                          className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 dark:text-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1.5">Fecha de Vencimiento</label>
-                        <div className="flex gap-2">
-                          <input
-                            type="date"
-                            value={newCouponExpiration}
-                            onChange={(e) => setNewCouponExpiration(e.target.value)}
-                            className="flex-1 px-3 py-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 dark:text-white cursor-pointer"
-                          />
-                          <button
-                            type="submit"
-                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-lg transition-all cursor-pointer whitespace-nowrap"
-                          >
-                            Agregar
-                          </button>
-                        </div>
-                      </div>
-                    </form>
 
-                    {/* Coupons List */}
-                    <div className="space-y-2 mt-4">
-                      <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest">Cupones Activos Registrados en Base de Datos</label>
-                      {!(store.coupons && store.coupons.length > 0) ? (
-                        <p className="text-xs text-zinc-500 italic mt-1 bg-slate-50 dark:bg-zinc-900/50 p-3 rounded-lg border border-dashed border-zinc-800">
-                          No hay cupones personalizados en la base de datos de Ventas Juem todavía. Puedes crear uno arriba y se validará en vivo en el carrito.
-                        </p>
-                      ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
-                          {store.coupons.map((c) => {
-                            const isExpired = c.expiration_date ? new Date(c.expiration_date).getTime() < Date.now() : false;
-                            return (
-                              <div key={c.code} className="p-3 bg-slate-50 dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 flex items-center justify-between">
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="text-xs font-mono font-black text-indigo-400 uppercase tracking-wide bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded">
-                                      {c.code}
-                                    </span>
-                                    <span className="text-xs font-bold text-emerald-400">
-                                      {c.discount_percent}% OFF
-                                    </span>
+                        {/* RIGHT COLUMN: DISCOUNTS & COUPON VAULT */}
+                        <div className="lg:col-span-7 space-y-4">
+                          {/* COUPON CREATOR */}
+                          <div className="bg-white dark:bg-zinc-950 rounded-2xl border border-slate-200 dark:border-zinc-800/80 p-5 shadow-sm space-y-4">
+                            <div className="flex items-center gap-2 border-b border-slate-100 dark:border-zinc-800 pb-3">
+                              <Sparkles className="h-4.5 w-4.5 text-emerald-500 animate-pulse" />
+                              <h3 className="font-bold text-sm text-slate-900 dark:text-white">Creador de Cupones Exclusivos</h3>
+                            </div>
+
+                            <form onSubmit={handleAddCoupon} className="space-y-4">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-1.5">
+                                  <div className="flex items-center justify-between">
+                                    <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest">Código del Cupón</label>
+                                    <button
+                                      type="button"
+                                      onClick={handleGenerateRandomCouponCode}
+                                      className="text-[9px] font-bold text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 dark:hover:text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/20 px-2.5 py-0.5 rounded transition cursor-pointer select-none flex items-center gap-0.5"
+                                    >
+                                      <Flame className="h-3 w-3 text-amber-500" />
+                                      Auto Generar
+                                    </button>
                                   </div>
-                                  <div className="text-[10px] text-zinc-400 mt-1">
-                                    {c.expiration_date ? (
-                                      <span className={isExpired ? "text-red-400 line-through font-semibold" : "text-zinc-400"}>
-                                        Vence: {new Date(c.expiration_date).toLocaleDateString()} {isExpired && " (Expirado)"}
-                                      </span>
-                                    ) : (
-                                      <span>Sin límite de vencimiento</span>
-                                    )}
+                                  <input
+                                    type="text"
+                                    required
+                                    placeholder="Ej. JUEMFEST20"
+                                    value={newCouponCode}
+                                    onChange={(e) => setNewCouponCode(e.target.value)}
+                                    className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-indigo-500 text-slate-900 dark:text-white uppercase font-mono font-bold"
+                                  />
+                                </div>
+
+                                <div className="space-y-1.5">
+                                  <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest">Porcentaje de Descuento</label>
+                                  <div className="relative">
+                                    <input
+                                      type="number"
+                                      required
+                                      min="1"
+                                      max="100"
+                                      placeholder="Ej. 15"
+                                      value={newCouponDiscount}
+                                      onChange={(e) => setNewCouponDiscount(Number(e.target.value))}
+                                      className="w-full pl-3 pr-8 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-indigo-500 text-slate-900 dark:text-white font-bold"
+                                    />
+                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-slate-400 dark:text-zinc-500">%</span>
                                   </div>
                                 </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                                <div className="space-y-1.5">
+                                  <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest">Fecha de Vencimiento (Opcional)</label>
+                                  <input
+                                    type="date"
+                                    value={newCouponExpiration}
+                                    onChange={(e) => setNewCouponExpiration(e.target.value)}
+                                    className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-indigo-500 text-slate-900 dark:text-white cursor-pointer"
+                                  />
+                                </div>
+
                                 <button
-                                  onClick={() => handleDeleteCoupon(c.code)}
-                                  className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500 hover:text-white text-red-400 transition cursor-pointer"
-                                  title="Eliminar Cupón"
+                                  type="submit"
+                                  className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-lg transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
                                 >
-                                  <Trash2 className="h-3 w-3" />
+                                  <Plus className="h-4 w-4" />
+                                  <span>Crear Cupón Activo</span>
                                 </button>
                               </div>
-                            );
-                          })}
+                            </form>
+                          </div>
+
+                          {/* COUPONS VAULT DISPLAY */}
+                          <div className="bg-white dark:bg-zinc-950 rounded-2xl border border-slate-200 dark:border-zinc-800/80 p-5 shadow-sm space-y-4">
+                            <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800 pb-3">
+                              <div className="flex items-center gap-2">
+                                <Tag className="h-4.5 w-4.5 text-indigo-500" />
+                                <h3 className="font-bold text-sm text-slate-900 dark:text-white">Bóveda de Cupones</h3>
+                              </div>
+                              <span className="text-[10px] bg-slate-100 dark:bg-zinc-900 text-slate-500 dark:text-zinc-400 px-2 py-0.5 rounded-full font-bold">
+                                {store.coupons ? store.coupons.length : 0} Registrados
+                              </span>
+                            </div>
+
+                            {!(store.coupons && store.coupons.length > 0) ? (
+                              <div className="text-center py-8 px-4 border border-dashed border-slate-200 dark:border-zinc-800 rounded-xl bg-slate-50/50 dark:bg-zinc-900/10 space-y-2">
+                                <Tag className="h-8 w-8 text-slate-300 dark:text-zinc-700 mx-auto stroke-[1.5]" />
+                                <h4 className="text-xs font-bold text-slate-700 dark:text-zinc-300">No hay cupones activos</h4>
+                                <p className="text-[10px] text-slate-400 max-w-[280px] mx-auto">
+                                  Crea un cupón arriba para que tus compradores puedan ingresarlo en el carrito de compras en vivo.
+                                </p>
+                              </div>
+                            ) : (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                {store.coupons.map((c) => {
+                                  const isExpired = c.expiration_date ? new Date(c.expiration_date).getTime() < Date.now() : false;
+                                  return (
+                                    <div 
+                                      key={c.code} 
+                                      className={`relative overflow-hidden p-4 rounded-xl border flex items-stretch transition-all hover:scale-[1.02] duration-200 shadow-sm ${
+                                        isExpired 
+                                          ? "bg-zinc-50 dark:bg-zinc-900/30 border-slate-200 dark:border-zinc-900/60 opacity-60" 
+                                          : "bg-gradient-to-r from-indigo-50 to-indigo-50/30 dark:from-indigo-950/20 dark:to-indigo-950/5 border-indigo-100 dark:border-indigo-500/20"
+                                      }`}
+                                    >
+                                      {/* Perforated ticket circles for a realistic PRO look */}
+                                      <div className="absolute -left-2 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-white dark:bg-zinc-900 border-r border-slate-200 dark:border-zinc-800/80 z-10" />
+                                      <div className="absolute -right-2 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-white dark:bg-zinc-900 border-l border-slate-200 dark:border-zinc-800/80 z-10" />
+
+                                      <div className="flex-1 pl-2 pr-2 border-r border-dashed border-indigo-200/50 dark:border-indigo-500/10 flex flex-col justify-between min-w-0">
+                                        <div>
+                                          <div className="flex items-center gap-1.5">
+                                            <span className="text-xs font-mono font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-wider truncate">
+                                              {c.code}
+                                            </span>
+                                            {isExpired ? (
+                                              <span className="text-[8px] bg-red-500/15 text-red-500 dark:text-red-400 font-extrabold uppercase px-1.5 py-0.5 rounded shrink-0">
+                                                Expirado
+                                              </span>
+                                            ) : (
+                                              <span className="text-[8px] bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-extrabold uppercase px-1.5 py-0.5 rounded shrink-0 animate-pulse">
+                                                Válido
+                                              </span>
+                                            )}
+                                          </div>
+                                          
+                                          <div className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-2 flex items-center gap-1">
+                                            <History className="h-3 w-3 text-slate-400 dark:text-zinc-500" />
+                                            {c.expiration_date ? (
+                                              <span className={isExpired ? "text-red-400 line-through font-semibold" : ""}>
+                                                Hasta: {new Date(c.expiration_date).toLocaleDateString("es-UY")}
+                                              </span>
+                                            ) : (
+                                              <span>Sin vencimiento</span>
+                                            )}
+                                          </div>
+                                        </div>
+
+                                        <div className="mt-2 text-[9px] text-slate-400 font-semibold tracking-wider uppercase">
+                                          Cupón Oficial
+                                        </div>
+                                      </div>
+
+                                      <div className="w-24 pl-4 flex flex-col items-center justify-center text-center shrink-0">
+                                        <span className={`text-xl font-black ${isExpired ? 'text-zinc-500' : 'text-emerald-500 dark:text-emerald-400'}`}>
+                                          {c.discount_percent}%
+                                        </span>
+                                        <span className={`text-[9px] font-extrabold tracking-widest uppercase ${isExpired ? 'text-zinc-500' : 'text-emerald-400/80 dark:text-emerald-400/70'}`}>
+                                          OFF
+                                        </span>
+                                        
+                                        <button
+                                          onClick={() => handleDeleteCoupon(c.code)}
+                                          className="mt-3 p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500 hover:text-white text-rose-500 transition-all cursor-pointer active:scale-90"
+                                          title="Eliminar Cupón"
+                                        >
+                                          <Trash2 className="h-3.5 w-3.5" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      )}
+
+                      </div>
                     </div>
-                  </div>
-                </div>
-              )}
+                  );
+                })()}
 
                 {/* 9. GESTION DE STOCK GENERAL (DEPOSITO MONTEVIDEO Y PINAMAR) */}
                 {adminSection === "stock" && (() => {
