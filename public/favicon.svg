@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="goldGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#C59B4E" />
+      <stop offset="30%" stop-color="#F4EAD7" />
+      <stop offset="70%" stop-color="#D4A55A" />
+      <stop offset="100%" stop-color="#8A6421" />
+    </linearGradient>
+    <radialGradient id="bgGradient" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#0E1A34" />
+      <stop offset="100%" stop-color="#050B18" />
+    </radialGradient>
+  </defs>
+
+  <!-- Background Layer -->
+  <rect width="512" height="512" rx="128" fill="url(#bgGradient)"/>
+  
+  <!-- Outer Premium Ornamental Ring -->
+  <circle cx="256" cy="256" r="215" fill="none" stroke="url(#goldGradient)" stroke-width="10" opacity="0.85"/>
+  <circle cx="256" cy="256" r="195" fill="none" stroke="url(#goldGradient)" stroke-width="3" opacity="0.4" stroke-dasharray="16 12"/>
+
+  <!-- Elegant Classic Serif Monogram "J" -->
+  <path d="M 265 140 
+           L 365 140 
+           L 365 175 
+           L 335 175 
+           L 335 325 
+           C 335 375, 305 405, 240 405 
+           C 185 405, 145 370, 145 320 
+           L 185 320 
+           C 185 352, 205 370, 240 370 
+           C 280 370, 295 345, 295 310 
+           L 295 175 
+           L 265 175 
+           Z" 
+        fill="url(#goldGradient)" 
+        stroke="#050B18" 
+        stroke-width="2" />
+</svg>

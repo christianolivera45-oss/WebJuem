@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <!-- Global Error Shield -->
+    <script>
+      // Global error handler to gracefully silence generic "Script error." caused by cross-origin trackers or extensions
+      window.onerror = function(message, source, lineno, colno, error) {
+        var msg = message ? String(message) : '';
+        var src = source ? String(source) : '';
+        if (msg === 'Script error.' || msg.indexOf('Script error') !== -1 || msg.indexOf('script error') !== -1 || !src) {
+          console.warn("[Intercepted] Bypassed generic cross-origin Script error.");
+          return true; // Prevents the firing of the default event handler
+        }
+        return false;
+      };
+
+      // In some environments, the listener needs to catch the error in capture phase and stop immediate propagation
+      window.addEventListener('error', function(e) {
+        if (!e) return;
+        
+        // Handle element resource load failures (like failed script or stylesheet tags)
+        if (e.target && (e.target.tagName === 'SCRIPT' || e.target.tagName === 'LINK' || e.target.tagName === 'IFRAME')) {
+          console.warn("[Intercepted Load Error] Bypassed resource load error for target:", e.target.tagName, e.target.src || e.target.href);
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+          return true;
+        }
+
+        const msg = e.message ? String(e.message) : '';
+        if (msg === 'Script error.' || msg.indexOf('Script error') !== -1 || msg.indexOf('script error') !== -1) {
+          console.warn("[Intercepted Event] Prevented propagation of generic cross-origin Script error.");
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+          return true;
+        }
+      }, true);
+
+      window.addEventListener('unhandledrejection', function(e) {
+        if (!e) return;
+        const reason = e.reason && e.reason.message ? String(e.reason.message) : '';
+        if (reason === 'Script error.' || reason.indexOf('Script error') !== -1 || reason.indexOf('script error') !== -1) {
+          console.warn("[Intercepted Rejection] Prevented propagation of generic cross-origin promise rejection.");
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+          return true;
+        }
+      }, true);
+    </script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Juem Mvd | Ropa de Temporada, Abrigos Premium y Accesorios</title>
+    
+    <!-- Favicon & Brand Icon for Google Search & Browsers -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="shortcut icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+    
+    <!-- SEO Meta Tags -->
+    <meta name="description" content="Descubrí en Juem Mvd la mejor indumentaria de temporada, abrigos térmicos, accesorios de invierno y proyectos 3D con envíos a todo el país." id="seo-description" />
+    <meta name="keywords" content="Juem, Juem Mvd, tienda Juem, ropa de invierno, abrigos termicos, buzos manta, gorros, guantes neopreno, accesorios 3D Uruguay, envios express, montevideo, canelones, pinamar" />
+    <meta name="author" content="Juem Mvd" />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="" id="seo-canonical" />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Juem Mvd | Ropa de Temporada, Abrigos Premium y Accesorios" id="og-title" />
+    <meta property="og:description" content="Descubrí en Juem Mvd la mejor indumentaria de temporada, abrigos térmicos, accesorios de invierno y proyectos 3D con envíos a todo el país." id="og-description" />
+    <meta property="og:image" content="https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=1200&q=80" id="og-image" />
+    <meta property="og:url" content="" id="og-url" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Juem Mvd | Ropa de Temporada, Abrigos Premium y Accesorios" id="twitter-title" />
+    <meta name="twitter:description" content="Descubrí en Juem Mvd la mejor indumentaria de temporada, abrigos térmicos, accesorios de invierno y proyectos 3D con envíos a todo el país." id="twitter-description" />
+    <meta name="twitter:image" content="https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=1200&q=80" id="twitter-image" />
+    
+    <!-- JSON-LD Structured Data Schema for Local Business (Uruguay) -->
+    <script type="application/ld+json" id="seo-schema">
+      {
+        "@context": "https://schema.org",
+        "@type": "ClothingStore",
+        "name": "Juem Mvd",
+        "alternateName": ["Juem", "Juem Uruguay"],
+        "description": "Tienda de ropa de temporada, abrigos térmicos premium, accesorios de invierno y proyectos en impresión 3D en Uruguay con depósitos en Pinamar y Montevideo.",
+        "url": "https://juem.com.uy",
+        "logo": "https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=200&h=200&q=80",
+        "image": "https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=1200&q=80",
+        "priceRange": "$$",
+        "address": {
+          "@type": "PostalAddress",
+          "streetAddress": "Ruta Interbalnearia, Pinamar Principal",
+          "addressLocality": "Pinamar",
+          "addressRegion": "Canelones",
+          "addressCountry": "UY"
+        },
+        "areaServed": [
+          {
+            "@type": "AdministrativeArea",
+            "name": "Montevideo, Uruguay"
+          },
+          {
+            "@type": "AdministrativeArea",
+            "name": "Pinamar, Canelones, Uruguay"
+          },
+          {
+            "@type": "Country",
+            "name": "Uruguay"
+          }
+        ],
+        "openingHoursSpecification": [
+          {
+            "@type": "OpeningHoursSpecification",
+            "dayOfWeek": [
+              "Monday",
+              "Tuesday",
+              "Wednesday",
+              "Thursday",
+              "Friday",
+              "Saturday",
+              "Sunday"
+            ],
+            "opens": "00:00",
+            "closes": "23:59"
+          }
+        ],
+        "sameAs": [
+          "https://www.instagram.com/juem.mvd",
+          "https://www.facebook.com/juem.mvd"
+        ]
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

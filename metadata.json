@@ -1,0 +1,6 @@
+{
+  "name": "E-Commerce con Panel Admin",
+  "description": "Una tienda virtual moderna con catálogo de productos, carrito de compras, checkout por WhatsApp y un panel de administración completo para gestionar productos, banners, categorías, colores y promociones de forma segura.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,144 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-primary-gold: #D4A55A;
+  --color-gold-light: #E6BF76;
+  --color-brand-dark: #050B1A;
+  --color-brand-secondary: #0B1730;
+  --color-brand-light: #F4EAD7;
+  
+  --font-serif: "Cormorant Garamond", "Playfair Display", serif;
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+
+  --animate-soft-glow: soft-glow 4s infinite ease-in-out;
+  --animate-soft-ping: soft-ping 4s infinite cubic-bezier(0.16, 1, 0.3, 1);
+
+  @keyframes soft-glow {
+    0%, 100% { transform: scale(1); box-shadow: 0 0 12px rgba(37, 211, 102, 0.25), 0 8px 24px rgba(37, 211, 102, 0.2); }
+    50% { transform: scale(1.03); box-shadow: 0 0 20px rgba(37, 211, 102, 0.45), 0 8px 28px rgba(37, 211, 102, 0.3); }
+  }
+  @keyframes soft-ping {
+    0% { transform: scale(1); opacity: 0.6; }
+    80%, 100% { transform: scale(1.3); opacity: 0; }
+  }
+  @keyframes marquee-train {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+}
+
+/* Custom CSS for continuous scrolling marquee train */
+.marquee-train-container {
+  overflow: hidden;
+  white-space: nowrap;
+  display: flex;
+  width: 100%;
+  position: relative;
+}
+
+.marquee-train-content {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  animation: marquee-train 12s linear infinite;
+}
+
+.marquee-train-content:hover {
+  animation-play-state: paused;
+}
+
+@layer base {
+  html, body {
+    max-width: 100vw;
+    overflow-x: hidden;
+    scroll-behavior: smooth;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: var(--color-brand-dark);
+    font-family: var(--font-sans);
+    color: var(--color-brand-light);
+  }
+}
+
+/* Custom scrollbar to ensure it is always beautifully visible */
+.custom-description-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-description-scrollbar::-webkit-scrollbar-track {
+  background: rgba(120, 120, 120, 0.08);
+  border-radius: 9999px;
+}
+
+.custom-description-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(120, 120, 120, 0.35);
+  border-radius: 9999px;
+  transition: all 0.2s ease;
+}
+
+.custom-description-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(120, 120, 120, 0.55);
+}
+
+/* Firefox compatibility */
+.custom-description-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 120, 120, 0.35) rgba(120, 120, 120, 0.08);
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(120, 120, 120, 0.05);
+  border-radius: 9999px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(83, 70, 255, 0.45);
+  border-radius: 9999px;
+  transition: all 0.2s ease;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(83, 70, 255, 0.7);
+}
+
+/* Firefox compatibility */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(83, 70, 255, 0.45) rgba(120, 120, 120, 0.05);
+}
+
+/* 
+  WebKit Rendering Bugfix: 
+  Forces hardware acceleration, backface visibility, and GPU layer compositing.
+  Prevents duplicate painting, ghost scrolling trails, and overlapping/duplication bugs 
+  for absolute/iframe elements (e.g. Google Maps) and cards on mobile Chrome/Safari.
+*/
+.rounded-xl, .rounded-2xl, .rounded-3xl {
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+iframe {
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  will-change: transform;
+}
+
+/* Force container isolation for rounded overflow clipping in WebKit */
+.overflow-hidden {
+  isolation: isolate;
+}
+
+
