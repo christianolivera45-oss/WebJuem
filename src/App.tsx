@@ -8185,38 +8185,80 @@ export default function App() {
                           </div>
                         </div>
 
-                        {/* Nombre del Producto */}
+                        {/* Nombre del Producto y SKU Base */}
                         <div className="p-5 rounded-2xl bg-[#050B1A]/40 border border-zinc-800 space-y-4">
-                          <div>
-                            <label className="block text-[10px] font-black text-[#D4A55A] uppercase tracking-widest mb-2 flex items-center justify-between">
-                              <span>Nombre del Producto *</span>
-                              {newProductErrors.name && <span className="text-red-400 text-[9px] font-bold uppercase tracking-wider">Obligatorio</span>}
-                            </label>
-                            <input
-                              type="text"
-                              value={newProduct.name || ""}
-                              onChange={(e) => {
-                                setNewProduct({ ...newProduct, name: e.target.value });
-                                if (newProductErrors.name) {
-                                  setNewProductErrors(prev => {
-                                    const copy = { ...prev };
-                                    delete copy.name;
-                                    return copy;
-                                  });
-                                }
-                              }}
-                              className={`w-full px-4 py-3 bg-[#050B1A] border rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-[#D4A55A]/30 text-[#F4EAD7] placeholder-zinc-600 transition-all duration-300 ${
-                                newProductErrors.name 
-                                  ? "border-red-500 ring-2 ring-red-500/20" 
-                                  : "border-zinc-800 hover:border-zinc-750 focus:border-[#D4A55A]"
-                              }`}
-                              placeholder="Ej: Camisa Lino Premium Juem"
-                            />
-                            {newProductErrors.name && (
-                              <p className="text-[10px] text-red-400 mt-1.5 font-bold flex items-center gap-1">
-                                <span>⚠</span> {newProductErrors.name}
-                              </p>
-                            )}
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                            <div className="md:col-span-2">
+                              <label className="block text-[10px] font-black text-[#D4A55A] uppercase tracking-widest mb-2 flex items-center justify-between">
+                                <span>Nombre del Producto *</span>
+                                {newProductErrors.name && <span className="text-red-400 text-[9px] font-bold uppercase tracking-wider">Obligatorio</span>}
+                              </label>
+                              <input
+                                type="text"
+                                value={newProduct.name || ""}
+                                onChange={(e) => {
+                                  setNewProduct({ ...newProduct, name: e.target.value });
+                                  if (newProductErrors.name) {
+                                    setNewProductErrors(prev => {
+                                      const copy = { ...prev };
+                                      delete copy.name;
+                                      return copy;
+                                    });
+                                  }
+                                }}
+                                className={`w-full px-4 py-3 bg-[#050B1A] border rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-[#D4A55A]/30 text-[#F4EAD7] placeholder-zinc-600 transition-all duration-300 ${
+                                  newProductErrors.name 
+                                    ? "border-red-500 ring-2 ring-red-500/20" 
+                                    : "border-zinc-800 hover:border-zinc-750 focus:border-[#D4A55A]"
+                                }`}
+                                placeholder="Ej: Camisa Lino Premium Juem"
+                              />
+                              {newProductErrors.name && (
+                                <p className="text-[10px] text-red-400 mt-1.5 font-bold flex items-center gap-1">
+                                  <span>⚠</span> {newProductErrors.name}
+                                </p>
+                              )}
+                            </div>
+
+                            <div className="md:col-span-1">
+                              <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-2 flex items-center justify-between">
+                                <span>Código Único / SKU Base *</span>
+                                {newProductErrors.codigo && <span className="text-red-400 text-[9px] font-bold uppercase tracking-wider">Obligatorio</span>}
+                              </label>
+                              <input
+                                type="text"
+                                value={newProduct.codigo || ""}
+                                onChange={(e) => {
+                                  const val = e.target.value.trim().toUpperCase();
+                                  let updatedVariants = newProduct.variants || [];
+                                  if (updatedVariants.length > 0) {
+                                    updatedVariants = updatedVariants.map(v => ({
+                                      ...v,
+                                      sku: getSmartVariantSku(val, v.size, v.color)
+                                    }));
+                                  }
+                                  setNewProduct({ ...newProduct, codigo: val, variants: updatedVariants });
+                                  if (newProductErrors.codigo) {
+                                    setNewProductErrors(prev => {
+                                      const copy = { ...prev };
+                                      delete copy.codigo;
+                                      return copy;
+                                    });
+                                  }
+                                }}
+                                className={`w-full px-4 py-3 bg-[#050B1A] border rounded-xl text-xs font-mono font-bold outline-none focus:ring-2 focus:ring-[#D4A55A]/30 text-[#D4A55A] placeholder-zinc-650 transition-all duration-300 ${
+                                  newProductErrors.codigo 
+                                    ? "border-red-500 ring-2 ring-red-500/20" 
+                                    : "border-zinc-800 hover:border-zinc-750 focus:border-[#D4A55A]"
+                                }`}
+                                placeholder="Ej: J015"
+                              />
+                              {newProductErrors.codigo && (
+                                <p className="text-[10px] text-red-400 mt-1.5 font-bold flex items-center gap-1">
+                                  <span>⚠</span> {newProductErrors.codigo}
+                                </p>
+                              )}
+                            </div>
                           </div>
                           
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -9972,16 +10014,43 @@ export default function App() {
                             </div>
                           </div>
 
-                          <div className="md:col-span-2">
-                        <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1.5">Nombre del Producto *</label>
-                        <input
-                          required
-                          type="text"
-                          value={editingProduct.name}
-                          onChange={(e) => setEditingProduct({ ...editingProduct, name: e.target.value })}
-                          className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 dark:text-white font-semibold"
-                        />
-                      </div>
+                          <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="md:col-span-2">
+                              <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1.5">Nombre del Producto *</label>
+                              <input
+                                required
+                                type="text"
+                                value={editingProduct.name}
+                                onChange={(e) => setEditingProduct({ ...editingProduct, name: e.target.value })}
+                                className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 dark:text-white font-semibold"
+                              />
+                            </div>
+                            <div className="md:col-span-1">
+                              <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1.5">Código Único / SKU Base *</label>
+                              <input
+                                required
+                                type="text"
+                                value={editingProduct.codigo || ""}
+                                onChange={(e) => {
+                                  const val = e.target.value.trim().toUpperCase();
+                                  let updatedVariants = editingProduct.variants || [];
+                                  if (updatedVariants.length > 0) {
+                                    updatedVariants = updatedVariants.map(v => ({
+                                      ...v,
+                                      sku: getSmartVariantSku(val, v.size, v.color)
+                                    }));
+                                  }
+                                  setEditingProduct({
+                                    ...editingProduct,
+                                    codigo: val,
+                                    variants: updatedVariants
+                                  });
+                                }}
+                                className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs font-mono font-bold outline-none focus:ring-1 focus:ring-blue-500 text-[#D4A55A] dark:text-[#E6BF76]"
+                                placeholder="Ej: J015"
+                              />
+                            </div>
+                          </div>
                       <div>
                         <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1.5">Categoría Principal *</label>
                         <select
