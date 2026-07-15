@@ -1596,7 +1596,8 @@ async function getDbState(): Promise<ShopState> {
         stockPinamar: stockPinamarVal,
         stockMontevideo: stockMontevideoVal,
         isCombo: row.is_combo === true,
-        comboComponents: Array.isArray(row.combo_components) ? row.combo_components : (typeof row.combo_components === 'string' ? JSON.parse(row.combo_components) : [])
+        comboComponents: Array.isArray(row.combo_components) ? row.combo_components : (typeof row.combo_components === 'string' ? JSON.parse(row.combo_components) : []),
+        calcWebPriceFromML: row.calc_web_price_from_ml !== false
       };
     });
 
@@ -1922,6 +1923,7 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
       const descuentoPorcentajeVal = prod.descuentoPorcentaje ? Math.floor(Number(prod.descuentoPorcentaje)) : 0;
       const isComboVal = !!prod.isCombo;
       const comboComponentsVal = prod.comboComponents ? JSON.stringify(prod.comboComponents) : '[]';
+      const calcWebPriceFromMLVal = prod.calcWebPriceFromML !== false;
 
       let prodId: number;
       const catAdicionales = Array.isArray(prod.categorias_adicionales) ? prod.categorias_adicionales : [];
@@ -1933,8 +1935,8 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
             name, price, stock, category, featured, image_url, description, categoria_id, original_price, subcategoria_id, active, paused, sizes, colors, is_3d, hours_per_unit,
             size_chart_enabled, size_chart_show_superior, size_chart_show_inferior, size_chart_show_calzado, size_chart_show_recommender, size_chart_data, consult_only,
             categorias_adicionales, subcategorias_adicionales, codigo,
-            precio_compra, precio_con_40, comision_ml, precio_venta_ml, precio_web, descuento_porcentaje, stock_pinamar, stock_montevideo, is_combo, combo_components
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35)
+            precio_compra, precio_con_40, comision_ml, precio_venta_ml, precio_web, descuento_porcentaje, stock_pinamar, stock_montevideo, is_combo, combo_components, calc_web_price_from_ml
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36)
           RETURNING id;
         `, [
           prod.name, priceVal, stockVal, prod.category, featuredVal, prod.imageUrl,
@@ -1946,7 +1948,7 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
           subcatAdicionales,
           prod.codigo || "",
           precioCompraVal, precioCon40Val, comisionMLVal, precioVentaMLVal, precioWebVal, descuentoPorcentajeVal, stockPinamarVal, stockMontevideoVal,
-          isComboVal, comboComponentsVal
+          isComboVal, comboComponentsVal, calcWebPriceFromMLVal
         ]);
         prodId = insertRes.rows[0].id;
         prod.id = String(prodId);
@@ -1971,8 +1973,9 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
             stock_pinamar = $32,
             stock_montevideo = $33,
             is_combo = $34,
-            combo_components = $35
-          WHERE id = $36;
+            combo_components = $35,
+            calc_web_price_from_ml = $36
+          WHERE id = $37;
         `, [
           prod.name, priceVal, stockVal, prod.category, featuredVal, prod.imageUrl,
           prod.description || "", prod.categoria_id, originalPriceVal, prod.subcategoria_id,
@@ -1984,6 +1987,7 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
           prod.codigo || "",
           precioCompraVal, precioCon40Val, comisionMLVal, precioVentaMLVal, precioWebVal, descuentoPorcentajeVal, stockPinamarVal, stockMontevideoVal,
           isComboVal, comboComponentsVal,
+          calcWebPriceFromMLVal,
           prodId
         ]);
       }
@@ -2207,6 +2211,7 @@ async function initPostgresStore(): Promise<ShopState | null> {
       ALTER TABLE public.products ADD COLUMN IF NOT EXISTS stock_montevideo INTEGER DEFAULT 0;
       ALTER TABLE public.products ADD COLUMN IF NOT EXISTS is_combo BOOLEAN DEFAULT false;
       ALTER TABLE public.products ADD COLUMN IF NOT EXISTS combo_components JSONB DEFAULT '[]';
+      ALTER TABLE public.products ADD COLUMN IF NOT EXISTS calc_web_price_from_ml BOOLEAN DEFAULT true;
     `);
 
     // Create product_images table if not exists

@@ -36,15 +36,15 @@ export default function CartDrawer({
     if (product.variants && product.variants.length > 0) {
       if (size && color) {
         const match = product.variants.find((v: any) => v.size === size && v.color === color);
-        if (match) return match.stock;
+        return match ? match.stock : 0;
       }
       if (size) {
         const match = product.variants.find((v: any) => v.size === size);
-        if (match) return match.stock;
+        return match ? match.stock : 0;
       }
       if (color) {
         const match = product.variants.find((v: any) => v.color === color);
-        if (match) return match.stock;
+        return match ? match.stock : 0;
       }
     }
     return product.stock !== undefined ? product.stock : 99;

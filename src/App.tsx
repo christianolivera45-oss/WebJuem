@@ -850,7 +850,8 @@ export default function App() {
     const pCon40 = Number((pCompra * 1.4).toFixed(2));
     const pVentaML = Number(p.precioVentaML || 0);
     const pComision = Number(p.comisionML || 0);
-    const pWeb = Number((pVentaML - pComision).toFixed(2));
+    const isAuto = p.calcWebPriceFromML !== false;
+    const pWeb = isAuto ? Number((pVentaML - pComision).toFixed(2)) : Number(p.precioWeb || 0);
     const desc = Number(p.descuentoPorcentaje || 0);
     
     let sPinamar = Number(p.stockPinamar || 0);
@@ -884,7 +885,8 @@ export default function App() {
     const precioCon40 = p.precioCon40 !== undefined ? p.precioCon40 : Number((precioCompra * 1.4).toFixed(2));
     const comisionML = p.comisionML !== undefined ? p.comisionML : 0;
     const precioVentaML = p.precioVentaML !== undefined ? p.precioVentaML : (p.price || 0);
-    const precioWeb = p.precioWeb !== undefined ? p.precioWeb : Number((precioVentaML - comisionML).toFixed(2));
+    const calcWebPriceFromML = p.calcWebPriceFromML === true;
+    const precioWeb = p.precioWeb !== undefined ? p.precioWeb : (calcWebPriceFromML ? Number((precioVentaML - comisionML).toFixed(2)) : 0);
     
     let descuentoPorcentaje = p.descuentoPorcentaje !== undefined ? p.descuentoPorcentaje : 0;
     if (descuentoPorcentaje === 0 && p.originalPrice && p.price && p.originalPrice > p.price) {
@@ -928,6 +930,19 @@ export default function App() {
 
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isNewProductMode, setIsNewProductMode] = useState(false);
+
+  useEffect(() => {
+    const scrollTimer = setTimeout(() => {
+      const mainEl = document.getElementById("admin-main-scroll");
+      if (mainEl) {
+        mainEl.scrollTo({ top: 0, behavior: "smooth" });
+      } else {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    }, 80);
+
+    return () => clearTimeout(scrollTimer);
+  }, [newProductStep, editingProductStep, isNewProductMode, editingProduct?.id]);
   const [newProduct, setNewProduct] = useState<Partial<Product>>({
     name: "",
     description: "",
@@ -945,6 +960,7 @@ export default function App() {
     comisionML: 0,
     precioVentaML: 0,
     precioWeb: 0,
+    calcWebPriceFromML: false,
     descuentoPorcentaje: 0,
     stockPinamar: 0,
     stockMontevideo: 0,
@@ -1046,6 +1062,21 @@ export default function App() {
     }
 
     return Math.round(finalCost);
+  };
+
+  const calculateMargins = (compra: number, venta: number, comision: number = 0) => {
+    const pCompra = Number(compra || 0);
+    const pVenta = Number(venta || 0);
+    const pComision = Number(comision || 0);
+    
+    if (pCompra <= 0 || pVenta <= 0) return { profit: 0, marginPercent: 0, markupPercent: 0 };
+    
+    const netVenta = pVenta - pComision;
+    const profit = netVenta - pCompra;
+    const marginPercent = Number(((profit / pVenta) * 100).toFixed(1));
+    const markupPercent = Number(((profit / pCompra) * 100).toFixed(1));
+    
+    return { profit, marginPercent, markupPercent };
   };
 
   const getComboDynamicStocks = (comboComponents: any[], productVariants: any[] = []) => {
@@ -2469,15 +2500,15 @@ export default function App() {
     if (product.variants && product.variants.length > 0) {
       if (size && color) {
         const match = product.variants.find((v) => v.size === size && v.color === color);
-        if (match) return match.stock;
+        return match ? match.stock : 0;
       }
       if (size) {
         const match = product.variants.find((v) => v.size === size);
-        if (match) return match.stock;
+        return match ? match.stock : 0;
       }
       if (color) {
         const match = product.variants.find((v) => v.color === color);
-        if (match) return match.stock;
+        return match ? match.stock : 0;
       }
     }
     return product.stock !== undefined ? product.stock : 99;
@@ -2732,6 +2763,83 @@ export default function App() {
     return `J${String(nextNum).padStart(3, '0')}`;
   };
 
+  const getSmartVariantSku = (baseSku: string, size: string, color: string): string => {
+    const cleanBase = (baseSku || "").trim().toUpperCase();
+    
+    // Abbreviate size
+    let sizeAbbr = (size || "").trim().toUpperCase();
+    if (sizeAbbr === "ÚNICO" || sizeAbbr === "UNICO" || sizeAbbr === "GENERAL" || sizeAbbr === "") {
+      sizeAbbr = "";
+    } else {
+      if (sizeAbbr.startsWith("TALLE ")) {
+        sizeAbbr = sizeAbbr.replace("TALLE ", "").trim();
+      }
+      const sizeMap: { [key: string]: string } = {
+        "TALLES": "S",
+        "S": "S",
+        "M": "M",
+        "L": "L",
+        "XL": "XL",
+        "XXL": "XXL",
+        "XXXL": "XXXL",
+        "XS": "XS",
+        "SMALL": "S",
+        "MEDIUM": "M",
+        "LARGE": "L",
+        "EXTRA LARGE": "XL",
+        "ÚNICA": "U",
+        "UNICA": "U",
+      };
+      if (sizeMap[sizeAbbr]) {
+        sizeAbbr = sizeMap[sizeAbbr];
+      } else {
+        sizeAbbr = sizeAbbr.replace(/[^A-Z0-9]/g, "");
+        if (sizeAbbr.length > 4) {
+          sizeAbbr = sizeAbbr.slice(0, 3);
+        }
+      }
+    }
+
+    // Abbreviate color
+    let colorAbbr = (color || "").trim().toUpperCase();
+    if (colorAbbr === "GENERAL" || colorAbbr === "ÚNICO" || colorAbbr === "UNICO" || colorAbbr === "") {
+      colorAbbr = "";
+    } else {
+      const colorMap: { [key: string]: string } = {
+        "NEGRO": "N",
+        "BLANCO": "B",
+        "ROJO": "R",
+        "AZUL": "AZ",
+        "VERDE": "V",
+        "GRIS": "G",
+        "BEIGE": "BG",
+        "ROSA": "RS",
+        "AMARILLO": "AM",
+        "NARANJA": "NA",
+        "MARRÓN": "M",
+        "MARRON": "M",
+        "CELESTE": "C",
+        "VIOLETA": "VT",
+        "LILA": "LI",
+        "FUXIA": "FX",
+        "FUCSIA": "FX",
+        "TURQUESA": "TQ",
+        "DORADO": "DR",
+        "PLATEADO": "PL",
+      };
+      if (colorMap[colorAbbr]) {
+        colorAbbr = colorMap[colorAbbr];
+      } else {
+        colorAbbr = colorAbbr.replace(/[^A-Z0-9]/g, "");
+        if (colorAbbr.length > 2) {
+          colorAbbr = colorAbbr.slice(0, 2);
+        }
+      }
+    }
+
+    return `${cleanBase}${sizeAbbr}${colorAbbr}`;
+  };
+
   const checkDuplicateSKU = (product: Product, isNew: boolean): string | null => {
     const baseCode = product.codigo?.trim().toUpperCase();
     const otherProducts = isNew ? store.products : store.products.filter(p => String(p.id) !== String(product.id));
@@ -2940,6 +3048,7 @@ export default function App() {
         comisionML: 0,
         precioVentaML: 0,
         precioWeb: 0,
+        calcWebPriceFromML: true,
         descuentoPorcentaje: 0,
         stockPinamar: 0,
         stockMontevideo: 0,
@@ -5859,7 +5968,7 @@ export default function App() {
           </aside>
 
           {/* Main admin Workspace workspace */}
-          <main className="flex-1 flex flex-col p-6 gap-6 bg-zinc-950 text-zinc-100 overflow-y-auto z-10">
+          <main id="admin-main-scroll" className="flex-1 flex flex-col p-6 gap-6 bg-zinc-950 text-zinc-100 overflow-y-auto z-10">
             
             {/* Header control summary */}
             {adminSection !== "stock" && adminSection !== "dashboard" && (
@@ -5909,6 +6018,7 @@ export default function App() {
                           comisionML: 0,
                           precioVentaML: 0,
                           precioWeb: 0,
+                          calcWebPriceFromML: true,
                           descuentoPorcentaje: 0,
                           stockPinamar: 0,
                           stockMontevideo: 0,
@@ -8022,7 +8132,7 @@ export default function App() {
                     )}
 
                     {newProductStep === 1 && (
-                      <div className="space-y-6 animate-fade-in unique-step-one relative z-10">
+                      <div key="new-step-1" className="space-y-6 animate-fade-in unique-step-one relative z-10">
                         {/* Tipo de Producto Selector Card */}
                         <div className="p-5 rounded-2xl bg-[#050B1A]/40 border border-zinc-800 space-y-4">
                           <label className="block text-[10px] font-black text-[#D4A55A] uppercase tracking-widest">
@@ -8371,7 +8481,7 @@ export default function App() {
                     )}
 
                     {newProductStep === 2 && (
-                      <div className="space-y-6 animate-fade-in unique-step-two relative z-10">
+                      <div key="new-step-2" className="space-y-6 animate-fade-in unique-step-two relative z-10">
                         
                         {/* Finanzas, Costos y Precios Card */}
                         <div className="p-6 rounded-2xl bg-[#050B1A]/40 border border-zinc-800 space-y-5">
@@ -8474,15 +8584,191 @@ export default function App() {
                               />
                             </div>
 
-                            {/* Precio Web auto */}
-                            <div className="space-y-1.5">
-                              <label className="block text-[10px] font-black text-[#5346ff] uppercase tracking-widest flex items-center gap-1.5">
-                                <span>Precio Web ($)</span>
-                                <span className="text-[8px] bg-[#5346ff]/10 px-1.5 py-0.5 rounded font-bold uppercase text-[#9086ff]">auto</span>
-                              </label>
-                              <div className="w-full px-4 py-3.5 bg-[#5346ff]/5 border border-[#5346ff]/15 rounded-xl text-xs text-[#9086ff] font-mono font-black select-none cursor-not-allowed flex items-center min-h-[46px]">
-                                ${newProduct.precioWeb || 0}
+                            {/* Precio Web */}
+                            <div className="space-y-1.5 col-span-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <label className="block text-[10px] font-black text-[#5346ff] uppercase tracking-widest flex items-center gap-1.5">
+                                  <span>Precio Web ($)</span>
+                                  {newProduct.calcWebPriceFromML !== false ? (
+                                    <span className="text-[8px] bg-[#5346ff]/10 px-1.5 py-0.5 rounded font-bold uppercase text-[#9086ff]">auto</span>
+                                  ) : (
+                                    <span className="text-[8px] bg-amber-500/10 px-1.5 py-0.5 rounded font-bold uppercase text-amber-500">manual</span>
+                                  )}
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const nextAuto = newProduct.calcWebPriceFromML === false;
+                                    setNewProduct(updateProductCalculations({
+                                      ...newProduct,
+                                      calcWebPriceFromML: nextAuto
+                                    }));
+                                  }}
+                                  className={`text-[9px] font-bold px-2 py-0.5 rounded-lg border transition-all duration-300 flex items-center gap-1 cursor-pointer ${
+                                    newProduct.calcWebPriceFromML !== false
+                                      ? "bg-[#5346ff]/10 border-[#5346ff]/30 text-[#9086ff] hover:bg-[#5346ff]/25"
+                                      : "bg-amber-500/10 border-amber-500/30 text-amber-500 hover:bg-amber-500/25"
+                                  }`}
+                                >
+                                  {newProduct.calcWebPriceFromML !== false ? "🔗 Auto (ML - Comisión)" : "✏️ Manual"}
+                                </button>
                               </div>
+                              
+                              {newProduct.calcWebPriceFromML !== false ? (
+                                <div className="w-full px-4 py-3 bg-[#5346ff]/5 border border-[#5346ff]/15 rounded-xl text-xs text-[#9086ff] font-mono font-black select-none cursor-not-allowed flex items-center justify-between min-h-[46px]">
+                                  <span>${newProduct.precioWeb || 0}</span>
+                                  <span className="text-[10px] text-zinc-500 italic font-sans font-normal">(Auto)</span>
+                                </div>
+                              ) : (
+                                <div className="space-y-1.5">
+                                  <div className="relative">
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      min="0"
+                                      placeholder="Ej: 4000"
+                                      value={newProduct.precioWeb ?? ""}
+                                      onChange={(e) => {
+                                        const val = e.target.value === "" ? "" : Number(e.target.value);
+                                        setNewProduct(updateProductCalculations({ ...newProduct, precioWeb: val as any }));
+                                      }}
+                                      className="w-full pl-4 pr-32 py-3 bg-[#050B1A] border border-amber-500/50 hover:border-amber-500 focus:border-amber-500 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500/20 text-amber-500 font-mono font-bold transition-all duration-300"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const ml = Number(newProduct.precioVentaML || 0);
+                                        const com = Number(newProduct.comisionML || 0);
+                                        const calculated = Math.max(0, ml - com);
+                                        setNewProduct(updateProductCalculations({
+                                          ...newProduct,
+                                          precioWeb: calculated
+                                        }));
+                                        showAdminToast(`Precio Web calculado: $${calculated} (ML: $${ml} - Com: $${com})`, "success");
+                                      }}
+                                      className="absolute right-2 top-2 px-2.5 py-1.5 bg-amber-500/10 hover:bg-amber-500 hover:text-[#050B1A] text-amber-400 border border-amber-500/25 rounded-lg text-[9px] font-extrabold uppercase tracking-wider transition-all duration-300 cursor-pointer"
+                                    >
+                                      ⚡ Calcular
+                                    </button>
+                                  </div>
+                                  <p className="text-[9px] text-zinc-500 font-semibold tracking-wide leading-normal">
+                                    Presiona <span className="text-[#D4A55A]">⚡ Calcular</span> para estimar <code className="bg-zinc-950 px-1 py-0.5 rounded font-mono text-zinc-400">Venta ML - Comisión ML</code> de una sola vez.
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* PANEL DE CONTROL DE RENTABILIDAD PRO */}
+                          <div className="mt-6 pt-5 border-t border-zinc-800/80 space-y-4">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1.5 text-xs font-black text-emerald-400 uppercase tracking-widest">
+                                <TrendingUp className="w-4 h-4 text-emerald-400" />
+                                <span>Analizador de Rentabilidad y Márgenes (Pro)</span>
+                              </div>
+                              <span className="text-[9px] bg-emerald-500/10 px-2.5 py-1 rounded-full font-black uppercase text-emerald-400 border border-emerald-500/20 tracking-wider">En tiempo real</span>
+                            </div>
+                            
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              {/* Rentabilidad Canal Web */}
+                              {(() => {
+                                const { profit, marginPercent, markupPercent } = calculateMargins(
+                                  newProduct.isCombo ? getComboPurchaseCost(newProduct.comboComponents || []) : Number(newProduct.precioCompra || 0),
+                                  Number(newProduct.precioWeb || 0),
+                                  0
+                                );
+                                const isOk = marginPercent >= 28;
+                                const isCritical = marginPercent < 15;
+                                return (
+                                  <div className="p-4 bg-[#030712]/60 border border-zinc-850 rounded-2xl space-y-2.5 shadow-inner transition-all hover:border-zinc-750 duration-300">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[10px] font-black uppercase text-zinc-400 tracking-widest flex items-center gap-1">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+                                        Canal Web 🌐
+                                      </span>
+                                      <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-lg border uppercase tracking-wider ${
+                                        isCritical ? "bg-red-500/10 text-red-400 border-red-500/20" :
+                                        isOk ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
+                                        "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                                      }`}>
+                                        {isCritical ? "Margen Ajustado ⚠️" : isOk ? "Excelente Margen ✨" : "Margen Aceptable 👍"}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-baseline gap-1">
+                                      <span className="text-xl font-mono font-black text-white">${profit.toLocaleString('es-UY', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                      <span className="text-[9px] font-semibold text-zinc-400 uppercase tracking-wide">ganancia neta</span>
+                                    </div>
+                                    <div className="space-y-1.5 pt-1">
+                                      <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider">
+                                        <span className="text-zinc-500">Margen sobre venta</span>
+                                        <span className={`${isCritical ? "text-red-400" : isOk ? "text-emerald-400" : "text-amber-400"} font-mono`}>{marginPercent}%</span>
+                                      </div>
+                                      <div className="w-full bg-zinc-900 rounded-full h-2 overflow-hidden border border-zinc-800/40">
+                                        <div 
+                                          className={`h-full rounded-full transition-all duration-700 ${
+                                            isCritical ? "bg-red-500" : isOk ? "bg-emerald-500" : "bg-amber-500"
+                                          }`}
+                                          style={{ width: `${Math.min(100, Math.max(0, marginPercent))}%` }}
+                                        />
+                                      </div>
+                                      <div className="flex items-center justify-between text-[9px] text-zinc-500 font-medium">
+                                        <span>Markup (Multiplicador): +{markupPercent}%</span>
+                                        <span>Costo: ${newProduct.isCombo ? getComboPurchaseCost(newProduct.comboComponents || []) : (newProduct.precioCompra || 0)}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+
+                              {/* Rentabilidad MercadoLibre */}
+                              {(() => {
+                                const { profit, marginPercent, markupPercent } = calculateMargins(
+                                  newProduct.isCombo ? getComboPurchaseCost(newProduct.comboComponents || []) : Number(newProduct.precioCompra || 0),
+                                  Number(newProduct.precioVentaML || 0),
+                                  Number(newProduct.comisionML || 0)
+                                );
+                                const isOk = marginPercent >= 28;
+                                const isCritical = marginPercent < 15;
+                                return (
+                                  <div className="p-4 bg-[#030712]/60 border border-zinc-850 rounded-2xl space-y-2.5 shadow-inner transition-all hover:border-zinc-750 duration-300">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[10px] font-black uppercase text-zinc-400 tracking-widest flex items-center gap-1">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse"></span>
+                                        MercadoLibre 🛍️
+                                      </span>
+                                      <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-lg border uppercase tracking-wider ${
+                                        isCritical ? "bg-red-500/10 text-red-400 border-red-500/20" :
+                                        isOk ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
+                                        "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                                      }`}>
+                                        {isCritical ? "Margen Ajustado ⚠️" : isOk ? "Excelente Margen ✨" : "Margen Aceptable 👍"}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-baseline gap-1">
+                                      <span className="text-xl font-mono font-black text-white">${profit.toLocaleString('es-UY', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                      <span className="text-[9px] font-semibold text-zinc-400 uppercase tracking-wide">ganancia neta</span>
+                                    </div>
+                                    <div className="space-y-1.5 pt-1">
+                                      <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider">
+                                        <span className="text-zinc-500">Margen sobre venta</span>
+                                        <span className={`${isCritical ? "text-red-400" : isOk ? "text-emerald-400" : "text-amber-400"} font-mono`}>{marginPercent}%</span>
+                                      </div>
+                                      <div className="w-full bg-zinc-900 rounded-full h-2 overflow-hidden border border-zinc-800/40">
+                                        <div 
+                                          className={`h-full rounded-full transition-all duration-700 ${
+                                            isCritical ? "bg-red-500" : isOk ? "bg-emerald-500" : "bg-amber-500"
+                                          }`}
+                                          style={{ width: `${Math.min(100, Math.max(0, marginPercent))}%` }}
+                                        />
+                                      </div>
+                                      <div className="flex items-center justify-between text-[9px] text-zinc-500 font-medium">
+                                        <span>Markup (Multiplicador): +{markupPercent}%</span>
+                                        <span>Comisión ML: ${newProduct.comisionML || 0}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
                             </div>
                           </div>
                         </div>
@@ -8513,10 +8799,35 @@ export default function App() {
                                   value={newProduct.stockPinamar ?? ""}
                                   onChange={(e) => {
                                     const val = e.target.value === "" ? "" : Math.round(Number(e.target.value));
-                                    setNewProduct(updateProductCalculations({ ...newProduct, stockPinamar: val as any }));
+                                    const numVal = val === "" ? 0 : Number(val);
+                                    let nextVariants = newProduct.variants || [];
+                                    if (nextVariants.length > 0) {
+                                      const count = nextVariants.length;
+                                      const base = Math.floor(numVal / count);
+                                      const rem = numVal % count;
+                                      nextVariants = nextVariants.map((v, idx) => {
+                                        const sp = base + (idx < rem ? 1 : 0);
+                                        const sm = v.stockMontevideo !== undefined ? Number(v.stockMontevideo) : 0;
+                                        return {
+                                          ...v,
+                                          stockPinamar: sp,
+                                          stock: sp + sm
+                                        };
+                                      });
+                                    }
+                                    setNewProduct(updateProductCalculations({ 
+                                      ...newProduct, 
+                                      stockPinamar: val as any,
+                                      variants: nextVariants 
+                                    }));
                                   }}
                                   className="w-full px-4 py-3 bg-[#050B1A] border border-zinc-800 hover:border-zinc-750 focus:border-[#D4A55A] rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#D4A55A]/20 text-[#F4EAD7] font-mono font-bold transition-all duration-300"
                                 />
+                              )}
+                              {(newProduct.variants && newProduct.variants.length > 0 && !newProduct.isCombo) && (
+                                <p className="text-[9px] text-[#D4A55A] font-bold leading-tight mt-1">
+                                  ⚠️ Modificar esto redistribuirá proporcionalmente entre las {newProduct.variants.length} variantes.
+                                </p>
                               )}
                             </div>
 
@@ -8538,10 +8849,35 @@ export default function App() {
                                   value={newProduct.stockMontevideo ?? ""}
                                   onChange={(e) => {
                                     const val = e.target.value === "" ? "" : Math.round(Number(e.target.value));
-                                    setNewProduct(updateProductCalculations({ ...newProduct, stockMontevideo: val as any }));
+                                    const numVal = val === "" ? 0 : Number(val);
+                                    let nextVariants = newProduct.variants || [];
+                                    if (nextVariants.length > 0) {
+                                      const count = nextVariants.length;
+                                      const base = Math.floor(numVal / count);
+                                      const rem = numVal % count;
+                                      nextVariants = nextVariants.map((v, idx) => {
+                                        const sp = v.stockPinamar !== undefined ? Number(v.stockPinamar) : 0;
+                                        const sm = base + (idx < rem ? 1 : 0);
+                                        return {
+                                          ...v,
+                                          stockMontevideo: sm,
+                                          stock: sp + sm
+                                        };
+                                      });
+                                    }
+                                    setNewProduct(updateProductCalculations({ 
+                                      ...newProduct, 
+                                      stockMontevideo: val as any,
+                                      variants: nextVariants 
+                                    }));
                                   }}
                                   className="w-full px-4 py-3 bg-[#050B1A] border border-zinc-800 hover:border-zinc-750 focus:border-[#D4A55A] rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#D4A55A]/20 text-[#F4EAD7] font-mono font-bold transition-all duration-300"
                                 />
+                              )}
+                              {(newProduct.variants && newProduct.variants.length > 0 && !newProduct.isCombo) && (
+                                <p className="text-[9px] text-[#D4A55A] font-bold leading-tight mt-1">
+                                  ⚠️ Modificar esto redistribuirá proporcionalmente entre las {newProduct.variants.length} variantes.
+                                </p>
                               )}
                             </div>
 
@@ -8596,7 +8932,7 @@ export default function App() {
                     )}
 
                     {newProductStep === 3 && (
-                      <div className="space-y-4 animate-fade-in unique-step-three">
+                      <div key="new-step-3" className="space-y-4 animate-fade-in unique-step-three">
                         {newProduct.isCombo ? (
                           <ComboComponentsBuilder
                             products={store.products}
@@ -9091,19 +9427,16 @@ export default function App() {
                               for (const col of colorsList) {
                                 const exists = (newProduct.variants || []).some(v => v.size === sz && v.color === col);
                                 if (!exists) {
-                                  const nextNum = getNextAvailableSKUNumber(store.products, currentSkus);
-                                  const generatedSku = `J${String(nextNum).padStart(3, '0')}`;
-                                  currentSkus.push(generatedSku);
-                                  const sp = Math.floor(Number(newProduct.stockPinamar !== undefined ? newProduct.stockPinamar : 5));
-                                  const sm = Math.floor(Number(newProduct.stockMontevideo !== undefined ? newProduct.stockMontevideo : 0));
+                                  const baseCode = newProduct.codigo || getNextAutoSKU(store.products);
+                                  const generatedSku = getSmartVariantSku(baseCode, sz, col);
                                   generated.push({
                                     size: sz,
                                     color: col,
                                     colorCode: col === "Negro" ? "#000000" : col === "Blanco" ? "#ffffff" : col === "Rojo" ? "#ef4444" : col === "Azul" ? "#3b82f6" : col === "Verde" ? "#22c55e" : col === "Gris" ? "#6b7280" : col === "Beige" ? "#f5f5dc" : col === "Rosa" ? "#f472b6" : "#9ca3af",
                                     sku: generatedSku,
-                                    stockPinamar: sp,
-                                    stockMontevideo: sm,
-                                    stock: sp + sm,
+                                    stockPinamar: 0,
+                                    stockMontevideo: 0,
+                                    stock: 0,
                                     priceDelta: 0
                                   });
                                 }
@@ -9111,11 +9444,34 @@ export default function App() {
                             }
                             
                             const combined = [...(newProduct.variants || []), ...generated];
+                            const totalPin = Number(newProduct.stockPinamar !== undefined ? newProduct.stockPinamar : 5);
+                            const totalMvd = Number(newProduct.stockMontevideo !== undefined ? newProduct.stockMontevideo : 0);
+                            const count = combined.length;
+                            
+                            let distributedCombined = combined;
+                            if (count > 0) {
+                              const basePinPerVar = Math.floor(totalPin / count);
+                              const remPin = totalPin % count;
+                              const baseMvdPerVar = Math.floor(totalMvd / count);
+                              const remMvd = totalMvd % count;
+                              
+                              distributedCombined = combined.map((v, idx) => {
+                                const sp = basePinPerVar + (idx < remPin ? 1 : 0);
+                                const sm = baseMvdPerVar + (idx < remMvd ? 1 : 0);
+                                return {
+                                  ...v,
+                                  stockPinamar: sp,
+                                  stockMontevideo: sm,
+                                  stock: sp + sm
+                                };
+                              });
+                            }
+
                             setNewProduct(updateProductCalculations({
                               ...newProduct,
-                              variants: combined
+                              variants: distributedCombined
                             }));
-                            showAdminToast(`Se autogeneraron ${generated.length} combinaciones con códigos sugeridos.`, "success");
+                            showAdminToast(`Se autogeneraron ${generated.length} combinaciones y se distribuyó el stock inicial de forma proporcional.`, "success");
                           }}
                           className="text-[9px] px-3 py-1.5 bg-[#D4A55A] hover:bg-[#c39449] text-black font-black rounded-lg transition-all cursor-pointer self-start sm:self-center uppercase tracking-wider"
                         >
@@ -9157,9 +9513,8 @@ export default function App() {
                             type="text"
                             readOnly
                             value={(() => {
-                              const currentNewSkus = (newProduct.variants || []).map(v => v.sku).filter(Boolean) as string[];
-                              const nextNewNum = getNextAvailableSKUNumber(store.products, currentNewSkus);
-                              return `J${String(nextNewNum).padStart(3, '0')}`;
+                              const baseCode = newProduct.codigo || getNextAutoSKU(store.products);
+                              return getSmartVariantSku(baseCode, newVarSize, newVarColor);
                             })()}
                             className="w-full text-xs bg-[#050B1A]/40 border border-zinc-800 p-2 rounded-lg font-bold font-mono text-zinc-500 uppercase cursor-not-allowed opacity-75"
                             placeholder="Autogenerado"
@@ -9185,9 +9540,8 @@ export default function App() {
                               if (szEl && colEl && stkPinEl && stkMonEl) {
                                 const sz = szEl.value;
                                 const col = colEl.value;
-                                const currentNewSkus = (newProduct.variants || []).map(v => v.sku).filter(Boolean) as string[];
-                                const nextNewNum = getNextAvailableSKUNumber(store.products, currentNewSkus);
-                                const sku = `J${String(nextNewNum).padStart(3, '0')}`;
+                                const baseCode = newProduct.codigo || getNextAutoSKU(store.products);
+                                const sku = getSmartVariantSku(baseCode, sz, col);
                                 const stkPin = Math.max(0, Math.floor(Number(stkPinEl.value || 0)));
                                 const stkMon = Math.max(0, Math.floor(Number(stkMonEl.value || 0)));
                                 
@@ -9368,7 +9722,7 @@ export default function App() {
                 )}
 
                 {newProductStep === 4 && (
-                  <div className="space-y-5 animate-fade-in unique-step-four">
+                  <div key="new-step-4" className="space-y-5 animate-fade-in unique-step-four">
                     {/* General Stock Input (Read Only Visor) */}
                     <div className="p-4 bg-[#050B1A] border border-zinc-800 rounded-2xl space-y-2">
                       <label className="block text-[10px] font-black text-[#D4A55A] uppercase tracking-widest flex items-center justify-between">
@@ -9588,7 +9942,7 @@ export default function App() {
                     )}
 
                     {editingProductStep === 1 && (
-                      <div className="space-y-4 animate-fade-in unique-step-one">
+                      <div key="edit-step-1" className="space-y-4 animate-fade-in unique-step-one">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div className="md:col-span-2 p-3 bg-blue-500/5 dark:bg-blue-500/10 border border-blue-500/15 rounded-xl mb-1">
                             <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-2">
@@ -9843,133 +10197,313 @@ export default function App() {
                     )}
 
                     {editingProductStep === 2 && (
-                      <div className="space-y-6 animate-fade-in unique-step-two">
+                      <div key="edit-step-2" className="space-y-6 animate-fade-in unique-step-two">
                         
                         {/* Finanzas y Precios */}
-                        <div className="p-4 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 space-y-4">
-                          <h4 className="text-xs font-black text-indigo-500 uppercase tracking-wider flex items-center gap-2">
-                            <span>💵</span> Finanzas, Costos y Precios
+                        <div className="p-6 rounded-2xl bg-[#050B1A]/40 border border-zinc-800 space-y-5 shadow-xl">
+                          <h4 className="text-xs font-black text-[#D4A55A] uppercase tracking-wider flex items-center gap-2">
+                            <span className="p-1.5 bg-[#D4A55A]/10 rounded-lg text-[#D4A55A]">💵</span> 
+                            <span>Finanzas, Costos y Precios</span>
                           </h4>
                           
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div>
-                              <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1.5">Precio Compra ($)</label>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                            {/* Precio Compra */}
+                            <div className="space-y-1.5">
+                              <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest">
+                                Precio Compra ($)
+                              </label>
                               {editingProduct.isCombo ? (
-                                <div className="w-full px-3 py-2 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900 rounded-lg text-xs font-mono font-bold text-indigo-600 dark:text-indigo-400">
-                                  ${getComboPurchaseCost(editingProduct.comboComponents || [])} <span className="text-[9px] font-normal text-zinc-500 block">Suma de componentes</span>
+                                <div className="w-full px-4 py-3.5 bg-[#D4A55A]/5 border border-[#D4A55A]/20 rounded-xl text-xs font-mono font-bold text-[#D4A55A] flex flex-col justify-center min-h-[46px]">
+                                  <span className="text-sm">${getComboPurchaseCost(editingProduct.comboComponents || [])}</span>
+                                  <span className="text-[9px] font-semibold text-zinc-500 uppercase tracking-wider mt-0.5">Suma auto de componentes</span>
                                 </div>
                               ) : (
                                 <input
                                   type="number"
-                                  step="1"
                                   min="0"
                                   value={(editingProduct.precioCompra !== undefined && editingProduct.precioCompra !== "") ? Math.round(Number(editingProduct.precioCompra)) : ""}
                                   onChange={(e) => {
                                     const val = e.target.value === "" ? "" : Math.round(Number(e.target.value));
                                     setEditingProduct(updateProductCalculations({ ...editingProduct, precioCompra: val as any }) as Product);
                                   }}
-                                  onBlur={(e) => {
-                                    const val = e.target.value === "" ? "" : Math.round(Number(e.target.value));
-                                    setEditingProduct(updateProductCalculations({ ...editingProduct, precioCompra: val as any }) as Product);
-                                  }}
-                                  className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 dark:text-white font-mono font-bold"
-                                  placeholder="Costo de compra"
+                                  className="w-full px-4 py-3 bg-[#050B1A] border border-zinc-800 hover:border-zinc-750 focus:border-[#D4A55A] rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#D4A55A]/20 text-[#F4EAD7] font-mono font-bold transition-all duration-300"
                                 />
                               )}
                             </div>
 
-                            <div>
-                              <label className="block text-[10px] font-extrabold text-slate-400 dark:text-zinc-500 uppercase tracking-widest mb-1.5 flex items-center gap-1">
+                            {/* Precio con 40% */}
+                            <div className="space-y-1.5">
+                              <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-1.5">
                                 <span>Precio con 40%</span>
-                                <span className="text-[8px] bg-slate-100 dark:bg-zinc-800 px-1 py-0.2 rounded font-normal lowercase text-slate-500">auto</span>
+                                <span className="text-[8px] bg-zinc-800/80 px-1.5 py-0.5 rounded font-bold uppercase text-zinc-400">auto</span>
                               </label>
-                              <input
-                                type="number"
-                                readOnly
-                                disabled
-                                value={editingProduct.precioCon40 || ""}
-                                className="w-full px-3 py-2 bg-slate-100 dark:bg-zinc-950/80 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs text-slate-500 font-mono font-bold cursor-not-allowed select-none"
-                                placeholder="Precio Compra + 40%"
-                              />
+                              <div className="w-full px-4 py-3.5 bg-[#0c1325] border border-zinc-800/60 rounded-xl text-xs text-zinc-500 font-mono font-bold select-none cursor-not-allowed flex items-center min-h-[46px]">
+                                ${editingProduct.precioCon40 || 0}
+                              </div>
                             </div>
 
-                            <div>
-                              <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1.5">Descuento (%)</label>
+                            {/* Descuento Porcentaje */}
+                            <div className="space-y-1.5">
+                              <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest">
+                                Descuento (%)
+                              </label>
                               <input
                                 type="number"
                                 min="0"
                                 max="99"
+                                placeholder="Ej: 15"
                                 value={(editingProduct.descuentoPorcentaje !== undefined && editingProduct.descuentoPorcentaje !== "") ? editingProduct.descuentoPorcentaje : ""}
                                 onChange={(e) => {
                                   const val = e.target.value === "" ? "" : Math.min(99, Math.max(0, Number(e.target.value)));
                                   setEditingProduct(updateProductCalculations({ ...editingProduct, descuentoPorcentaje: val as any }) as Product);
                                 }}
-                                className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-indigo-600 dark:text-indigo-400 font-mono font-bold"
-                                placeholder="Ej. 15%"
+                                className="w-full px-4 py-3 bg-[#050B1A] border border-zinc-800 hover:border-zinc-750 focus:border-[#D4A55A] rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#D4A55A]/20 text-[#D4A55A] font-mono font-bold transition-all duration-300"
                               />
                             </div>
 
-                            <div>
-                              <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1.5">Comisión ML ($)</label>
+                            {/* Comisión ML */}
+                            <div className="space-y-1.5">
+                              <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest">
+                                Comisión ML ($)
+                              </label>
                               <input
                                 type="number"
                                 step="0.01"
                                 min="0"
+                                placeholder="Ej: 350"
                                 value={(editingProduct.comisionML !== undefined && editingProduct.comisionML !== "") ? editingProduct.comisionML : ""}
                                 onChange={(e) => {
                                   const val = e.target.value === "" ? "" : Number(e.target.value);
                                   setEditingProduct(updateProductCalculations({ ...editingProduct, comisionML: val as any }) as Product);
                                 }}
-                                className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 dark:text-white font-mono font-bold"
-                                placeholder="Comisión de MercadoLibre"
+                                className="w-full px-4 py-3 bg-[#050B1A] border border-zinc-800 hover:border-zinc-750 focus:border-[#D4A55A] rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#D4A55A]/20 text-[#F4EAD7] font-mono font-bold transition-all duration-300"
                               />
                             </div>
 
-                            <div>
-                              <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1.5">Precio Venta ML ($)</label>
+                            {/* Precio Venta ML */}
+                            <div className="space-y-1.5">
+                              <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest">
+                                Precio Venta ML ($)
+                              </label>
                               <input
                                 type="number"
                                 step="0.01"
                                 min="0"
+                                placeholder="Ej: 5000"
                                 value={(editingProduct.precioVentaML !== undefined && editingProduct.precioVentaML !== "") ? editingProduct.precioVentaML : ""}
                                 onChange={(e) => {
                                   const val = e.target.value === "" ? "" : Number(e.target.value);
                                   setEditingProduct(updateProductCalculations({ ...editingProduct, precioVentaML: val as any }) as Product);
                                 }}
-                                className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 dark:text-white font-mono font-bold"
-                                placeholder="Precio en MercadoLibre"
+                                className="w-full px-4 py-3 bg-[#050B1A] border border-zinc-800 hover:border-zinc-750 focus:border-[#D4A55A] rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#D4A55A]/20 text-[#F4EAD7] font-mono font-bold transition-all duration-300"
                               />
                             </div>
 
-                            <div>
-                              <label className="block text-[10px] font-extrabold text-[#5346ff] dark:text-[#9086ff] uppercase tracking-widest mb-1.5 flex items-center gap-1">
-                                <span>Precio Web ($)</span>
-                                <span className="text-[8px] bg-indigo-50 dark:bg-indigo-950/50 px-1 py-0.2 rounded font-normal lowercase text-indigo-500">auto</span>
-                              </label>
-                              <input
-                                type="number"
-                                readOnly
-                                disabled
-                                value={editingProduct.precioWeb || ""}
-                                className="w-full px-3 py-2 bg-indigo-50/40 dark:bg-indigo-950/10 border border-indigo-100 dark:border-indigo-900/50 rounded-lg text-xs text-indigo-600 dark:text-indigo-400 font-mono font-black cursor-not-allowed select-none"
-                                placeholder="Calculado: ML - Comisión"
-                              />
+                            {/* Precio Web */}
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest flex items-center gap-1.5">
+                                  <span>Precio Web ($)</span>
+                                  {editingProduct.calcWebPriceFromML !== false ? (
+                                    <span className="text-[8px] bg-[#5346ff]/10 px-1.5 py-0.5 rounded font-black uppercase text-[#9086ff] border border-[#5346ff]/20">auto</span>
+                                  ) : (
+                                    <span className="text-[8px] bg-amber-500/10 px-1.5 py-0.5 rounded font-black uppercase text-amber-400 border border-amber-500/20">manual</span>
+                                  )}
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const nextAuto = editingProduct.calcWebPriceFromML === false;
+                                    setEditingProduct(updateProductCalculations({
+                                      ...editingProduct,
+                                      calcWebPriceFromML: nextAuto
+                                    }) as Product);
+                                  }}
+                                  className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded border uppercase tracking-wider transition-all duration-300 flex items-center gap-1 cursor-pointer ${
+                                    editingProduct.calcWebPriceFromML !== false
+                                      ? "bg-indigo-500/10 border-indigo-500/20 text-indigo-400 hover:bg-indigo-500/20"
+                                      : "bg-amber-500/10 border-amber-500/20 text-amber-400 hover:bg-amber-500/20"
+                                  }`}
+                                >
+                                  {editingProduct.calcWebPriceFromML !== false ? "🔗 Auto (ML - Comisión)" : "✏️ Manual"}
+                                </button>
+                              </div>
+
+                              {editingProduct.calcWebPriceFromML !== false ? (
+                                <div className="w-full px-4 py-3.5 bg-[#0c1325] border border-zinc-800/60 rounded-xl text-xs text-zinc-500 font-mono font-bold select-none cursor-not-allowed flex items-center justify-between min-h-[46px]">
+                                  <span>${editingProduct.precioWeb || 0}</span>
+                                  <span className="text-[9px] font-semibold text-zinc-500 uppercase tracking-wider">Calculado de ML</span>
+                                </div>
+                              ) : (
+                                <div className="space-y-1.5">
+                                  <div className="relative">
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      min="0"
+                                      placeholder="Ej: 4000"
+                                      value={editingProduct.precioWeb ?? ""}
+                                      onChange={(e) => {
+                                        const val = e.target.value === "" ? "" : Number(e.target.value);
+                                        setEditingProduct(updateProductCalculations({ ...editingProduct, precioWeb: val as any }) as Product);
+                                      }}
+                                      className="w-full pl-4 pr-32 py-3 bg-[#050B1A] border border-amber-500/50 hover:border-amber-500 focus:border-amber-500 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500/20 text-amber-500 font-mono font-bold transition-all duration-300"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const ml = Number(editingProduct.precioVentaML || 0);
+                                        const com = Number(editingProduct.comisionML || 0);
+                                        const calculated = Math.max(0, ml - com);
+                                        setEditingProduct(updateProductCalculations({
+                                          ...editingProduct,
+                                          precioWeb: calculated
+                                        }) as Product);
+                                        showAdminToast(`Precio Web calculado: $${calculated} (ML: $${ml} - Com: $${com})`, "success");
+                                      }}
+                                      className="absolute right-2 top-2 px-2.5 py-1.5 bg-amber-500/10 hover:bg-amber-500 hover:text-[#050B1A] text-amber-400 border border-amber-500/25 rounded-lg text-[9px] font-extrabold uppercase tracking-wider transition-all duration-300 cursor-pointer"
+                                    >
+                                      ⚡ Calcular
+                                    </button>
+                                  </div>
+                                  <p className="text-[9px] text-zinc-500 font-semibold tracking-wide leading-normal">
+                                    Presiona <span className="text-[#D4A55A]">⚡ Calcular</span> para estimar <code className="bg-zinc-950 px-1 py-0.5 rounded font-mono text-zinc-400">Venta ML - Comisión ML</code> de una sola vez.
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* PANEL DE CONTROL DE RENTABILIDAD PRO PARA EDITAR */}
+                          <div className="mt-6 pt-5 border-t border-zinc-800/80 space-y-4">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1.5 text-xs font-black text-emerald-400 uppercase tracking-widest">
+                                <TrendingUp className="w-4 h-4 text-emerald-400" />
+                                <span>Analizador de Rentabilidad y Márgenes (Pro)</span>
+                              </div>
+                              <span className="text-[9px] bg-emerald-500/10 px-2.5 py-1 rounded-full font-black uppercase text-emerald-400 border border-emerald-500/20 tracking-wider">En tiempo real</span>
+                            </div>
+                            
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              {/* Rentabilidad Canal Web */}
+                              {(() => {
+                                const { profit, marginPercent, markupPercent } = calculateMargins(
+                                  editingProduct.isCombo ? getComboPurchaseCost(editingProduct.comboComponents || []) : Number(editingProduct.precioCompra || 0),
+                                  Number(editingProduct.precioWeb || 0),
+                                  0
+                                );
+                                const isOk = marginPercent >= 28;
+                                const isCritical = marginPercent < 15;
+                                return (
+                                  <div className="p-4 bg-[#030712]/60 border border-zinc-850 rounded-2xl space-y-2.5 shadow-inner transition-all hover:border-zinc-750 duration-300">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[10px] font-black uppercase text-zinc-400 tracking-widest flex items-center gap-1">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+                                        Canal Web 🌐
+                                      </span>
+                                      <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-lg border uppercase tracking-wider ${
+                                        isCritical ? "bg-red-500/10 text-red-400 border-red-500/20" :
+                                        isOk ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
+                                        "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                                      }`}>
+                                        {isCritical ? "Margen Ajustado ⚠️" : isOk ? "Excelente Margen ✨" : "Margen Aceptable 👍"}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-baseline gap-1">
+                                      <span className="text-xl font-mono font-black text-white">${profit.toLocaleString('es-UY', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                      <span className="text-[9px] font-semibold text-zinc-400 uppercase tracking-wide">ganancia neta</span>
+                                    </div>
+                                    <div className="space-y-1.5 pt-1">
+                                      <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider">
+                                        <span className="text-zinc-500">Margen sobre venta</span>
+                                        <span className={`${isCritical ? "text-red-400" : isOk ? "text-emerald-400" : "text-amber-400"} font-mono`}>{marginPercent}%</span>
+                                      </div>
+                                      <div className="w-full bg-zinc-900 rounded-full h-2 overflow-hidden border border-zinc-800/40">
+                                        <div 
+                                          className={`h-full rounded-full transition-all duration-700 ${
+                                            isCritical ? "bg-red-500" : isOk ? "bg-emerald-500" : "bg-amber-500"
+                                          }`}
+                                          style={{ width: `${Math.min(100, Math.max(0, marginPercent))}%` }}
+                                        />
+                                      </div>
+                                      <div className="flex items-center justify-between text-[9px] text-zinc-500 font-medium">
+                                        <span>Markup (Multiplicador): +{markupPercent}%</span>
+                                        <span>Costo: ${editingProduct.isCombo ? getComboPurchaseCost(editingProduct.comboComponents || []) : (editingProduct.precioCompra || 0)}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+
+                              {/* Rentabilidad MercadoLibre */}
+                              {(() => {
+                                const { profit, marginPercent, markupPercent } = calculateMargins(
+                                  editingProduct.isCombo ? getComboPurchaseCost(editingProduct.comboComponents || []) : Number(editingProduct.precioCompra || 0),
+                                  Number(editingProduct.precioVentaML || 0),
+                                  Number(editingProduct.comisionML || 0)
+                                );
+                                const isOk = marginPercent >= 28;
+                                const isCritical = marginPercent < 15;
+                                return (
+                                  <div className="p-4 bg-[#030712]/60 border border-zinc-850 rounded-2xl space-y-2.5 shadow-inner transition-all hover:border-zinc-750 duration-300">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[10px] font-black uppercase text-zinc-400 tracking-widest flex items-center gap-1">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse"></span>
+                                        MercadoLibre 🛍️
+                                      </span>
+                                      <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-lg border uppercase tracking-wider ${
+                                        isCritical ? "bg-red-500/10 text-red-400 border-red-500/20" :
+                                        isOk ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
+                                        "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                                      }`}>
+                                        {isCritical ? "Margen Ajustado ⚠️" : isOk ? "Excelente Margen ✨" : "Margen Aceptable 👍"}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-baseline gap-1">
+                                      <span className="text-xl font-mono font-black text-white">${profit.toLocaleString('es-UY', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                      <span className="text-[9px] font-semibold text-zinc-400 uppercase tracking-wide">ganancia neta</span>
+                                    </div>
+                                    <div className="space-y-1.5 pt-1">
+                                      <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider">
+                                        <span className="text-zinc-500">Margen sobre venta</span>
+                                        <span className={`${isCritical ? "text-red-400" : isOk ? "text-emerald-400" : "text-amber-400"} font-mono`}>{marginPercent}%</span>
+                                      </div>
+                                      <div className="w-full bg-zinc-900 rounded-full h-2 overflow-hidden border border-zinc-800/40">
+                                        <div 
+                                          className={`h-full rounded-full transition-all duration-700 ${
+                                            isCritical ? "bg-red-500" : isOk ? "bg-emerald-500" : "bg-amber-500"
+                                          }`}
+                                          style={{ width: `${Math.min(100, Math.max(0, marginPercent))}%` }}
+                                        />
+                                      </div>
+                                      <div className="flex items-center justify-between text-[9px] text-zinc-500 font-medium">
+                                        <span>Markup (Multiplicador): +{markupPercent}%</span>
+                                        <span>Comisión ML: ${editingProduct.comisionML || 0}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
                             </div>
                           </div>
                         </div>
 
                         {/* Distribución de Stock */}
-                        <div className="p-4 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 space-y-4">
-                          <h4 className="text-xs font-black text-emerald-500 uppercase tracking-wider flex items-center gap-2">
-                            <span>📦</span> Almacenes y Stock por Sucursal
+                        <div className="p-6 rounded-2xl bg-[#050B1A]/40 border border-zinc-800 space-y-5 shadow-xl">
+                          <h4 className="text-xs font-black text-emerald-400 uppercase tracking-wider flex items-center gap-2">
+                            <span className="p-1.5 bg-emerald-500/10 rounded-lg text-emerald-400">📦</span>
+                            <span>Almacenes y Stock por Sucursal</span>
                           </h4>
                           
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div>
-                              <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1.5">Stock Pinamar</label>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                            <div className="space-y-1.5">
+                              <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest">
+                                Stock Pinamar
+                              </label>
                               {editingProduct.isCombo ? (
-                                <div className="w-full px-3 py-2 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900 rounded-lg text-xs font-mono font-bold text-indigo-600 dark:text-indigo-400">
-                                  {getComboDynamicStocks(editingProduct.comboComponents || [], editingProduct.variants || []).stockPinamar} <span className="text-[9px] font-normal text-zinc-500 block">Suma de componentes</span>
+                                <div className="w-full px-4 py-3.5 bg-[#D4A55A]/5 border border-[#D4A55A]/20 rounded-xl text-xs font-mono font-bold text-[#D4A55A] flex flex-col justify-center min-h-[46px]">
+                                  <span className="text-sm">{getComboDynamicStocks(editingProduct.comboComponents || [], editingProduct.variants || []).stockPinamar}</span>
+                                  <span className="text-[9px] font-semibold text-zinc-500 uppercase tracking-wider mt-0.5">Suma auto de componentes</span>
                                 </div>
                               ) : (
                                 <input
@@ -9978,19 +10512,46 @@ export default function App() {
                                   value={(editingProduct.stockPinamar !== undefined && editingProduct.stockPinamar !== "") ? Math.round(Number(editingProduct.stockPinamar)) : ""}
                                   onChange={(e) => {
                                     const val = e.target.value === "" ? "" : Math.round(Number(e.target.value));
-                                    setEditingProduct(updateProductCalculations({ ...editingProduct, stockPinamar: val as any }) as Product);
+                                    const numVal = val === "" ? 0 : Number(val);
+                                    let nextVariants = editingProduct.variants || [];
+                                    if (nextVariants.length > 0) {
+                                      const count = nextVariants.length;
+                                      const base = Math.floor(numVal / count);
+                                      const rem = numVal % count;
+                                      nextVariants = nextVariants.map((v, idx) => {
+                                        const sp = base + (idx < rem ? 1 : 0);
+                                        const sm = v.stockMontevideo !== undefined ? Number(v.stockMontevideo) : 0;
+                                        return {
+                                          ...v,
+                                          stockPinamar: sp,
+                                          stock: sp + sm
+                                        };
+                                      });
+                                    }
+                                    setEditingProduct(updateProductCalculations({ 
+                                      ...editingProduct, 
+                                      stockPinamar: val as any,
+                                      variants: nextVariants 
+                                    }) as Product);
                                   }}
-                                  className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 dark:text-white font-mono font-bold"
-                                  placeholder="Unidades en Pinamar"
+                                  className="w-full px-4 py-3 bg-[#050B1A] border border-zinc-800 hover:border-zinc-750 focus:border-emerald-500 rounded-xl text-xs outline-none focus:ring-2 focus:ring-emerald-500/20 text-[#F4EAD7] font-mono font-bold transition-all duration-300"
                                 />
+                              )}
+                              {(editingProduct.variants && editingProduct.variants.length > 0 && !editingProduct.isCombo) && (
+                                <p className="text-[9px] text-[#D4A55A] font-bold leading-tight mt-1">
+                                  ⚠️ Modificar esto redistribuirá proporcionalmente entre las {editingProduct.variants.length} variantes.
+                                </p>
                               )}
                             </div>
 
-                            <div>
-                              <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1.5">Stock Montevideo</label>
+                            <div className="space-y-1.5">
+                              <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest">
+                                Stock Montevideo
+                              </label>
                               {editingProduct.isCombo ? (
-                                <div className="w-full px-3 py-2 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900 rounded-lg text-xs font-mono font-bold text-indigo-600 dark:text-indigo-400">
-                                  {getComboDynamicStocks(editingProduct.comboComponents || [], editingProduct.variants || []).stockMontevideo} <span className="text-[9px] font-normal text-zinc-500 block">Suma de componentes</span>
+                                <div className="w-full px-4 py-3.5 bg-[#D4A55A]/5 border border-[#D4A55A]/20 rounded-xl text-xs font-mono font-bold text-[#D4A55A] flex flex-col justify-center min-h-[46px]">
+                                  <span className="text-sm">{getComboDynamicStocks(editingProduct.comboComponents || [], editingProduct.variants || []).stockMontevideo}</span>
+                                  <span className="text-[9px] font-semibold text-zinc-500 uppercase tracking-wider mt-0.5">Suma auto de componentes</span>
                                 </div>
                               ) : (
                                 <input
@@ -9999,35 +10560,55 @@ export default function App() {
                                   value={(editingProduct.stockMontevideo !== undefined && editingProduct.stockMontevideo !== "") ? Math.round(Number(editingProduct.stockMontevideo)) : ""}
                                   onChange={(e) => {
                                     const val = e.target.value === "" ? "" : Math.round(Number(e.target.value));
-                                    setEditingProduct(updateProductCalculations({ ...editingProduct, stockMontevideo: val as any }) as Product);
+                                    const numVal = val === "" ? 0 : Number(val);
+                                    let nextVariants = editingProduct.variants || [];
+                                    if (nextVariants.length > 0) {
+                                      const count = nextVariants.length;
+                                      const base = Math.floor(numVal / count);
+                                      const rem = numVal % count;
+                                      nextVariants = nextVariants.map((v, idx) => {
+                                        const sp = v.stockPinamar !== undefined ? Number(v.stockPinamar) : 0;
+                                        const sm = base + (idx < rem ? 1 : 0);
+                                        return {
+                                          ...v,
+                                          stockMontevideo: sm,
+                                          stock: sp + sm
+                                        };
+                                      });
+                                    }
+                                    setEditingProduct(updateProductCalculations({ 
+                                      ...editingProduct, 
+                                      stockMontevideo: val as any,
+                                      variants: nextVariants 
+                                    }) as Product);
                                   }}
-                                  className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 dark:text-white font-mono font-bold"
-                                  placeholder="Unidades en Montevideo"
+                                  className="w-full px-4 py-3 bg-[#050B1A] border border-zinc-800 hover:border-zinc-750 focus:border-emerald-500 rounded-xl text-xs outline-none focus:ring-2 focus:ring-emerald-500/20 text-[#F4EAD7] font-mono font-bold transition-all duration-300"
                                 />
+                              )}
+                              {(editingProduct.variants && editingProduct.variants.length > 0 && !editingProduct.isCombo) && (
+                                <p className="text-[9px] text-[#D4A55A] font-bold leading-tight mt-1">
+                                  ⚠️ Modificar esto redistribuirá proporcionalmente entre las {editingProduct.variants.length} variantes.
+                                </p>
                               )}
                             </div>
 
-                            <div>
-                              <label className="block text-[10px] font-extrabold text-emerald-500 dark:text-emerald-400 uppercase tracking-widest mb-1.5 flex items-center gap-1">
+                            <div className="space-y-1.5">
+                              <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest flex items-center gap-1.5">
                                 <span>Stock Total Actual</span>
-                                <span className="text-[8px] bg-emerald-50 dark:bg-emerald-950/50 px-1 py-0.2 rounded font-normal lowercase text-emerald-500">auto</span>
+                                <span className="text-[8px] bg-emerald-500/10 px-1.5 py-0.5 rounded font-bold uppercase text-emerald-400 border border-emerald-500/20">auto</span>
                               </label>
-                              <input
-                                type="number"
-                                readOnly
-                                disabled
-                                value={editingProduct.isCombo ? getComboDynamicStocks(editingProduct.comboComponents || [], editingProduct.variants || []).stockTotal : (editingProduct.stockTotalActual || 0)}
-                                className="w-full px-3 py-2 bg-emerald-50/40 dark:bg-emerald-950/10 border border-emerald-100 dark:border-emerald-900/50 rounded-lg text-xs text-emerald-600 dark:text-emerald-400 font-mono font-extrabold cursor-not-allowed select-none"
-                                placeholder="Calculado: Suma stock"
-                              />
+                              <div className="w-full px-4 py-3.5 bg-[#030712]/60 border border-emerald-500/20 rounded-xl text-xs text-emerald-400 font-mono font-black select-none cursor-not-allowed flex items-center min-h-[46px]">
+                                {editingProduct.isCombo ? getComboDynamicStocks(editingProduct.comboComponents || [], editingProduct.variants || []).stockTotal : (editingProduct.stockTotalActual || 0)}
+                              </div>
                             </div>
                           </div>
                         </div>
 
                         {/* Galería de imágenes */}
-                        <div className="p-4 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 space-y-4">
-                          <h4 className="text-xs font-black text-slate-500 dark:text-zinc-400 uppercase tracking-wider flex items-center gap-2">
-                            <span>🖼</span> Galería de Fotos del Artículo
+                        <div className="p-6 rounded-2xl bg-[#050B1A]/40 border border-zinc-800 space-y-5 shadow-xl">
+                          <h4 className="text-xs font-black text-[#D4A55A] uppercase tracking-wider flex items-center gap-2">
+                            <span className="p-1.5 bg-[#D4A55A]/10 rounded-lg text-[#D4A55A]">🖼</span>
+                            <span>Galería de Fotos del Artículo</span>
                           </h4>
                           <ImageGalleryEditor
                             images={[editingProduct.imageUrl || "", ...(editingProduct.imagenes || [])].filter(Boolean)}
@@ -10061,7 +10642,7 @@ export default function App() {
                     )}
 
                     {editingProductStep === 1 && (
-                      <div className="space-y-4 animate-fade-in unique-step-one-desc mt-3">
+                      <div key="edit-step-1-desc" className="space-y-4 animate-fade-in unique-step-one-desc mt-3">
                         <div>
                           <label className="block text-[10px] font-extrabold text-[#D4A55A] uppercase tracking-widest mb-1.5">Descripción Detallada</label>
                           <textarea
@@ -10077,7 +10658,7 @@ export default function App() {
 
                     {/* Talles y Colores Configuration Panel */}
                     {editingProductStep === 3 && (
-                      <>
+                      <div key="edit-step-3" className="space-y-4 animate-fade-in unique-step-three w-full">
                         {editingProduct.isCombo ? (
                           <div className="p-4 bg-white dark:bg-zinc-950 rounded-xl border border-slate-200 dark:border-zinc-800 w-full mb-4">
                             <ComboComponentsBuilder
@@ -10106,21 +10687,21 @@ export default function App() {
                           </div>
                         ) : (
                           <>
-                            <div className="flex flex-col gap-6 border border-indigo-500/10 p-4 rounded-xl bg-slate-50/50 dark:bg-zinc-900/40">
+                            <div className="flex flex-col gap-6 border border-zinc-800/80 p-5 rounded-2xl bg-[#050B1A]/20">
                               <div>
                         {editingProduct.is3D || is3DProduct(editingProduct) ? (
-                          <div>
-                            <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1">
+                          <div className="space-y-3 p-4 bg-zinc-900/40 dark:bg-zinc-950/20 rounded-xl border border-zinc-850">
+                            <label className="block text-[11px] font-black text-[#D4A55A] uppercase tracking-widest mb-1">
                               Materiales 3D Disponibles
                             </label>
                             <CommaSeparatedInput
                               value={editingProduct.sizes || []}
                               onChange={(arr) => setEditingProduct({ ...editingProduct, sizes: arr })}
                               placeholder="p.ej. PLA, PETG, ABS, TPU (Separados por comas)"
-                              className="w-full px-3 py-2 bg-slate-100 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none text-slate-900 dark:text-white mb-2"
+                              className="w-full px-3 py-2 bg-[#050B1A] border border-zinc-800 hover:border-zinc-700 focus:border-[#D4A55A] rounded-xl text-xs outline-none text-white font-mono transition-all font-bold"
                             />
-                            <div className="flex flex-wrap gap-1.5">
-                              <span className="text-[9px] text-zinc-500 mr-1 self-center">Preajustes rápidos:</span>
+                            <div className="flex flex-wrap gap-1.5 items-center">
+                              <span className="text-[10px] text-zinc-400 font-bold mr-1 uppercase tracking-wider">Preajustes rápidos:</span>
                               {["PLA", "PETG", "ABS", "TPU"].map((mat) => {
                                 const isSelected = (editingProduct.sizes || []).includes(mat);
                                 return (
@@ -10134,30 +10715,30 @@ export default function App() {
                                         : [...current, mat];
                                       setEditingProduct({ ...editingProduct, sizes: next });
                                     }}
-                                    className={`text-[9.5px] font-mono px-2 py-0.5 rounded cursor-pointer transition-all ${
+                                    className={`px-3 py-1.5 rounded-xl border flex items-center gap-1.5 text-xs transition-all duration-200 cursor-pointer ${
                                       isSelected 
-                                        ? "bg-indigo-600 text-white font-bold" 
-                                        : "bg-slate-200 hover:bg-slate-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300"
+                                        ? "bg-[#D4A55A] border-transparent text-[#050B1A] font-black" 
+                                        : "bg-[#050B1A]/40 border-zinc-850 text-zinc-400"
                                     }`}
                                   >
-                                    {mat}
+                                    <span>{mat}</span>
                                   </button>
                                 );
                               })}
                             </div>
                           </div>
-                        ) : true ? (
-                          <div className="space-y-3 p-3 bg-white/50 dark:bg-zinc-950/40 rounded-xl border border-slate-200/60 dark:border-zinc-800">
+                        ) : (
+                          <div className="space-y-4 p-4 bg-zinc-900/40 dark:bg-zinc-950/20 rounded-2xl border border-[#D4A55A]/15 shadow-sm">
                             <div className="flex items-center justify-between">
-                              <label className="block text-[10px] font-extrabold text-[#5346ff] dark:text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
-                                <Ruler className="w-3.5 h-3.5" />
+                              <label className="block text-xs font-black text-[#D4A55A] uppercase tracking-wider flex items-center gap-1.5">
+                                <Ruler className="w-4 h-4 text-[#D4A55A]" />
                                 <span>Guía de Tallas (Ropa)</span>
                               </label>
                               <div className="flex items-center gap-2">
-                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider ${
                                   (editingProduct.sizeChartEnabled !== false)
-                                    ? "text-emerald-600 bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-400"
-                                    : "text-rose-600 bg-rose-100 dark:bg-rose-900/30 dark:text-rose-400"
+                                    ? "text-emerald-400 bg-emerald-500/10 border border-emerald-500/20"
+                                    : "text-zinc-400 bg-zinc-800/50 border border-zinc-700/50"
                                 }`}>
                                   {(editingProduct.sizeChartEnabled !== false) ? "Activado" : "Desactivado"}
                                 </span>
@@ -10167,7 +10748,7 @@ export default function App() {
                                   onChange={(e) => {
                                     setEditingProduct({ ...editingProduct, sizeChartEnabled: e.target.checked });
                                   }}
-                                  className="h-4 w-4 text-[#5346ff] focus:ring-[#5346ff] border-slate-300 dark:border-zinc-700 rounded cursor-pointer"
+                                  className="h-4 w-4 text-[#D4A55A] focus:ring-0 border-zinc-800 bg-[#050B1A] rounded cursor-pointer"
                                 />
                               </div>
                             </div>
@@ -10175,55 +10756,55 @@ export default function App() {
                             {(editingProduct.sizeChartEnabled !== false) ? (
                               <div className="space-y-4">
                                 {/* Dynamic Tabs Visibility Control */}
-                                <div className="p-3 bg-indigo-50/40 dark:bg-zinc-900/40 rounded-xl border border-indigo-500/10 space-y-2 mb-2">
-                                  <p className="text-[10px] font-bold text-[#5346ff] dark:text-indigo-400 uppercase tracking-wider">
+                                <div className="p-3 bg-[#050B1A]/80 rounded-xl border border-zinc-850 space-y-2">
+                                  <p className="text-[10px] font-black text-indigo-400 uppercase tracking-wider">
                                     Pestañas visibles en la guía de tallas:
                                   </p>
                                   <div className="grid grid-cols-2 gap-2">
-                                    <label className="flex items-center gap-2 cursor-pointer bg-white dark:bg-zinc-950 p-2 rounded-lg border border-slate-200/60 dark:border-zinc-800/80 hover:border-indigo-500/30 transition-all">
+                                    <label className="flex items-center gap-2 cursor-pointer bg-zinc-900/40 p-2 rounded-lg border border-zinc-800 hover:border-[#D4A55A]/30 transition-all">
                                       <input 
                                         type="checkbox"
                                         checked={editingProduct.sizeChartShowSuperior !== false}
                                         onChange={(e) => setEditingProduct({ ...editingProduct, sizeChartShowSuperior: e.target.checked })}
-                                        className="h-3.5 w-3.5 text-[#5346ff] focus:ring-[#5346ff] border-slate-300 dark:border-zinc-700 rounded cursor-pointer"
+                                        className="h-3.5 w-3.5 text-[#D4A55A] focus:ring-0 border-zinc-800 bg-[#050B1A] rounded cursor-pointer"
                                       />
-                                      <span className="text-xs text-slate-700 dark:text-zinc-300">👕 Superiores</span>
+                                      <span className="text-xs text-zinc-300">👕 Superiores</span>
                                     </label>
-                                    <label className="flex items-center gap-2 cursor-pointer bg-white dark:bg-zinc-950 p-2 rounded-lg border border-slate-200/60 dark:border-zinc-800/80 hover:border-indigo-500/30 transition-all">
+                                    <label className="flex items-center gap-2 cursor-pointer bg-zinc-900/40 p-2 rounded-lg border border-zinc-800 hover:border-[#D4A55A]/30 transition-all">
                                       <input 
                                         type="checkbox"
                                         checked={editingProduct.sizeChartShowInferior !== false}
                                         onChange={(e) => setEditingProduct({ ...editingProduct, sizeChartShowInferior: e.target.checked })}
-                                        className="h-3.5 w-3.5 text-[#5346ff] focus:ring-[#5346ff] border-slate-300 dark:border-zinc-700 rounded cursor-pointer"
+                                        className="h-3.5 w-3.5 text-[#D4A55A] focus:ring-0 border-zinc-800 bg-[#050B1A] rounded cursor-pointer"
                                       />
-                                      <span className="text-xs text-slate-700 dark:text-zinc-300">👖 Inferiores</span>
+                                      <span className="text-xs text-zinc-300">👖 Inferiores</span>
                                     </label>
-                                    <label className="flex items-center gap-2 cursor-pointer bg-white dark:bg-zinc-950 p-2 rounded-lg border border-slate-200/60 dark:border-zinc-800/80 hover:border-indigo-500/30 transition-all">
+                                    <label className="flex items-center gap-2 cursor-pointer bg-zinc-900/40 p-2 rounded-lg border border-zinc-800 hover:border-[#D4A55A]/30 transition-all">
                                       <input 
                                         type="checkbox"
                                         checked={editingProduct.sizeChartShowCalzado !== false}
                                         onChange={(e) => setEditingProduct({ ...editingProduct, sizeChartShowCalzado: e.target.checked })}
-                                        className="h-3.5 w-3.5 text-[#5346ff] focus:ring-[#5346ff] border-slate-300 dark:border-zinc-700 rounded cursor-pointer"
+                                        className="h-3.5 w-3.5 text-[#D4A55A] focus:ring-0 border-zinc-800 bg-[#050B1A] rounded cursor-pointer"
                                       />
-                                      <span className="text-xs text-slate-700 dark:text-zinc-300">👟 Calzado</span>
+                                      <span className="text-xs text-zinc-300">👟 Calzado</span>
                                     </label>
-                                    <label className="flex items-center gap-2 cursor-pointer bg-white dark:bg-zinc-950 p-2 rounded-lg border border-slate-200/60 dark:border-zinc-800/80 hover:border-indigo-500/30 transition-all">
+                                    <label className="flex items-center gap-2 cursor-pointer bg-zinc-900/40 p-2 rounded-lg border border-zinc-800 hover:border-[#D4A55A]/30 transition-all">
                                       <input 
                                         type="checkbox"
                                         checked={editingProduct.sizeChartShowRecommender !== false}
                                         onChange={(e) => setEditingProduct({ ...editingProduct, sizeChartShowRecommender: e.target.checked })}
-                                        className="h-3.5 w-3.5 text-[#5346ff] focus:ring-[#5346ff] border-slate-300 dark:border-zinc-700 rounded cursor-pointer"
+                                        className="h-3.5 w-3.5 text-[#D4A55A] focus:ring-0 border-zinc-800 bg-[#050B1A] rounded cursor-pointer"
                                       />
-                                      <span className="text-xs text-slate-700 dark:text-zinc-300">📏 Calculador</span>
+                                      <span className="text-xs text-zinc-300">📏 Calculador</span>
                                     </label>
                                   </div>
                                 </div>
 
-                                <p className="text-[10px] text-slate-800 dark:text-zinc-300 leading-normal mb-1">
-                                  <strong>1. Selecciona los talles activos:</strong> Selecciona de los preajustes o añade talles personalizados.
+                                <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">
+                                  1. Selecciona los talles activos:
                                 </p>
                                 
-                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                                   {(() => {
                                     const currentSizes = editingProduct.sizes || [];
                                     const fallbackStandard = ["S", "M", "L", "XL", "XXL", "Único"];
@@ -10234,13 +10815,13 @@ export default function App() {
                                       return (
                                         <div 
                                           key={sz}
-                                          className={`p-1.5 rounded-lg border transition-all flex items-center justify-between gap-1 ${
+                                          className={`p-2 rounded-xl border transition-all duration-200 flex items-center justify-between gap-1.5 ${
                                             isActive 
-                                              ? "bg-white dark:bg-zinc-900 border-[#5346ff]/35 shadow-xs text-[#5346ff] dark:text-indigo-400 font-bold animate-fade-in" 
-                                              : "bg-slate-100/50 dark:bg-zinc-950/20 border-transparent text-zinc-400 opacity-60"
+                                              ? "bg-[#D4A55A]/10 border-[#D4A55A]/40 text-[#D4A55A] font-bold" 
+                                              : "bg-[#050B1A]/40 border-zinc-850 text-zinc-500 opacity-60 hover:opacity-100"
                                           }`}
                                         >
-                                          <div className="flex items-center gap-1.5 flex-grow min-w-0">
+                                          <div className="flex items-center gap-2 flex-grow min-w-0">
                                             <input 
                                               type="checkbox"
                                               checked={isActive}
@@ -10250,9 +10831,9 @@ export default function App() {
                                                   : [...currentSizes, sz];
                                                 setEditingProduct({ ...editingProduct, sizes: next });
                                               }}
-                                              className="h-3 w-3 rounded border-slate-300 dark:border-zinc-700 text-[#5346ff] focus:ring-[#5346ff] cursor-pointer"
+                                              className="h-3.5 w-3.5 rounded border-zinc-800 text-[#D4A55A] focus:ring-0 bg-[#050B1A] cursor-pointer"
                                             />
-                                            <span className="text-xs truncate">{sz}</span>
+                                            <span className="text-xs truncate uppercase tracking-wider font-bold">{sz}</span>
                                           </div>
                                           {!fallbackStandard.includes(sz) && (
                                             <button
@@ -10261,7 +10842,7 @@ export default function App() {
                                                 const next = currentSizes.filter(x => x !== sz);
                                                 setEditingProduct({ ...editingProduct, sizes: next });
                                               }}
-                                              className="text-red-500 hover:text-red-700 text-xs font-bold px-1 cursor-pointer"
+                                              className="text-red-400 hover:text-red-350 text-xs font-bold px-1.5 py-0.5 rounded hover:bg-red-500/10 cursor-pointer transition-all"
                                               title="Eliminar talle"
                                             >
                                               ×
@@ -10273,12 +10854,12 @@ export default function App() {
                                   })()}
                                 </div>
 
-                                <div className="flex gap-1 items-center">
+                                <div className="flex gap-2 items-center">
                                   <input 
                                     type="text"
                                     id="add-new-custom-size-input-edit"
                                     placeholder="Ej: 38, XS, Especial"
-                                    className="w-full px-2 py-1 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-md text-xs outline-none text-slate-900 dark:text-white"
+                                    className="w-full px-3 py-2 bg-[#050B1A] border border-zinc-800 hover:border-zinc-700 focus:border-[#D4A55A] rounded-xl text-xs outline-none text-white transition-all font-bold"
                                     onKeyDown={(e) => {
                                       if (e.key === "Enter") {
                                         e.preventDefault();
@@ -10306,23 +10887,23 @@ export default function App() {
                                         if (input) input.value = "";
                                       }
                                     }}
-                                    className="px-2.5 py-1 bg-[#5346ff] text-white hover:bg-[#4336ee] rounded-md text-[10.5px] font-bold transition-all cursor-pointer whitespace-nowrap"
+                                    className="px-4 py-2 bg-[#D4A55A] text-black hover:bg-[#c39449] rounded-xl text-xs font-black transition-all duration-300 cursor-pointer whitespace-nowrap uppercase tracking-wider"
                                   >
                                     + Agregar talle
                                   </button>
                                 </div>
 
-                                <hr className="border-slate-200 dark:border-zinc-800" />
+                                <hr className="border-zinc-800" />
 
-                                <p className="text-[10px] text-slate-800 dark:text-zinc-300 leading-normal">
-                                  <strong>2. Completa las medidas de la tabla:</strong> Agrega columnas editables (Ej: Ancho, Largo, Cadera, Manga) y pon la medida de cada talle.
+                                <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">
+                                  2. Completa las medidas de la tabla:
                                 </p>
-
+                                
                                 {(() => {
                                   const sizesList = editingProduct.sizes || [];
                                   if (sizesList.length === 0) {
                                     return (
-                                      <p className="text-[10px] text-amber-600 bg-amber-50 dark:bg-amber-950/20 dark:text-amber-400 p-2.5 rounded-lg font-medium text-center">
+                                      <p className="text-[10px] text-amber-500 bg-amber-500/10 border border-amber-500/25 p-3 rounded-xl font-bold text-center uppercase tracking-wider">
                                         Selecciona al menos un talle arriba para rellenar las medidas de la tabla.
                                       </p>
                                     );
@@ -10333,14 +10914,14 @@ export default function App() {
                                   const mRows = chartObj.rows;
 
                                   return (
-                                    <div className="space-y-2">
-                                      <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-zinc-800 max-w-full">
+                                    <div className="space-y-3">
+                                      <div className="overflow-x-auto rounded-xl border border-zinc-800 bg-[#050B1A]/80 shadow-inner max-w-full">
                                         <table className="w-full text-left border-collapse text-[11px]">
                                           <thead>
-                                            <tr className="bg-slate-100/90 dark:bg-zinc-900/60 text-slate-800 dark:text-zinc-200">
+                                            <tr className="bg-zinc-900 border-b border-zinc-850 text-zinc-400">
                                               {cols.map((colName, colIdx) => (
-                                                <th key={colName} className="p-1.5 border-r border-slate-200 dark:border-zinc-800 font-bold whitespace-nowrap">
-                                                  <div className="flex items-center justify-between gap-1 min-w-[70px]">
+                                                <th key={colName} className="p-2 border-r border-zinc-850 font-bold whitespace-nowrap uppercase tracking-wider text-[9.5px]">
+                                                  <div className="flex items-center justify-between gap-2 min-w-[80px]">
                                                     <span>{colName}</span>
                                                     {colIdx > 0 && (
                                                       <button
@@ -10357,7 +10938,7 @@ export default function App() {
                                                             sizeChartData: { columns: nextCols, rows: nextRows }
                                                           });
                                                         }}
-                                                        className="text-red-500 hover:text-red-700 text-xs font-bold px-0.5"
+                                                        className="text-red-400 hover:text-red-300 font-black px-1 text-sm transition-colors"
                                                         title="Eliminar columna"
                                                       >
                                                         ×
@@ -10368,15 +10949,15 @@ export default function App() {
                                               ))}
                                             </tr>
                                           </thead>
-                                          <tbody className="divide-y divide-slate-100 dark:divide-zinc-800">
+                                          <tbody className="divide-y divide-zinc-850">
                                             {mRows.map((rowObj) => {
                                               const sizeVal = rowObj["Talle"];
                                               return (
-                                                <tr key={sizeVal} className="hover:bg-slate-50 dark:hover:bg-zinc-900/50">
+                                                <tr key={sizeVal} className="hover:bg-zinc-900/40">
                                                   {cols.map((colName) => {
                                                     if (colName === "Talle") {
                                                       return (
-                                                        <td key={colName} className="p-1.5 font-bold text-[#5346ff] border-r border-slate-200 dark:border-zinc-800 bg-slate-50/55 dark:bg-zinc-900/20">
+                                                        <td key={colName} className="p-2 font-black text-[#D4A55A] border-r border-zinc-850 bg-zinc-900/10">
                                                           {sizeVal}
                                                         </td>
                                                       );
@@ -10384,7 +10965,7 @@ export default function App() {
 
                                                     const cellVal = rowObj[colName] || "";
                                                     return (
-                                                      <td key={colName} className="p-1 border-r border-slate-200 dark:border-zinc-800/80 bg-white dark:bg-zinc-950/20">
+                                                      <td key={colName} className="p-1 border-r border-zinc-850/50">
                                                         <input
                                                           type="text"
                                                           value={cellVal}
@@ -10401,7 +10982,7 @@ export default function App() {
                                                             });
                                                           }}
                                                           placeholder="ej: 50 cm"
-                                                          className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200/60 dark:border-zinc-800/80 rounded px-1.5 py-0.5 text-[11px] outline-none text-slate-950 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 focus:ring-1 focus:ring-indigo-500"
+                                                          className="w-full bg-[#050B1A] border border-zinc-800 hover:border-zinc-700 rounded-lg px-2 py-1 text-xs outline-none text-white placeholder-zinc-700 focus:border-[#D4A55A] transition-all font-semibold"
                                                         />
                                                       </td>
                                                     );
@@ -10413,12 +10994,12 @@ export default function App() {
                                         </table>
                                       </div>
 
-                                      <div className="flex gap-1.5 items-center justify-end pt-1">
+                                      <div className="flex gap-2 items-center justify-end">
                                         <input 
                                           type="text"
                                           id="add-new-column-input-edit"
                                           placeholder="Ej: Ancho (cm), Manga"
-                                          className="px-2 py-0.5 max-w-[170px] bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-md text-[10px] outline-none"
+                                          className="px-3 py-1.5 w-44 bg-[#050B1A] border border-zinc-800 hover:border-zinc-700 focus:border-indigo-500 rounded-lg text-xs outline-none text-white transition-all font-semibold"
                                           onKeyDown={(e) => {
                                             if (e.key === "Enter") {
                                               e.preventDefault();
@@ -10452,7 +11033,7 @@ export default function App() {
                                               if (input) input.value = "";
                                             }
                                           }}
-                                          className="px-2 py-0.5 bg-slate-200 dark:bg-zinc-800 hover:bg-[#c9c3ff] dark:hover:bg-zinc-700 text-zinc-755 dark:text-zinc-200 rounded-md text-[10px] font-bold cursor-pointer whitespace-nowrap"
+                                          className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white rounded-lg text-xs font-black transition-all cursor-pointer whitespace-nowrap uppercase tracking-wider border border-zinc-700"
                                         >
                                           + Agregar medida
                                         </button>
@@ -10462,96 +11043,72 @@ export default function App() {
                                 })()}
                               </div>
                             ) : (
-                              <div className="p-3 text-center bg-slate-100 dark:bg-zinc-950/20 text-zinc-500 rounded-xl border border-slate-200 dark:border-zinc-800">
-                                <p className="text-[11px] font-medium">Guía de tallas desactivada para este producto.</p>
-                                <p className="text-[9.5px] text-zinc-400 mt-1">El botón de "Guía de talles" no estará visible en la página de detalles para este producto.</p>
+                              <div className="p-4 text-center bg-zinc-950/40 text-zinc-500 rounded-2xl border border-zinc-800">
+                                <p className="text-xs font-black text-zinc-400 uppercase tracking-wider">Guía de tallas desactivada</p>
+                                <p className="text-[10px] text-zinc-500 mt-1 font-medium">El botón de "Guía de talles" no estará visible en la página de detalles para este producto.</p>
                               </div>
                             )}
-                          </div>
-                        ) : (
-                          <div>
-                            <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1">Talles / Tamaños Disponibles</label>
-                            <CommaSeparatedInput
-                              value={editingProduct.sizes || []}
-                              onChange={(arr) => setEditingProduct({ ...editingProduct, sizes: arr })}
-                              placeholder="p.ej. S, M, L, XL (Separados por comas)"
-                              className="w-full px-3 py-2 bg-slate-100 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none text-slate-900 dark:text-white mb-2"
-                            />
-                            <div className="flex flex-wrap gap-1.5">
-                              <span className="text-[9px] text-zinc-500 mr-1 self-center">Preajustes rápidos:</span>
-                              {["S", "M", "L", "XL", "XXL", "Único"].map((sz) => {
-                                const isSelected = (editingProduct.sizes || []).includes(sz);
-                                return (
-                                  <button
-                                    type="button"
-                                    key={sz}
-                                    onClick={() => {
-                                      const current = editingProduct.sizes || [];
-                                      const next = current.includes(sz)
-                                        ? current.filter(x => x !== sz)
-                                        : [...current, sz];
-                                      setEditingProduct({ ...editingProduct, sizes: next });
-                                    }}
-                                    className={`text-[9.5px] font-mono px-2 py-0.5 rounded cursor-pointer transition-all ${
-                                      isSelected 
-                                        ? "bg-indigo-600 text-white font-bold" 
-                                        : "bg-slate-200 hover:bg-slate-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300"
-                                    }`}
-                                  >
-                                    {sz}
-                                  </button>
-                                );
-                              })}
-                            </div>
                           </div>
                         )}
                       </div>
 
-                      <div>
-                        <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1">Colores Disponibles</label>
+                      <div className="space-y-3 p-4 bg-zinc-900/40 dark:bg-zinc-950/20 rounded-xl border border-zinc-850">
+                        <label className="block text-xs font-black text-indigo-400 uppercase tracking-widest flex items-center gap-1.5">
+                          <span className="w-2 h-2 bg-indigo-500 rounded-full animate-ping" />
+                          <span>Colores Disponibles</span>
+                        </label>
                         <CommaSeparatedInput
                           value={editingProduct.colors || []}
                           onChange={(arr) => setEditingProduct({ ...editingProduct, colors: arr })}
                           placeholder="p.ej. Negro, Blanco, Gris, Rojo (Separados por comas)"
-                          className="w-full px-3 py-2 bg-slate-100 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none text-slate-900 dark:text-white mb-2"
+                          className="w-full px-3 py-2 bg-[#050B1A] border border-zinc-800 hover:border-zinc-700 focus:border-[#D4A55A] rounded-xl text-xs outline-none text-white font-bold placeholder-zinc-700 transition-all"
                         />
-                        <div className="flex flex-wrap gap-1.5">
-                          <span className="text-[9px] text-zinc-500 mr-1 self-center">Preajustes rápidos:</span>
-                          {["Negro", "Blanco", "Gris", "Azul", "Rojo", "Verde", "Beige", "Rosa"].map((col) => {
-                            const isSelected = (editingProduct.colors || []).includes(col);
-                            return (
-                              <button
-                                type="button"
-                                key={col}
-                                onClick={() => {
-                                  const current = editingProduct.colors || [];
-                                  const next = current.includes(col)
-                                    ? current.filter(x => x !== col)
-                                    : [...current, col];
-                                  setEditingProduct({ ...editingProduct, colors: next });
-                                }}
-                                className={`text-[9.5px] px-2 py-0.5 rounded cursor-pointer transition-all ${
-                                  isSelected 
-                                    ? "bg-indigo-600 text-white font-bold" 
-                                    : "bg-slate-200 hover:bg-slate-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300"
-                                }`}
-                              >
-                                {col}
-                              </button>
-                            );
-                          })}
+                        <div className="flex flex-col gap-1.5">
+                          <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Preajustes rápidos:</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {["Negro", "Blanco", "Gris", "Azul", "Rojo", "Verde", "Beige", "Rosa"].map((col) => {
+                              const isSelected = (editingProduct.colors || []).includes(col);
+                              return (
+                                <button
+                                  type="button"
+                                  key={col}
+                                  onClick={() => {
+                                    const current = editingProduct.colors || [];
+                                    const next = current.includes(col)
+                                      ? current.filter(x => x !== col)
+                                      : [...current, col];
+                                    setEditingProduct({ ...editingProduct, colors: next });
+                                  }}
+                                  className={`text-[10px] font-bold px-3 py-1.5 rounded-full cursor-pointer transition-all duration-200 border uppercase tracking-wider flex items-center gap-1.5 ${
+                                    isSelected 
+                                      ? "bg-[#D4A55A] border-transparent text-[#050B1A] font-black" 
+                                      : "bg-zinc-900/60 hover:bg-zinc-850 border-zinc-800 text-zinc-300"
+                                  }`}
+                                >
+                                  <span 
+                                    className="w-2.5 h-2.5 rounded-full border border-white/20 shadow-xs shrink-0" 
+                                    style={{ backgroundColor: col === "Negro" ? "#000000" : col === "Blanco" ? "#ffffff" : col === "Rojo" ? "#ef4444" : col === "Azul" ? "#3b82f6" : col === "Verde" ? "#22c55e" : col === "Gris" ? "#6b7280" : col === "Beige" ? "#f5f5dc" : col === "Rosa" ? "#f472b6" : "#9ca3af" }} 
+                                  />
+                                  <span>{col}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
                       </div>
                     </div>
 
                     {/* PRODUCT COMBINATIONS VARIANT STOCK MANAGER FOR EDITING */}
-                    <div className="border border-indigo-500/10 p-4 rounded-xl bg-slate-50/50 dark:bg-zinc-900/40 space-y-3">
-                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <div className="border border-[#D4A55A]/15 p-5 rounded-2xl bg-zinc-900/30 space-y-4 shadow-md shadow-[#D4A55A]/3">
+                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 border-b border-zinc-850 pb-3">
                         <div>
-                          <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest">
-                            Gestor de Stock de Variantes (Combinación Exacto)
+                          <label className="block text-xs font-black text-[#D4A55A] uppercase tracking-widest flex items-center gap-1.5">
+                            <Sparkles className="w-4 h-4 text-[#D4A55A] animate-pulse" />
+                            <span>Gestor de Stock y Precios de Variantes</span>
                           </label>
-                          <p className="text-[9px] text-zinc-400 mt-0.5 font-sans">Asigna inventarios individuales por talle, color y sucursal, y un precio diferente por variante si lo requiere</p>
+                          <p className="text-[10px] text-zinc-400 mt-1 font-medium leading-relaxed">
+                            Controla inventarios por talle, color y sucursal. Asigna un precio específico por combinación si lo requiere.
+                          </p>
                         </div>
                         <button
                           type="button"
@@ -10574,19 +11131,16 @@ export default function App() {
                               for (const col of colorsList) {
                                 const exists = (editingProduct.variants || []).some(v => v.size === sz && v.color === col);
                                 if (!exists) {
-                                  const nextNum = getNextAvailableSKUNumber(store.products, currentSkus);
-                                  const generatedSku = `J${String(nextNum).padStart(3, '0')}`;
-                                  currentSkus.push(generatedSku);
-                                  const sp = Math.floor(Number(editingProduct.stockPinamar !== undefined ? editingProduct.stockPinamar : 5));
-                                  const sm = Math.floor(Number(editingProduct.stockMontevideo !== undefined ? editingProduct.stockMontevideo : 0));
+                                  const baseCode = editingProduct.codigo || getNextAutoSKU(store.products);
+                                  const generatedSku = getSmartVariantSku(baseCode, sz, col);
                                   generated.push({
                                     size: sz,
                                     color: col,
                                     colorCode: col === "Negro" ? "#000000" : col === "Blanco" ? "#ffffff" : col === "Rojo" ? "#ef4444" : col === "Azul" ? "#3b82f6" : col === "Verde" ? "#22c55e" : col === "Gris" ? "#6b7280" : col === "Beige" ? "#f5f5dc" : col === "Rosa" ? "#f472b6" : "#9ca3af",
                                     sku: generatedSku,
-                                    stockPinamar: sp,
-                                    stockMontevideo: sm,
-                                    stock: sp + sm,
+                                    stockPinamar: 0,
+                                    stockMontevideo: 0,
+                                    stock: 0,
                                     priceDelta: 0
                                   });
                                 }
@@ -10594,26 +11148,49 @@ export default function App() {
                             }
                             
                             const combined = [...(editingProduct.variants || []), ...generated];
+                            const totalPin = Number(editingProduct.stockPinamar !== undefined ? editingProduct.stockPinamar : 5);
+                            const totalMvd = Number(editingProduct.stockMontevideo !== undefined ? editingProduct.stockMontevideo : 0);
+                            const count = combined.length;
+                            
+                            let distributedCombined = combined;
+                            if (count > 0) {
+                              const basePinPerVar = Math.floor(totalPin / count);
+                              const remPin = totalPin % count;
+                              const baseMvdPerVar = Math.floor(totalMvd / count);
+                              const remMvd = totalMvd % count;
+                              
+                              distributedCombined = combined.map((v, idx) => {
+                                const sp = basePinPerVar + (idx < remPin ? 1 : 0);
+                                const sm = baseMvdPerVar + (idx < remMvd ? 1 : 0);
+                                return {
+                                  ...v,
+                                  stockPinamar: sp,
+                                  stockMontevideo: sm,
+                                  stock: sp + sm
+                                };
+                              });
+                            }
+
                             setEditingProduct(updateProductCalculations({
                               ...editingProduct,
-                              variants: combined
+                              variants: distributedCombined
                             }) as Product);
-                            showAdminToast(`Se autogeneraron ${generated.length} combinaciones con códigos sugeridos.`, "success");
+                            showAdminToast(`Se autogeneraron ${generated.length} combinaciones y se distribuyó el stock inicial de forma proporcional.`, "success");
                           }}
-                          className="text-[9px] px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded shadow transition-all cursor-pointer self-start sm:self-center"
+                          className="text-[10px] px-3.5 py-1.5 bg-[#D4A55A] hover:bg-[#c39449] text-black font-black rounded-xl uppercase tracking-wider shadow-md shadow-[#D4A55A]/10 transition-all duration-300 cursor-pointer self-start sm:self-center"
                         >
                           Generar Todas las Combinaciones
                         </button>
                       </div>
 
-                      <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 bg-slate-100/30 dark:bg-zinc-950 p-2.5 rounded-lg border border-slate-200/80">
+                      <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 bg-[#050B1A]/80 p-4 rounded-2xl border border-zinc-850 shadow-inner">
                         <div>
-                          <label className="block text-[9px] text-zinc-400 capitalize mb-0.5">Talle</label>
+                          <label className="block text-[10px] text-zinc-400 uppercase tracking-wider font-extrabold mb-1">Talle</label>
                           <select
                             id="edit-var-size"
                             value={editVarSize}
                             onChange={(e) => setEditVarSize(e.target.value)}
-                            className="w-full text-xs bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-1 rounded font-semibold text-zinc-800 dark:text-zinc-200"
+                            className="w-full text-xs bg-zinc-900 border border-zinc-800 hover:border-zinc-700 focus:border-[#D4A55A] p-2 rounded-xl font-bold text-zinc-100 outline-none transition-all"
                           >
                             {((editingProduct.sizes || []).length > 0 ? (editingProduct.sizes || []) : ["Único"]).map(sz => (
                               <option key={sz} value={sz}>{sz}</option>
@@ -10621,12 +11198,12 @@ export default function App() {
                           </select>
                         </div>
                         <div>
-                          <label className="block text-[9px] text-zinc-400 capitalize mb-0.5">Color</label>
+                          <label className="block text-[10px] text-zinc-400 uppercase tracking-wider font-extrabold mb-1">Color</label>
                           <select
                             id="edit-var-color"
                             value={editVarColor}
                             onChange={(e) => setEditVarColor(e.target.value)}
-                            className="w-full text-xs bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-1 rounded font-semibold text-zinc-800 dark:text-zinc-200"
+                            className="w-full text-xs bg-zinc-900 border border-zinc-800 hover:border-zinc-700 focus:border-[#D4A55A] p-2 rounded-xl font-bold text-zinc-100 outline-none transition-all"
                           >
                             {((editingProduct.colors || []).length > 0 ? (editingProduct.colors || []) : ["General"]).map(col => (
                               <option key={col} value={col}>{col}</option>
@@ -10634,27 +11211,36 @@ export default function App() {
                           </select>
                         </div>
                         <div>
-                          <label className="block text-[9px] text-zinc-400 capitalize mb-0.5">Código / SKU Variant (Sistema)</label>
+                          <label className="block text-[10px] text-zinc-400 uppercase tracking-wider font-extrabold mb-1">Código (Sistema)</label>
                           <input
                             id="edit-var-sku"
                             type="text"
                             readOnly
                             value={(() => {
-                              const currentEditSkus = (editingProduct.variants || []).map(v => v.sku).filter(Boolean) as string[];
-                              const nextEditNum = getNextAvailableSKUNumber(store.products, currentEditSkus);
-                              return `J${String(nextEditNum).padStart(3, '0')}`;
+                              const baseCode = editingProduct.codigo || getNextAutoSKU(store.products);
+                              return getSmartVariantSku(baseCode, editVarSize, editVarColor);
                             })()}
-                            className="w-full text-xs bg-slate-100 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 p-1 rounded font-semibold font-mono text-zinc-500 dark:text-zinc-400 uppercase cursor-not-allowed opacity-75"
+                            className="w-full text-xs bg-zinc-950/60 border border-zinc-900 p-2 rounded-xl font-bold font-mono text-zinc-500 uppercase cursor-not-allowed opacity-80"
                             placeholder="Autogenerado"
                           />
                         </div>
                         <div>
-                          <label className="block text-[9px] text-zinc-400 capitalize mb-0.5">Stock Pinamar</label>
-                          <input id="edit-var-stock-pinamar" type="number" defaultValue="5" className="w-full text-xs bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-1 rounded font-mono font-bold text-slate-800 dark:text-zinc-100" />
+                          <label className="block text-[10px] text-zinc-400 uppercase tracking-wider font-extrabold mb-1">Stock Pinamar</label>
+                          <input 
+                            id="edit-var-stock-pinamar" 
+                            type="number" 
+                            defaultValue="5" 
+                            className="w-full text-xs bg-zinc-900 border border-zinc-800 hover:border-zinc-700 focus:border-[#D4A55A] p-2 rounded-xl font-mono font-bold text-zinc-100 outline-none transition-all" 
+                          />
                         </div>
                         <div>
-                          <label className="block text-[9px] text-zinc-400 capitalize mb-0.5">Stock Montevideo</label>
-                          <input id="edit-var-stock-montevideo" type="number" defaultValue="0" className="w-full text-xs bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-1 rounded font-mono font-bold text-slate-800 dark:text-zinc-100" />
+                          <label className="block text-[10px] text-zinc-400 uppercase tracking-wider font-extrabold mb-1">Stock Montevideo</label>
+                          <input 
+                            id="edit-var-stock-montevideo" 
+                            type="number" 
+                            defaultValue="0" 
+                            className="w-full text-xs bg-zinc-900 border border-zinc-800 hover:border-zinc-700 focus:border-[#D4A55A] p-2 rounded-xl font-mono font-bold text-zinc-100 outline-none transition-all" 
+                          />
                         </div>
                         <div className="flex items-end">
                           <button
@@ -10668,9 +11254,8 @@ export default function App() {
                               if (szEl && colEl && stkPinEl && stkMonEl) {
                                 const sz = szEl.value;
                                 const col = colEl.value;
-                                const currentEditSkus = (editingProduct.variants || []).map(v => v.sku).filter(Boolean) as string[];
-                                const nextEditNum = getNextAvailableSKUNumber(store.products, currentEditSkus);
-                                const sku = `J${String(nextEditNum).padStart(3, '0')}`;
+                                const baseCode = editingProduct.codigo || getNextAutoSKU(store.products);
+                                const sku = getSmartVariantSku(baseCode, sz, col);
                                 const stkPin = Math.max(0, Math.floor(Number(stkPinEl.value || 0)));
                                 const stkMon = Math.max(0, Math.floor(Number(stkMonEl.value || 0)));
                                 
@@ -10698,7 +11283,7 @@ export default function App() {
                                 showAdminToast("Combinación añadida", "success");
                               }
                             }}
-                            className="w-full py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white text-xs font-bold rounded border border-zinc-700 transition cursor-pointer"
+                            className="w-full py-2 bg-zinc-800 hover:bg-zinc-700 hover:text-white text-zinc-300 text-xs font-black uppercase tracking-wider rounded-xl border border-zinc-700 hover:border-zinc-600 transition cursor-pointer"
                           >
                             + Añadir
                           </button>
@@ -10706,39 +11291,39 @@ export default function App() {
                       </div>
 
                       {((editingProduct.variants || []).length > 0) ? (
-                        <div className="max-h-52 overflow-y-auto border border-slate-200 dark:border-zinc-800 rounded-lg text-xs shadow-inner">
-                          <table className="w-full text-left border-collapse bg-white dark:bg-zinc-950">
+                        <div className="max-h-64 overflow-y-auto border border-zinc-800 rounded-xl text-xs shadow-xl bg-[#050B1A] scrollbar-thin scrollbar-thumb-zinc-800">
+                          <table className="w-full text-left border-collapse bg-transparent">
                             <thead>
-                              <tr className="bg-slate-100 dark:bg-zinc-900/60 border-b border-slate-200 dark:border-zinc-800 text-[10px] text-zinc-400 font-extrabold uppercase">
-                                <th className="p-2">Talle</th>
-                                <th className="p-2">Color / Tono</th>
-                                <th className="p-2">Código / SKU Variant</th>
-                                <th className="p-2">Stock Pinamar</th>
-                                <th className="p-2">Stock Montevideo</th>
-                                <th className="p-2">Total</th>
-                                <th className="p-2">Precio Diferente (Opcional)</th>
-                                <th className="p-2">Foto URL (Opcional)</th>
-                                <th className="p-2 text-right">Acciones</th>
+                              <tr className="bg-zinc-950/90 border-b border-zinc-800 text-[10px] text-zinc-400 font-extrabold uppercase tracking-wider sticky top-0 backdrop-blur-md z-10">
+                                <th className="p-3">Talle</th>
+                                <th className="p-3">Color / Tono</th>
+                                <th className="p-3">Código / SKU</th>
+                                <th className="p-3">Stock Pinamar</th>
+                                <th className="p-3">Stock MVD</th>
+                                <th className="p-3">Total</th>
+                                <th className="p-3">Precio Específico (Opcional)</th>
+                                <th className="p-3">Foto (Opcional)</th>
+                                <th className="p-3 text-right">Acciones</th>
                               </tr>
                             </thead>
                             <tbody>
                               {(editingProduct.variants || []).map((v, i) => (
-                                <tr key={i} className="border-b border-slate-100 dark:border-zinc-900/50 hover:bg-slate-50/50 dark:hover:bg-zinc-900/30 text-slate-700 dark:text-zinc-300">
-                                  <td className="p-2 font-mono font-bold text-indigo-500 dark:text-indigo-400">{v.size}</td>
-                                  <td className="p-2 flex items-center gap-2">
-                                    <span className="w-3.5 h-3.5 rounded-full border border-zinc-300 dark:border-zinc-800 shadow-sm" style={{ backgroundColor: v.colorCode || '#666' }}></span>
+                                <tr key={i} className="border-b border-zinc-900/50 hover:bg-[#D4A55A]/5 text-zinc-300 transition-all duration-150">
+                                  <td className="p-3 font-mono font-black text-[#D4A55A]">{v.size}</td>
+                                  <td className="p-3 flex items-center gap-2 font-bold">
+                                    <span className="w-3.5 h-3.5 rounded-full border border-white/10 shadow-sm shrink-0" style={{ backgroundColor: v.colorCode || '#666' }}></span>
                                     <span>{v.color}</span>
                                   </td>
-                                  <td className="p-2 font-mono">
+                                  <td className="p-3 font-mono">
                                     <input
                                       type="text"
                                       placeholder="Código / SKU"
                                       value={v.sku || ""}
                                       readOnly
-                                      className="w-44 px-2 py-0.5 bg-slate-100 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded font-mono font-bold text-xs outline-none uppercase text-slate-500 dark:text-zinc-400 cursor-not-allowed"
+                                      className="w-24 px-2.5 py-1 bg-zinc-950/60 border border-zinc-900 rounded-lg font-mono font-bold text-xs outline-none uppercase text-zinc-500 cursor-not-allowed"
                                     />
                                   </td>
-                                  <td className="p-2">
+                                  <td className="p-3">
                                     <input
                                       type="number"
                                       value={v.stockPinamar !== undefined ? v.stockPinamar : v.stock}
@@ -10754,10 +11339,10 @@ export default function App() {
                                           variants: nextArr
                                         }) as Product);
                                       }}
-                                      className="w-16 px-1.5 py-0.5 bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded font-mono font-bold text-xs outline-none text-slate-950 dark:text-zinc-50"
+                                      className="w-16 px-2 py-1 bg-zinc-900 border border-zinc-800 focus:border-[#D4A55A] rounded-lg font-mono font-bold text-xs outline-none text-white transition-all"
                                     />
                                   </td>
-                                  <td className="p-2">
+                                  <td className="p-3">
                                     <input
                                       type="number"
                                       value={v.stockMontevideo !== undefined ? v.stockMontevideo : 0}
@@ -10773,15 +11358,15 @@ export default function App() {
                                           variants: nextArr
                                         }) as Product);
                                       }}
-                                      className="w-16 px-1.5 py-0.5 bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded font-mono font-bold text-xs outline-none text-slate-950 dark:text-zinc-50"
+                                      className="w-16 px-2 py-1 bg-zinc-900 border border-zinc-800 focus:border-[#D4A55A] rounded-lg font-mono font-bold text-xs outline-none text-white transition-all"
                                     />
                                   </td>
-                                  <td className="p-2 font-mono font-bold text-zinc-500">
+                                  <td className="p-3 font-mono font-extrabold text-zinc-400">
                                     {v.stock}
                                   </td>
-                                  <td className="p-2">
+                                  <td className="p-3">
                                     <div className="flex items-center gap-1">
-                                      <span className="text-zinc-400 font-bold">$</span>
+                                      <span className="text-[#D4A55A] font-bold font-mono">$</span>
                                       <input
                                         type="number"
                                         placeholder="Base"
@@ -10799,11 +11384,11 @@ export default function App() {
                                             variants: nextArr
                                           });
                                         }}
-                                        className="w-20 px-1 py-0.5 bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded font-mono font-bold text-xs outline-none text-slate-950 dark:text-zinc-50"
+                                        className="w-20 px-2 py-1 bg-zinc-900 border border-zinc-800 focus:border-[#D4A55A] rounded-lg font-mono font-bold text-xs outline-none text-white transition-all"
                                       />
                                     </div>
                                   </td>
-                                  <td className="p-2">
+                                  <td className="p-3">
                                     <VariantImagePicker
                                       galleryImages={[editingProduct.imageUrl, ...(editingProduct.imagenes || [])].filter(Boolean)}
                                       selectedUrl={v.imageUrl || ""}
@@ -10818,7 +11403,7 @@ export default function App() {
                                       showToast={showToast}
                                     />
                                   </td>
-                                  <td className="p-2 text-right">
+                                  <td className="p-3 text-right">
                                     <button
                                       type="button"
                                       onClick={() => {
@@ -10829,7 +11414,7 @@ export default function App() {
                                           stock: nextVariants.reduce((sum, item) => sum + item.stock, 0)
                                         });
                                       }}
-                                      className="text-red-500 hover:text-red-650 font-bold transition-all cursor-pointer"
+                                      className="text-red-400 hover:text-red-500 font-black text-[10px] uppercase tracking-wider transition-all cursor-pointer hover:underline"
                                     >
                                       Remover
                                     </button>
@@ -10840,18 +11425,18 @@ export default function App() {
                           </table>
                         </div>
                       ) : (
-                        <div className="p-3 text-center text-zinc-500 text-[11px] bg-slate-100/30 dark:bg-zinc-950 rounded-lg border border-dashed border-slate-200 dark:border-zinc-800">
-                          Sin combinaciones registradas. Se usará el stock físico general definido arriba. Puedes autogenerarlas o añadirlas manualmente.
+                        <div className="p-5 text-center text-zinc-400 text-xs bg-zinc-950/40 rounded-2xl border border-dashed border-zinc-800 leading-relaxed font-medium">
+                          Sin combinaciones registradas. Se usará el stock físico general definido arriba. Puedes <span className="text-[#D4A55A] font-bold">autogenerarlas</span> o añadirlas manualmente usando el panel superior.
                         </div>
                       )}
                     </div>
                   </>
                 )}
-                      </>
+                      </div>
                     )}
 
                     {editingProductStep === 4 && (
-                      <div className="space-y-4 animate-fade-in unique-step-four">
+                      <div key="edit-step-4" className="space-y-4 animate-fade-in unique-step-four">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div className="p-4 bg-slate-50 dark:bg-zinc-900 border border-slate-100 dark:border-zinc-800 rounded-xl space-y-2 w-full">
                             <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest flex items-center justify-between">
@@ -11397,13 +11982,14 @@ export default function App() {
                     <div className="space-y-6 animate-fade-in pb-10">
                       {/* STATS OVERVIEW HEADER */}
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <div className="bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 p-4 rounded-2xl flex items-center gap-4 shadow-sm">
-                          <div className="p-3 rounded-xl bg-indigo-500/10 text-indigo-500 dark:bg-indigo-500/20 dark:text-indigo-400">
+                        <div className="bg-[#0B1730]/80 border border-[#D4A55A]/25 p-5 rounded-2xl flex items-center gap-4 shadow-lg relative overflow-hidden group">
+                          <div className="absolute top-0 right-0 w-24 h-24 bg-[#D4A55A]/5 rounded-full blur-xl pointer-events-none transition-all duration-300 group-hover:bg-[#D4A55A]/10" />
+                          <div className="p-3.5 rounded-xl bg-[#D4A55A]/10 text-[#E6BF76] border border-[#D4A55A]/20">
                             <Gift className="h-5 w-5" />
                           </div>
                           <div>
-                            <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-zinc-500 tracking-widest block mb-0.5">Cintillo Superior</span>
-                            <span className="text-sm font-black flex items-center gap-1.5 text-slate-800 dark:text-white">
+                            <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-widest block mb-1">Cintillo Superior</span>
+                            <span className="text-sm font-black flex items-center gap-1.5 text-[#F4EAD7]">
                               {isBannerActive ? (
                                 <>
                                   <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse inline-block" />
@@ -11411,34 +11997,36 @@ export default function App() {
                                 </>
                               ) : (
                                 <>
-                                  <span className="h-2 w-2 rounded-full bg-zinc-400 dark:bg-zinc-600 inline-block" />
-                                  Desactivado
+                                  <span className="h-2 w-2 rounded-full bg-zinc-600 inline-block" />
+                                  Oculto temporalmente
                                 </>
                               )}
                             </span>
                           </div>
                         </div>
 
-                        <div className="bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 p-4 rounded-2xl flex items-center gap-4 shadow-sm">
-                          <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-500 dark:bg-emerald-500/20 dark:text-emerald-400">
+                        <div className="bg-[#0B1730]/80 border border-[#D4A55A]/25 p-5 rounded-2xl flex items-center gap-4 shadow-lg relative overflow-hidden group">
+                          <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full blur-xl pointer-events-none transition-all duration-300 group-hover:bg-emerald-500/10" />
+                          <div className="p-3.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                             <Tag className="h-5 w-5" />
                           </div>
                           <div>
-                            <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-zinc-500 tracking-widest block mb-0.5">Cupones de Descuento</span>
-                            <span className="text-sm font-black text-slate-800 dark:text-white flex items-baseline gap-1">
-                              {totalCouponsCount} <span className="text-[11px] font-medium text-slate-400 dark:text-zinc-500">({activeCoupons.length} válidos)</span>
+                            <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-widest block mb-1">Cupones de Descuento</span>
+                            <span className="text-sm font-black text-[#F4EAD7] flex items-baseline gap-1.5">
+                              {totalCouponsCount} <span className="text-xs font-semibold text-zinc-400">({activeCoupons.length} vigentes)</span>
                             </span>
                           </div>
                         </div>
 
-                        <div className="bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 p-4 rounded-2xl flex items-center gap-4 shadow-sm">
-                          <div className="p-3 rounded-xl bg-amber-500/10 text-amber-500 dark:bg-amber-500/20 dark:text-amber-400">
+                        <div className="bg-[#0B1730]/80 border border-[#D4A55A]/25 p-5 rounded-2xl flex items-center gap-4 shadow-lg relative overflow-hidden group">
+                          <div className="absolute top-0 right-0 w-24 h-24 bg-[#E6BF76]/5 rounded-full blur-xl pointer-events-none transition-all duration-300 group-hover:bg-[#E6BF76]/10" />
+                          <div className="p-3.5 rounded-xl bg-[#E6BF76]/10 text-[#E6BF76] border border-[#E6BF76]/20">
                             <Percent className="h-5 w-5" />
                           </div>
                           <div>
-                            <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-zinc-500 tracking-widest block mb-0.5">Descuento Promedio</span>
-                            <span className="text-sm font-black text-slate-800 dark:text-white">
-                              {avgDiscount}% <span className="text-[11px] font-medium text-slate-400 dark:text-zinc-500">OFF global</span>
+                            <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-widest block mb-1">Descuento Promedio</span>
+                            <span className="text-sm font-black text-[#F4EAD7]">
+                              {avgDiscount}% <span className="text-xs font-semibold text-zinc-400">OFF global</span>
                             </span>
                           </div>
                         </div>
@@ -11449,11 +12037,11 @@ export default function App() {
                         
                         {/* LEFT COLUMN: BANNER CONFIG */}
                         <div className="lg:col-span-5 space-y-4">
-                          <div className="bg-white dark:bg-zinc-950 rounded-2xl border border-slate-200 dark:border-zinc-800/80 p-5 shadow-sm space-y-4">
-                            <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800 pb-3">
+                          <div className="bg-[#0B1730]/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-5">
+                            <div className="flex items-center justify-between border-b border-zinc-800/60 pb-3.5">
                               <div className="flex items-center gap-2">
-                                <Gift className="h-4.5 w-4.5 text-indigo-500" />
-                                <h3 className="font-bold text-sm text-slate-900 dark:text-white">Cintillo de Ofertas</h3>
+                                <Gift className="h-4.5 w-4.5 text-[#D4A55A]" />
+                                <h3 className="font-bold text-sm text-white font-sans tracking-tight">Cintillo de Ofertas Superior</h3>
                               </div>
                               
                               {/* MODERN TOGGLE SWITCH */}
@@ -11464,11 +12052,11 @@ export default function App() {
                                   showPromotionBanner: !isBannerActive
                                 })}
                                 className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                                  isBannerActive ? 'bg-indigo-600' : 'bg-slate-200 dark:bg-zinc-850'
+                                  isBannerActive ? 'bg-[#D4A55A] animate-pulse' : 'bg-zinc-800'
                                 }`}
                               >
                                 <span
-                                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white dark:bg-zinc-950 shadow-md ring-0 transition duration-200 ease-in-out ${
                                     isBannerActive ? 'translate-x-5' : 'translate-x-0'
                                   }`}
                                 />
@@ -11477,13 +12065,13 @@ export default function App() {
 
                             {/* LIVE PREVIEW CONTAINER */}
                             {isBannerActive && (
-                              <div className="space-y-3 animate-fade-in bg-slate-50 dark:bg-zinc-900/40 p-4 rounded-xl border border-slate-100 dark:border-zinc-850">
+                              <div className="space-y-3.5 bg-[#050B1A]/80 p-4 rounded-xl border border-zinc-850">
                                 <div className="flex items-center justify-between">
-                                  <span className="text-[9.5px] font-extrabold uppercase tracking-widest text-slate-400 dark:text-zinc-500 flex items-center gap-1">
-                                    <Layout className="h-3 w-3 text-indigo-400" />
+                                  <span className="text-[9.5px] font-extrabold uppercase tracking-widest text-zinc-400 flex items-center gap-1">
+                                    <Layout className="h-3 w-3 text-[#D4A55A]" />
                                     Vista Previa del Cintillo
                                   </span>
-                                  <span className="text-[8px] px-1.5 py-0.5 font-bold uppercase rounded bg-indigo-500/15 text-indigo-500 dark:text-indigo-400 tracking-wide">Superior</span>
+                                  <span className="text-[8px] px-2 py-0.5 font-bold uppercase rounded bg-[#D4A55A]/10 text-[#E6BF76] border border-[#D4A55A]/20 tracking-wider">Superior</span>
                                 </div>
 
                                 {/* Actual Banner Simulated element */}
@@ -11492,45 +12080,45 @@ export default function App() {
                                     backgroundColor: editingSettings.promotionBannerBgColor || "#4f46e5", 
                                     color: editingSettings.promotionBannerTextColor || "#ffffff" 
                                   }}
-                                  className="w-full text-center py-2 px-3 rounded-lg text-[10px] font-bold shadow-sm flex items-center justify-center gap-2 transition-all duration-300 overflow-hidden min-h-[36px] border border-black/10"
+                                  className="w-full text-center py-2 px-3 rounded-lg text-[10px] font-bold shadow-md flex items-center justify-center gap-2 transition-all duration-300 overflow-hidden min-h-[36px] border border-black/10"
                                 >
                                   <div className="animate-pulse h-1.5 w-1.5 rounded-full bg-current shrink-0" />
                                   <span className="truncate">
                                     {editingSettings.promotionBannerText || "🚚 ¡Descuento activo en compras online!"}
                                   </span>
                                 </div>
-                                <p className="text-[9px] text-zinc-400 text-center italic mt-1">
+                                <p className="text-[9px] text-zinc-500 text-center italic leading-relaxed">
                                   Los textos adicionales se rotan automáticamente en la web cada 5 segundos.
                                 </p>
                               </div>
                             )}
 
                             {isBannerActive && (
-                              <div className="space-y-4 animate-fade-in pt-2">
+                              <div className="space-y-4 pt-1">
                                 <div className="space-y-1.5">
-                                  <div className="flex items-center gap-1 text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest">
-                                    <Type className="h-3.5 w-3.5 text-zinc-400" />
+                                  <div className="flex items-center gap-1.5 text-[9.5px] font-black text-zinc-400 uppercase tracking-widest">
+                                    <Type className="h-3.5 w-3.5 text-[#D4A55A]" />
                                     <span>Texto de Ofertas 1 (Principal)</span>
                                   </div>
                                   <input
                                     type="text"
                                     value={editingSettings.promotionBannerText || ""}
                                     onChange={(e) => setEditingSettings({ ...editingSettings, promotionBannerText: e.target.value })}
-                                    className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-indigo-500 text-slate-900 dark:text-white"
+                                    className="w-full px-3 py-2 bg-[#050B1A]/80 border border-zinc-800 focus:border-[#D4A55A] rounded-xl text-xs outline-none text-white focus:ring-1 focus:ring-[#D4A55A]/30 transition-all"
                                     placeholder="p.ej. 🚚 ¡15% de DESCUENTO en toda la tienda! Código: BUELO15"
                                   />
                                 </div>
 
                                 <div className="space-y-1.5">
-                                  <div className="flex items-center gap-1 text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest">
-                                    <Type className="h-3.5 w-3.5 text-zinc-400" />
+                                  <div className="flex items-center gap-1.5 text-[9.5px] font-black text-zinc-400 uppercase tracking-widest">
+                                    <Type className="h-3.5 w-3.5 text-[#D4A55A]" />
                                     <span>Texto de Ofertas 2 (Secundario)</span>
                                   </div>
                                   <input
                                     type="text"
                                     value={editingSettings.promotionBannerText2 || ""}
                                     onChange={(e) => setEditingSettings({ ...editingSettings, promotionBannerText2: e.target.value })}
-                                    className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-indigo-500 text-slate-900 dark:text-white"
+                                    className="w-full px-3 py-2 bg-[#050B1A]/80 border border-zinc-800 focus:border-[#D4A55A] rounded-xl text-xs outline-none text-white focus:ring-1 focus:ring-[#D4A55A]/30 transition-all"
                                     placeholder="p.ej. 🎁 ¡Envío GRATIS en compras mayores de $2000!"
                                   />
                                 </div>
@@ -11539,8 +12127,8 @@ export default function App() {
                                 {Array.isArray(editingSettings.promotionBannerTexts) && editingSettings.promotionBannerTexts.map((text, index) => (
                                   <div key={index} className="space-y-1.5 animate-fade-in">
                                     <div className="flex items-center justify-between">
-                                      <div className="flex items-center gap-1 text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest">
-                                        <Type className="h-3.5 w-3.5 text-zinc-400" />
+                                      <div className="flex items-center gap-1.5 text-[9.5px] font-black text-zinc-400 uppercase tracking-widest">
+                                        <Type className="h-3.5 w-3.5 text-[#D4A55A]" />
                                         <span>Texto de Ofertas {index + 3}</span>
                                       </div>
                                       <button
@@ -11553,7 +12141,7 @@ export default function App() {
                                             promotionBannerTexts: newTexts
                                           });
                                         }}
-                                        className="text-[10px] font-bold text-rose-500 hover:text-rose-600 transition flex items-center gap-1 cursor-pointer"
+                                        className="text-[9.5px] font-bold text-red-400 hover:text-red-300 transition flex items-center gap-1 cursor-pointer bg-red-500/10 px-2 py-0.5 rounded border border-red-500/10"
                                       >
                                         <span>✕ Eliminar</span>
                                       </button>
@@ -11569,7 +12157,7 @@ export default function App() {
                                           promotionBannerTexts: newTexts
                                         });
                                       }}
-                                      className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-indigo-500 text-slate-900 dark:text-white"
+                                      className="w-full px-3 py-2 bg-[#050B1A]/80 border border-zinc-800 focus:border-[#D4A55A] rounded-xl text-xs outline-none text-white focus:ring-1 focus:ring-[#D4A55A]/30 transition-all"
                                       placeholder={`p.ej. Oferta adicional ${index + 3}`}
                                     />
                                   </div>
@@ -11586,17 +12174,17 @@ export default function App() {
                                         promotionBannerTexts: [...currentTexts, ""]
                                       });
                                     }}
-                                    className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-indigo-200 dark:border-zinc-800 text-indigo-600 dark:text-indigo-400 font-extrabold text-[10px] uppercase tracking-wider rounded-lg flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
+                                    className="px-3.5 py-2 bg-zinc-950/40 hover:bg-[#D4A55A]/5 border border-zinc-800 hover:border-[#D4A55A]/40 text-[#E6BF76] font-extrabold text-[10px] uppercase tracking-wider rounded-xl flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
                                   >
-                                    <Plus className="h-3.5 w-3.5" />
+                                    <Plus className="h-3.5 w-3.5 text-[#D4A55A]" />
                                     <span>Agregar más Ofertas</span>
                                   </button>
                                 </div>
 
-                                <div className="grid grid-cols-2 gap-3 border-t border-slate-100 dark:border-zinc-800/60 pt-4 mt-2">
+                                <div className="grid grid-cols-2 gap-3 border-t border-zinc-800/60 pt-4 mt-2">
                                   <div className="space-y-1.5">
-                                    <div className="flex items-center gap-1 text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest">
-                                      <Palette className="h-3 w-3 text-zinc-400" />
+                                    <div className="flex items-center gap-1 text-[9.5px] font-black text-zinc-400 uppercase tracking-widest">
+                                      <Palette className="h-3 w-3 text-[#D4A55A]" />
                                       <span>Fondo</span>
                                     </div>
                                     <div className="flex items-center gap-1.5">
@@ -11604,21 +12192,21 @@ export default function App() {
                                         type="color"
                                         value={editingSettings.promotionBannerBgColor || "#4f46e5"}
                                         onChange={(e) => setEditingSettings({ ...editingSettings, promotionBannerBgColor: e.target.value })}
-                                        className="w-8 h-8 p-0.5 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg cursor-pointer shrink-0"
+                                        className="w-8 h-8 p-0.5 bg-zinc-900 border border-zinc-800 rounded-lg cursor-pointer shrink-0"
                                       />
                                       <input
                                         type="text"
                                         value={editingSettings.promotionBannerBgColor || "#4f46e5"}
                                         onChange={(e) => setEditingSettings({ ...editingSettings, promotionBannerBgColor: e.target.value })}
-                                        className="w-full px-2 py-1.5 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-[11px] outline-none text-slate-900 dark:text-white font-mono"
+                                        className="w-full px-2 py-1.5 bg-[#050B1A]/80 border border-zinc-800 focus:border-[#D4A55A] rounded-lg text-[10.5px] outline-none text-white font-mono"
                                         placeholder="#4f46e5"
                                       />
                                     </div>
                                   </div>
 
                                   <div className="space-y-1.5">
-                                    <div className="flex items-center gap-1 text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest">
-                                      <Palette className="h-3 w-3 text-zinc-400" />
+                                    <div className="flex items-center gap-1 text-[9.5px] font-black text-zinc-400 uppercase tracking-widest">
+                                      <Palette className="h-3 w-3 text-[#D4A55A]" />
                                       <span>Texto</span>
                                     </div>
                                     <div className="flex items-center gap-1.5">
@@ -11626,13 +12214,13 @@ export default function App() {
                                         type="color"
                                         value={editingSettings.promotionBannerTextColor || "#ffffff"}
                                         onChange={(e) => setEditingSettings({ ...editingSettings, promotionBannerTextColor: e.target.value })}
-                                        className="w-8 h-8 p-0.5 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg cursor-pointer shrink-0"
+                                        className="w-8 h-8 p-0.5 bg-zinc-900 border border-zinc-800 rounded-lg cursor-pointer shrink-0"
                                       />
                                       <input
                                         type="text"
                                         value={editingSettings.promotionBannerTextColor || "#ffffff"}
                                         onChange={(e) => setEditingSettings({ ...editingSettings, promotionBannerTextColor: e.target.value })}
-                                        className="w-full px-2 py-1.5 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-[11px] outline-none text-slate-900 dark:text-white font-mono"
+                                        className="w-full px-2 py-1.5 bg-[#050B1A]/80 border border-zinc-800 focus:border-[#D4A55A] rounded-lg text-[10.5px] outline-none text-white font-mono"
                                         placeholder="#ffffff"
                                       />
                                     </div>
@@ -11640,14 +12228,14 @@ export default function App() {
                                 </div>
 
                                 <div className="space-y-1.5 pt-1">
-                                  <div className="flex items-center gap-1 text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest">
-                                    <Sliders className="h-3 w-3 text-zinc-400" />
+                                  <div className="flex items-center gap-1 text-[9.5px] font-black text-zinc-400 uppercase tracking-widest">
+                                    <Sliders className="h-3 w-3 text-[#D4A55A]" />
                                     <span>Efecto de Transición</span>
                                   </div>
                                   <select
                                     value={editingSettings.promotionBannerTransition || 'slide'}
                                     onChange={(e) => setEditingSettings({ ...editingSettings, promotionBannerTransition: e.target.value as any })}
-                                    className="w-full px-3 py-1.5 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none text-slate-900 dark:text-white cursor-pointer"
+                                    className="w-full px-3 py-1.5 bg-[#050B1A] border border-zinc-800 rounded-xl text-xs outline-none text-white cursor-pointer font-bold focus:border-[#D4A55A]"
                                   >
                                     <option value="slide">Deslizar verticalmente (Slide)</option>
                                     <option value="fade">Desvanecimiento (Fade)</option>
@@ -11657,17 +12245,17 @@ export default function App() {
                               </div>
                             )}
 
-                            <div className="pt-3 border-t border-slate-100 dark:border-zinc-800 flex justify-end">
+                            <div className="pt-3 border-t border-zinc-850 flex justify-end">
                               <button
                                 onClick={handleSaveSettings}
                                 disabled={saving}
-                                className="py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer flex items-center gap-1.5 disabled:opacity-50 shadow-sm"
+                                className="py-2.5 px-5 bg-gradient-to-r from-[#D4A55A] to-[#E6BF76] text-zinc-950 rounded-xl font-bold text-xs transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer flex items-center gap-1.5 disabled:opacity-50 shadow-md shadow-amber-500/10 border border-amber-600/30"
                               >
                                 {saving ? (
                                   <span>Guardando...</span>
                                 ) : (
                                   <>
-                                    <Check className="h-4 w-4" />
+                                    <Check className="h-4 w-4 shrink-0" />
                                     <span>Guardar Cintillo</span>
                                   </>
                                 )}
@@ -11679,21 +12267,21 @@ export default function App() {
                         {/* RIGHT COLUMN: DISCOUNTS & COUPON VAULT */}
                         <div className="lg:col-span-7 space-y-4">
                           {/* COUPON CREATOR */}
-                          <div className="bg-white dark:bg-zinc-950 rounded-2xl border border-slate-200 dark:border-zinc-800/80 p-5 shadow-sm space-y-4">
-                            <div className="flex items-center gap-2 border-b border-slate-100 dark:border-zinc-800 pb-3">
-                              <Sparkles className="h-4.5 w-4.5 text-emerald-500 animate-pulse" />
-                              <h3 className="font-bold text-sm text-slate-900 dark:text-white">Creador de Cupones Exclusivos</h3>
+                          <div className="bg-[#0B1730]/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-5">
+                            <div className="flex items-center gap-2 border-b border-zinc-800/60 pb-3.5">
+                              <Sparkles className="h-4.5 w-4.5 text-[#D4A55A] animate-pulse" />
+                              <h3 className="font-bold text-sm text-white font-sans tracking-tight">Creador de Cupones Exclusivos</h3>
                             </div>
 
                             <form onSubmit={handleAddCoupon} className="space-y-4">
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="space-y-1.5">
                                   <div className="flex items-center justify-between">
-                                    <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest">Código del Cupón</label>
+                                    <label className="block text-[9.5px] font-black text-zinc-400 uppercase tracking-widest">Código del Cupón</label>
                                     <button
                                       type="button"
                                       onClick={handleGenerateRandomCouponCode}
-                                      className="text-[9px] font-bold text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 dark:hover:text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/20 px-2.5 py-0.5 rounded transition cursor-pointer select-none flex items-center gap-0.5"
+                                      className="text-[9px] font-bold text-[#E6BF76] hover:text-[#D4A55A] bg-[#D4A55A]/10 hover:bg-[#D4A55A]/20 px-2.5 py-0.5 rounded transition cursor-pointer select-none flex items-center gap-1 border border-[#D4A55A]/25"
                                     >
                                       <Flame className="h-3 w-3 text-amber-500" />
                                       Auto Generar
@@ -11705,12 +12293,12 @@ export default function App() {
                                     placeholder="Ej. JUEMFEST20"
                                     value={newCouponCode}
                                     onChange={(e) => setNewCouponCode(e.target.value)}
-                                    className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-indigo-500 text-slate-900 dark:text-white uppercase font-mono font-bold"
+                                    className="w-full px-3 py-2 bg-[#050B1A]/80 border border-zinc-800 focus:border-[#D4A55A] rounded-xl text-xs outline-none text-white uppercase font-mono font-bold"
                                   />
                                 </div>
 
                                 <div className="space-y-1.5">
-                                  <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest">Porcentaje de Descuento</label>
+                                  <label className="block text-[9.5px] font-black text-zinc-400 uppercase tracking-widest">Porcentaje de Descuento</label>
                                   <div className="relative">
                                     <input
                                       type="number"
@@ -11720,29 +12308,29 @@ export default function App() {
                                       placeholder="Ej. 15"
                                       value={newCouponDiscount}
                                       onChange={(e) => setNewCouponDiscount(Number(e.target.value))}
-                                      className="w-full pl-3 pr-8 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-indigo-500 text-slate-900 dark:text-white font-bold"
+                                      className="w-full pl-3 pr-8 py-2 bg-[#050B1A]/80 border border-zinc-800 focus:border-[#D4A55A] rounded-xl text-xs outline-none text-white font-black font-mono"
                                     />
-                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-slate-400 dark:text-zinc-500">%</span>
+                                    <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-black text-[#D4A55A]">%</span>
                                   </div>
                                 </div>
                               </div>
 
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
                                 <div className="space-y-1.5">
-                                  <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest">Fecha de Vencimiento (Opcional)</label>
+                                  <label className="block text-[9.5px] font-black text-zinc-400 uppercase tracking-widest">Fecha de Vencimiento (Opcional)</label>
                                   <input
                                     type="date"
                                     value={newCouponExpiration}
                                     onChange={(e) => setNewCouponExpiration(e.target.value)}
-                                    className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-indigo-500 text-slate-900 dark:text-white cursor-pointer"
+                                    className="w-full px-3 py-2 bg-[#050B1A]/80 border border-zinc-800 focus:border-[#D4A55A] rounded-xl text-xs outline-none text-white cursor-pointer font-bold"
                                   />
                                 </div>
 
                                 <button
                                   type="submit"
-                                  className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-lg transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
+                                  className="w-full py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer flex items-center justify-center gap-1.5 shadow-md shadow-emerald-950/20"
                                 >
-                                  <Plus className="h-4 w-4" />
+                                  <Plus className="h-4 w-4 shrink-0 text-white" />
                                   <span>Crear Cupón Activo</span>
                                 </button>
                               </div>
@@ -11750,22 +12338,22 @@ export default function App() {
                           </div>
 
                           {/* COUPONS VAULT DISPLAY */}
-                          <div className="bg-white dark:bg-zinc-950 rounded-2xl border border-slate-200 dark:border-zinc-800/80 p-5 shadow-sm space-y-4">
-                            <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800 pb-3">
+                          <div className="bg-[#0B1730]/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-4">
+                            <div className="flex items-center justify-between border-b border-zinc-800/60 pb-3.5">
                               <div className="flex items-center gap-2">
-                                <Tag className="h-4.5 w-4.5 text-indigo-500" />
-                                <h3 className="font-bold text-sm text-slate-900 dark:text-white">Bóveda de Cupones</h3>
+                                <Tag className="h-4.5 w-4.5 text-[#D4A55A]" />
+                                <h3 className="font-bold text-sm text-white font-sans tracking-tight">Bóveda de Cupones</h3>
                               </div>
-                              <span className="text-[10px] bg-slate-100 dark:bg-zinc-900 text-slate-500 dark:text-zinc-400 px-2 py-0.5 rounded-full font-bold">
+                              <span className="text-[10px] bg-zinc-950/60 text-zinc-400 px-3 py-0.5 rounded-full border border-zinc-800 font-bold">
                                 {store.coupons ? store.coupons.length : 0} Registrados
                               </span>
                             </div>
 
                             {!(store.coupons && store.coupons.length > 0) ? (
-                              <div className="text-center py-8 px-4 border border-dashed border-slate-200 dark:border-zinc-800 rounded-xl bg-slate-50/50 dark:bg-zinc-900/10 space-y-2">
-                                <Tag className="h-8 w-8 text-slate-300 dark:text-zinc-700 mx-auto stroke-[1.5]" />
-                                <h4 className="text-xs font-bold text-slate-700 dark:text-zinc-300">No hay cupones activos</h4>
-                                <p className="text-[10px] text-slate-400 max-w-[280px] mx-auto">
+                              <div className="text-center py-10 px-4 border border-dashed border-zinc-800 rounded-2xl bg-zinc-950/20 space-y-2.5">
+                                <Tag className="h-8 w-8 text-zinc-700 mx-auto stroke-[1.5]" />
+                                <h4 className="text-xs font-bold text-zinc-400">No hay cupones activos</h4>
+                                <p className="text-[10px] text-zinc-500 max-w-[280px] mx-auto leading-relaxed">
                                   Crea un cupón arriba para que tus compradores puedan ingresarlo en el carrito de compras en vivo.
                                 </p>
                               </div>
@@ -11776,61 +12364,61 @@ export default function App() {
                                   return (
                                     <div 
                                       key={c.code} 
-                                      className={`relative overflow-hidden p-4 rounded-xl border flex items-stretch transition-all hover:scale-[1.02] duration-200 shadow-sm ${
+                                      className={`relative overflow-hidden p-4 rounded-xl border flex items-stretch transition-all hover:scale-[1.02] duration-200 shadow-lg ${
                                         isExpired 
-                                          ? "bg-zinc-50 dark:bg-zinc-900/30 border-slate-200 dark:border-zinc-900/60 opacity-60" 
-                                          : "bg-gradient-to-r from-indigo-50 to-indigo-50/30 dark:from-indigo-950/20 dark:to-indigo-950/5 border-indigo-100 dark:border-indigo-500/20"
+                                          ? "bg-zinc-950/20 border-zinc-900 opacity-50" 
+                                          : "bg-gradient-to-r from-[#D4A55A]/5 to-[#D4A55A]/15 border-[#D4A55A]/25"
                                       }`}
                                     >
                                       {/* Perforated ticket circles for a realistic PRO look */}
-                                      <div className="absolute -left-2 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-white dark:bg-zinc-900 border-r border-slate-200 dark:border-zinc-800/80 z-10" />
-                                      <div className="absolute -right-2 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-white dark:bg-zinc-900 border-l border-slate-200 dark:border-zinc-800/80 z-10" />
+                                      <div className="absolute -left-2 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-[#050B1A] border-r border-zinc-800 z-10" />
+                                      <div className="absolute -right-2 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-[#050B1A] border-l border-zinc-800 z-10" />
 
-                                      <div className="flex-1 pl-2 pr-2 border-r border-dashed border-indigo-200/50 dark:border-indigo-500/10 flex flex-col justify-between min-w-0">
+                                      <div className="flex-1 pl-2 pr-2 border-r border-dashed border-zinc-800 flex flex-col justify-between min-w-0">
                                         <div>
-                                          <div className="flex items-center gap-1.5">
-                                            <span className="text-xs font-mono font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-wider truncate">
+                                          <div className="flex items-center gap-1.5 flex-wrap">
+                                            <span className="text-xs font-mono font-black text-[#D4A55A] uppercase tracking-wider truncate">
                                               {c.code}
                                             </span>
                                             {isExpired ? (
-                                              <span className="text-[8px] bg-red-500/15 text-red-500 dark:text-red-400 font-extrabold uppercase px-1.5 py-0.5 rounded shrink-0">
+                                              <span className="text-[8px] bg-red-500/10 text-red-400 font-extrabold uppercase px-1.5 py-0.5 rounded border border-red-500/10 shrink-0">
                                                 Expirado
                                               </span>
                                             ) : (
-                                              <span className="text-[8px] bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-extrabold uppercase px-1.5 py-0.5 rounded shrink-0 animate-pulse">
+                                              <span className="text-[8px] bg-emerald-500/10 text-emerald-400 font-extrabold uppercase px-1.5 py-0.5 rounded border border-emerald-500/15 shrink-0 animate-pulse">
                                                 Válido
                                               </span>
                                             )}
                                           </div>
                                           
-                                          <div className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-2 flex items-center gap-1">
-                                            <History className="h-3 w-3 text-slate-400 dark:text-zinc-500" />
+                                          <div className="text-[10px] text-zinc-400 mt-2 flex items-center gap-1 font-medium">
+                                            <History className="h-3 w-3 text-zinc-500" />
                                             {c.expiration_date ? (
-                                              <span className={isExpired ? "text-red-400 line-through font-semibold" : ""}>
+                                              <span className={isExpired ? "text-red-400/80 line-through font-semibold" : "text-zinc-400 font-bold"}>
                                                 Hasta: {new Date(c.expiration_date).toLocaleDateString("es-UY")}
                                               </span>
                                             ) : (
-                                              <span>Sin vencimiento</span>
+                                              <span className="text-[#E6BF76] font-bold">Sin vencimiento</span>
                                             )}
                                           </div>
                                         </div>
 
-                                        <div className="mt-2 text-[9px] text-slate-400 font-semibold tracking-wider uppercase">
+                                        <div className="mt-2 text-[8px] text-zinc-500 font-extrabold tracking-widest uppercase">
                                           Cupón Oficial
                                         </div>
                                       </div>
 
-                                      <div className="w-24 pl-4 flex flex-col items-center justify-center text-center shrink-0">
-                                        <span className={`text-xl font-black ${isExpired ? 'text-zinc-500' : 'text-emerald-500 dark:text-emerald-400'}`}>
+                                      <div className="w-20 pl-3.5 flex flex-col items-center justify-center text-center shrink-0">
+                                        <span className={`text-xl font-black font-mono leading-none ${isExpired ? 'text-zinc-600' : 'text-emerald-400'}`}>
                                           {c.discount_percent}%
                                         </span>
-                                        <span className={`text-[9px] font-extrabold tracking-widest uppercase ${isExpired ? 'text-zinc-500' : 'text-emerald-400/80 dark:text-emerald-400/70'}`}>
+                                        <span className={`text-[8px] font-extrabold tracking-wider uppercase mt-1 ${isExpired ? 'text-zinc-650' : 'text-emerald-500'}`}>
                                           OFF
                                         </span>
                                         
                                         <button
                                           onClick={() => handleDeleteCoupon(c.code)}
-                                          className="mt-3 p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500 hover:text-white text-rose-500 transition-all cursor-pointer active:scale-90"
+                                          className="mt-3 p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500 hover:text-white text-red-400 transition-all cursor-pointer active:scale-90"
                                           title="Eliminar Cupón"
                                         >
                                           <Trash2 className="h-3.5 w-3.5" />

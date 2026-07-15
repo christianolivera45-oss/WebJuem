@@ -13,6 +13,18 @@
 
   --animate-soft-glow: soft-glow 4s infinite ease-in-out;
   --animate-soft-ping: soft-ping 4s infinite cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-fade-in: fade-in 0.25s ease-out forwards;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
 
   @keyframes soft-glow {
     0%, 100% { transform: scale(1); box-shadow: 0 0 12px rgba(37, 211, 102, 0.25), 0 8px 24px rgba(37, 211, 102, 0.2); }

@@ -100,6 +100,36 @@ export default function ProductDetails({
         ? ["Negro mate", "Plata espacial", "Azul cobalto"] 
         : ["Estándar"])));
 
+  // Helper to check if a specific size is in stock (considering selectedColor if active)
+  const isSizeInStock = (sz: string): boolean => {
+    if (is3D) return true;
+    if (!hasVariants) return true;
+    
+    if (selectedColor) {
+      // Check if this specific combination has stock > 0
+      const v = variants.find(v => v.size === sz && v.color === selectedColor);
+      return v ? v.stock > 0 : false;
+    } else {
+      // No color selected: check if this size has ANY variant with stock > 0
+      return variants.some(v => v.size === sz && v.stock > 0);
+    }
+  };
+
+  // Helper to check if a specific color is in stock (considering selectedSize if active)
+  const isColorInStock = (col: string): boolean => {
+    if (is3D) return true;
+    if (!hasVariants) return true;
+    
+    if (selectedSize) {
+      // Check if this specific combination has stock > 0
+      const v = variants.find(v => v.size === selectedSize && v.color === col);
+      return v ? v.stock > 0 : false;
+    } else {
+      // No size selected: check if this color has ANY variant with stock > 0
+      return variants.some(v => v.color === col && v.stock > 0);
+    }
+  };
+
   // Pre-initialize selectors (only auto-select if there is exactly 1 option, otherwise start unselected)
   const [selectedSize, setSelectedSize] = useState(() => {
     if (is3D) return sizes.includes("PLA") ? "PLA" : (sizes[0] || "");
@@ -202,71 +232,71 @@ export default function ProductDetails({
   let dynamicPrice = product.price;
   let matchedVariant: any = null;
 
-  if (hasVariants && selectedSize) {
-    const exactMatch = selectedColor 
-      ? variants.find(v => v.size === selectedSize && v.color === selectedColor)
-      : null;
-    const sizeMatch = variants.find(v => v.size === selectedSize);
-    matchedVariant = exactMatch || sizeMatch;
-    
-    if (matchedVariant) {
-      if (selectedColor && exactMatch) {
-        currentStock = matchedVariant.stock;
-        currentStockPinamar = matchedVariant.stockPinamar !== undefined ? matchedVariant.stockPinamar : matchedVariant.stock;
-        currentStockMontevideo = matchedVariant.stockMontevideo !== undefined ? matchedVariant.stockMontevideo : 0;
+  if (hasVariants) {
+    if (selectedSize && selectedColor) {
+      // Both size and color selected: exact match only
+      const exactMatch = variants.find(v => v.size === selectedSize && v.color === selectedColor);
+      if (exactMatch) {
+        currentStock = exactMatch.stock;
+        currentStockPinamar = exactMatch.stockPinamar !== undefined ? exactMatch.stockPinamar : exactMatch.stock;
+        currentStockMontevideo = exactMatch.stockMontevideo !== undefined ? exactMatch.stockMontevideo : 0;
+        dynamicPrice = typeof exactMatch.price === "number" && exactMatch.price > 0
+          ? exactMatch.price
+          : product.price + (exactMatch.priceDelta || 0);
+        matchedVariant = exactMatch;
       } else {
-        const matchingVars = variants.filter(v => v.size === selectedSize);
+        currentStock = 0;
+        currentStockPinamar = 0;
+        currentStockMontevideo = 0;
+        dynamicPrice = product.price;
+        matchedVariant = null;
+      }
+    } else if (selectedSize) {
+      // Only size selected: sum stock of all colors of this size
+      const matchingVars = variants.filter(v => v.size === selectedSize);
+      if (matchingVars.length > 0) {
         currentStock = matchingVars.reduce((sum, v) => sum + v.stock, 0);
         currentStockPinamar = matchingVars.reduce((sum, v) => sum + (v.stockPinamar !== undefined ? v.stockPinamar : v.stock), 0);
         currentStockMontevideo = matchingVars.reduce((sum, v) => sum + (v.stockMontevideo !== undefined ? v.stockMontevideo : 0), 0);
-      }
-      dynamicPrice = typeof matchedVariant.price === "number" && matchedVariant.price > 0
-        ? matchedVariant.price
-        : product.price + (matchedVariant.priceDelta || 0);
-    } else {
-      currentStock = 0;
-      currentStockPinamar = 0;
-      currentStockMontevideo = 0;
-    }
-  } else if (!is3D && hasVariants && selectedSize && selectedColor) {
-    matchedVariant = variants.find(v => v.size === selectedSize && v.color === selectedColor);
-    if (matchedVariant) {
-      currentStock = matchedVariant.stock;
-      currentStockPinamar = matchedVariant.stockPinamar !== undefined ? matchedVariant.stockPinamar : matchedVariant.stock;
-      currentStockMontevideo = matchedVariant.stockMontevideo !== undefined ? matchedVariant.stockMontevideo : 0;
-      dynamicPrice = typeof matchedVariant.price === "number" && matchedVariant.price > 0
-        ? matchedVariant.price
-        : product.price + (matchedVariant.priceDelta || 0);
-    } else {
-      currentStock = 0;
-      currentStockPinamar = 0;
-      currentStockMontevideo = 0;
-    }
-  } else if (hasVariants && selectedColor) {
-    const exactMatch = selectedSize 
-      ? variants.find(v => v.size === selectedSize && v.color === selectedColor)
-      : null;
-    const colorMatch = variants.find(v => v.color === selectedColor);
-    matchedVariant = exactMatch || colorMatch;
-    
-    if (matchedVariant) {
-      if (selectedSize && exactMatch) {
-        currentStock = matchedVariant.stock;
-        currentStockPinamar = matchedVariant.stockPinamar !== undefined ? matchedVariant.stockPinamar : matchedVariant.stock;
-        currentStockMontevideo = matchedVariant.stockMontevideo !== undefined ? matchedVariant.stockMontevideo : 0;
+        // Use price of first matching variant as representative dynamic price
+        const representative = matchingVars[0];
+        dynamicPrice = typeof representative.price === "number" && representative.price > 0
+          ? representative.price
+          : product.price + (representative.priceDelta || 0);
+        matchedVariant = representative;
       } else {
-        const matchingVars = variants.filter(v => v.color === selectedColor);
+        currentStock = 0;
+        currentStockPinamar = 0;
+        currentStockMontevideo = 0;
+        dynamicPrice = product.price;
+        matchedVariant = null;
+      }
+    } else if (selectedColor) {
+      // Only color selected: sum stock of all sizes of this color
+      const matchingVars = variants.filter(v => v.color === selectedColor);
+      if (matchingVars.length > 0) {
         currentStock = matchingVars.reduce((sum, v) => sum + v.stock, 0);
         currentStockPinamar = matchingVars.reduce((sum, v) => sum + (v.stockPinamar !== undefined ? v.stockPinamar : v.stock), 0);
         currentStockMontevideo = matchingVars.reduce((sum, v) => sum + (v.stockMontevideo !== undefined ? v.stockMontevideo : 0), 0);
+        const representative = matchingVars[0];
+        dynamicPrice = typeof representative.price === "number" && representative.price > 0
+          ? representative.price
+          : product.price + (representative.priceDelta || 0);
+        matchedVariant = representative;
+      } else {
+        currentStock = 0;
+        currentStockPinamar = 0;
+        currentStockMontevideo = 0;
+        dynamicPrice = product.price;
+        matchedVariant = null;
       }
-      dynamicPrice = typeof matchedVariant.price === "number" && matchedVariant.price > 0
-        ? matchedVariant.price
-        : product.price + (matchedVariant.priceDelta || 0);
     } else {
-      currentStock = 0;
-      currentStockPinamar = 0;
-      currentStockMontevideo = 0;
+      // Neither size nor color selected yet: sum all variants stock
+      currentStock = variants.reduce((sum, v) => sum + v.stock, 0);
+      currentStockPinamar = variants.reduce((sum, v) => sum + (v.stockPinamar !== undefined ? v.stockPinamar : v.stock), 0);
+      currentStockMontevideo = variants.reduce((sum, v) => sum + (v.stockMontevideo !== undefined ? v.stockMontevideo : 0), 0);
+      dynamicPrice = product.price;
+      matchedVariant = null;
     }
   }
 
@@ -972,24 +1002,30 @@ Me gustaría coordinar stock, fabricación y envío.`;
                   )}
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {sizes.map((sz) => (
-                    <button
-                      key={sz}
-                      type="button"
-                      onClick={() => {
-                        setSelectedSize(sz);
-                      }}
-                      className={`text-xs px-4 py-1.5 rounded-full border transition-all duration-200 font-bold tracking-wide cursor-pointer select-none ${
-                        selectedSize === sz
-                          ? "bg-[#D4A55A] border-transparent text-[#050B1A] shadow-sm shadow-[#D4A55A]/20 scale-[1.02]"
-                          : isThemeDark
-                          ? "border-zinc-800 bg-zinc-900 text-zinc-300 hover:border-zinc-700 hover:bg-zinc-850"
-                          : "border-gray-200 bg-white text-zinc-650 hover:border-gray-300 hover:bg-gray-50"
-                      }`}
-                    >
-                      {sz}
-                    </button>
-                  ))}
+                  {sizes.map((sz) => {
+                    const inStock = isSizeInStock(sz);
+                    return (
+                      <button
+                        key={sz}
+                        type="button"
+                        disabled={!inStock}
+                        onClick={() => {
+                          setSelectedSize(selectedSize === sz ? "" : sz);
+                        }}
+                        className={`text-xs px-4 py-1.5 rounded-full border transition-all duration-200 font-bold tracking-wide select-none ${
+                          selectedSize === sz
+                            ? "bg-[#D4A55A] border-transparent text-[#050B1A] shadow-sm shadow-[#D4A55A]/20 scale-[1.02] cursor-pointer"
+                            : !inStock
+                            ? "opacity-25 cursor-not-allowed bg-zinc-900/10 dark:bg-zinc-950/20 text-zinc-500 line-through decoration-zinc-650 border-zinc-800"
+                            : isThemeDark
+                            ? "border-zinc-800 bg-zinc-900 text-zinc-300 hover:border-[#D4A55A]/50 hover:text-white cursor-pointer hover:scale-105"
+                            : "border-gray-200 bg-white text-zinc-650 hover:border-[#D4A55A]/50 hover:text-zinc-900 cursor-pointer hover:scale-105"
+                        }`}
+                      >
+                        {sz}
+                      </button>
+                    );
+                  })}
                 </div>
                 {is3D && selectedSize && (() => {
                   const mInfo = PRINT_MATERIALS.find(m => m.id === selectedSize);
@@ -1018,20 +1054,24 @@ Me gustaría coordinar stock, fabricación y envío.`;
                 <div className="flex flex-wrap gap-2">
                   {colors.map((col) => {
                     const isAc = selectedColor === col;
+                    const inStock = isColorInStock(col);
                     return (
                       <button
                         key={col}
                         type="button"
+                        disabled={!inStock}
                         onClick={() => {
-                          setSelectedColor(col);
+                          setSelectedColor(selectedColor === col ? "" : col);
                           setQuantity(1); // reset quantity safely
                         }}
-                        className={`text-xs px-4 py-1.5 rounded-full border transition-all duration-200 font-bold tracking-wide cursor-pointer select-none ${
+                        className={`text-xs px-4 py-1.5 rounded-full border transition-all duration-200 font-bold tracking-wide select-none ${
                           isAc
-                            ? "bg-[#D4A55A] border-transparent text-[#050B1A] shadow-sm shadow-[#D4A55A]/20 scale-[1.02]"
+                            ? "bg-[#D4A55A] border-transparent text-[#050B1A] shadow-sm shadow-[#D4A55A]/20 scale-[1.02] cursor-pointer"
+                            : !inStock
+                            ? "opacity-25 cursor-not-allowed bg-zinc-900/10 dark:bg-zinc-950/20 text-zinc-500 line-through decoration-zinc-650 border-zinc-800"
                             : isThemeDark
-                            ? "border-zinc-800 bg-zinc-900 text-zinc-300 hover:border-zinc-700 hover:bg-zinc-850"
-                            : "border-gray-200 bg-white text-zinc-650 hover:border-gray-300 hover:bg-gray-50"
+                            ? "border-zinc-800 bg-zinc-900 text-zinc-300 hover:border-[#D4A55A]/50 hover:text-white cursor-pointer hover:scale-105"
+                            : "border-gray-200 bg-white text-zinc-650 hover:border-[#D4A55A]/50 hover:text-zinc-900 cursor-pointer hover:scale-105"
                         }`}
                       >
                         {col}

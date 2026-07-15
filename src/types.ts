@@ -55,6 +55,7 @@ export interface Product {
   comisionML?: number;
   precioVentaML?: number;
   precioWeb?: number;
+  calcWebPriceFromML?: boolean;
   descuentoPorcentaje?: number;
   stockPinamar?: number;
   stockMontevideo?: number;
