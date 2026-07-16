@@ -1468,12 +1468,14 @@ async function getDbState(): Promise<ShopState> {
     }));
 
     // 4. Fetch coupons
-    const coupRes = await pool.query("SELECT code, discount_percent, expiration_date, active FROM coupons;");
+    const coupRes = await pool.query("SELECT code, discount_percent, expiration_date, active, max_uses, uses_count FROM coupons;");
     const coupons = coupRes.rows.map(row => ({
       code: row.code,
       discount_percent: Number(row.discount_percent),
       expiration_date: row.expiration_date ? new Date(row.expiration_date).toISOString() : undefined,
-      active: row.active !== false
+      active: row.active !== false,
+      max_uses: row.max_uses !== null && row.max_uses !== undefined ? Number(row.max_uses) : undefined,
+      uses_count: row.uses_count !== null && row.uses_count !== undefined ? Number(row.uses_count) : 0
     }));
 
     // 5. Fetch admin credentials
@@ -1855,9 +1857,11 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
     for (const coupon of state.coupons || []) {
       const activeVal = coupon.active !== false;
       const expDate = coupon.expiration_date ? new Date(coupon.expiration_date) : null;
+      const maxUses = coupon.max_uses !== undefined && coupon.max_uses !== null ? Number(coupon.max_uses) : null;
+      const usesCount = coupon.uses_count !== undefined && coupon.uses_count !== null ? Number(coupon.uses_count) : 0;
       await pool.query(
-        "INSERT INTO coupons (code, discount_percent, expiration_date, active) VALUES ($1, $2, $3, $4) ON CONFLICT (code) DO UPDATE SET discount_percent = EXCLUDED.discount_percent, expiration_date = EXCLUDED.expiration_date, active = EXCLUDED.active;",
-        [coupon.code, coupon.discount_percent, expDate, activeVal]
+        "INSERT INTO coupons (code, discount_percent, expiration_date, active, max_uses, uses_count) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (code) DO UPDATE SET discount_percent = EXCLUDED.discount_percent, expiration_date = EXCLUDED.expiration_date, active = EXCLUDED.active, max_uses = EXCLUDED.max_uses, uses_count = EXCLUDED.uses_count;",
+        [coupon.code, coupon.discount_percent, expDate, activeVal, maxUses, usesCount]
       );
     }
 
@@ -2292,8 +2296,16 @@ async function initPostgresStore(): Promise<ShopState | null> {
         code VARCHAR(100) PRIMARY KEY,
         discount_percent INTEGER NOT NULL,
         expiration_date TIMESTAMPTZ,
-        active BOOLEAN DEFAULT true
+        active BOOLEAN DEFAULT true,
+        max_uses INTEGER,
+        uses_count INTEGER DEFAULT 0
       );
+    `);
+    await pool.query(`
+      ALTER TABLE coupons ADD COLUMN IF NOT EXISTS max_uses INTEGER;
+    `);
+    await pool.query(`
+      ALTER TABLE coupons ADD COLUMN IF NOT EXISTS uses_count INTEGER DEFAULT 0;
     `);
 
     // 7. Create admin credentials
@@ -5490,7 +5502,11 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         if (dbCoupon) {
           const now = new Date();
           const exp = dbCoupon.expiration_date ? new Date(dbCoupon.expiration_date) : null;
-          if (!exp || exp > now) {
+          const isExpiredDate = exp && exp < now;
+          const isExceededUses = dbCoupon.max_uses !== undefined && dbCoupon.max_uses !== null && 
+                                 dbCoupon.uses_count !== undefined && dbCoupon.uses_count !== null && 
+                                 dbCoupon.uses_count >= dbCoupon.max_uses;
+          if (!isExpiredDate && !isExceededUses) {
             serverDiscountAmount = Math.round((serverSubtotal * Number(dbCoupon.discount_percent)) / 100);
             validCouponCodeToSave = dbCoupon.code; // Use matching case-sensitive code from the coupons table
           }
@@ -5597,6 +5613,10 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
             await deductStockDb(client, orderId);
           }
 
+          if (validCouponCodeToSave) {
+            await client.query("UPDATE coupons SET uses_count = COALESCE(uses_count, 0) + 1 WHERE code = $1;", [validCouponCodeToSave]);
+          }
+
           await client.query("COMMIT;");
         } catch (txErr: any) {
           await client.query("ROLLBACK;");
@@ -5670,6 +5690,17 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         // Deduct stock in-memory if status is pago_aprobado
         if (status === "pago_aprobado" && !bypassStockDeduction) {
           deductStockMemory(verifiedItems);
+        }
+
+        if (validCouponCodeToSave) {
+          if (currentStoreState.coupons) {
+            currentStoreState.coupons = currentStoreState.coupons.map((c: any) => {
+              if (c.code.toUpperCase() === String(validCouponCodeToSave).toUpperCase()) {
+                return { ...c, uses_count: (c.uses_count || 0) + 1 };
+              }
+              return c;
+            });
+          }
         }
 
         if (!currentStoreState.orders) {
@@ -5792,7 +5823,11 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       if (dbCoupon) {
         const now = new Date();
         const exp = dbCoupon.expiration_date ? new Date(dbCoupon.expiration_date) : null;
-        if (!exp || exp > now) {
+        const isExpiredDate = exp && exp < now;
+        const isExceededUses = dbCoupon.max_uses !== undefined && dbCoupon.max_uses !== null && 
+                               dbCoupon.uses_count !== undefined && dbCoupon.uses_count !== null && 
+                               dbCoupon.uses_count >= dbCoupon.max_uses;
+        if (!isExpiredDate && !isExceededUses) {
           serverDiscountAmount = Math.round((serverSubtotal * Number(dbCoupon.discount_percent)) / 100);
           validCouponCodeToSave = dbCoupon.code;
         }

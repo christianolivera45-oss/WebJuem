@@ -1437,19 +1437,38 @@ export default function Checkout({
 
     if (matchedCoupon) {
       let isExpired = false;
+      let isExceededUses = false;
       if (matchedCoupon.expiration_date) {
         const expiration = new Date(matchedCoupon.expiration_date);
         if (expiration.getTime() < Date.now()) {
           isExpired = true;
         }
       }
+      if (matchedCoupon.max_uses !== undefined && matchedCoupon.max_uses !== null && 
+          matchedCoupon.uses_count !== undefined && matchedCoupon.uses_count !== null) {
+        if (matchedCoupon.uses_count >= matchedCoupon.max_uses) {
+          isExceededUses = true;
+        }
+      }
 
-      if (!isExpired) {
-        setAppliedDiscount(matchedCoupon.discount_percent);
-        setPromoStatus("success");
-        setErrorMessage("");
+      if (isExceededUses) {
+        setAppliedDiscount(0);
+        setPromoStatus("invalid");
+        setErrorMessage("Este cupón ha alcanzado su límite de usos permitido.");
         return;
       }
+
+      if (isExpired) {
+        setAppliedDiscount(0);
+        setPromoStatus("invalid");
+        setErrorMessage("Este cupón ha expirado/vencido.");
+        return;
+      }
+
+      setAppliedDiscount(matchedCoupon.discount_percent);
+      setPromoStatus("success");
+      setErrorMessage("");
+      return;
     }
 
     setAppliedDiscount(0);

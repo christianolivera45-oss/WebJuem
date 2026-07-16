@@ -984,6 +984,7 @@ export default function App() {
   const [newCouponCode, setNewCouponCode] = useState("");
   const [newCouponDiscount, setNewCouponDiscount] = useState<number>(10);
   const [newCouponExpiration, setNewCouponExpiration] = useState("");
+  const [newCouponMaxUses, setNewCouponMaxUses] = useState("");
 
   const [newSubcategoryName, setNewSubcategoryName] = useState("");
   const [newSubcategoryParent, setNewSubcategoryParent] = useState("");
@@ -3337,11 +3338,15 @@ export default function App() {
       return;
     }
 
+    const maxUsesInt = newCouponMaxUses ? parseInt(newCouponMaxUses, 10) : undefined;
+
     const newC = {
       code,
       discount_percent: Number(newCouponDiscount),
       expiration_date: newCouponExpiration ? new Date(newCouponExpiration).toISOString() : undefined,
-      active: true
+      active: true,
+      max_uses: maxUsesInt && !isNaN(maxUsesInt) ? maxUsesInt : undefined,
+      uses_count: 0
     };
 
     const updatedCoupons = [...(store.coupons || []), newC];
@@ -3350,6 +3355,7 @@ export default function App() {
     setNewCouponCode("");
     setNewCouponDiscount(10);
     setNewCouponExpiration("");
+    setNewCouponMaxUses("");
     showAdminToast("¡Cupón agregado con éxito!", "success");
   };
 
@@ -12384,7 +12390,7 @@ export default function App() {
                                 </div>
                               </div>
 
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                                 <div className="space-y-1.5">
                                   <label className="block text-[9.5px] font-black text-zinc-400 uppercase tracking-widest">Fecha de Vencimiento (Opcional)</label>
                                   <input
@@ -12392,6 +12398,18 @@ export default function App() {
                                     value={newCouponExpiration}
                                     onChange={(e) => setNewCouponExpiration(e.target.value)}
                                     className="w-full px-3 py-2 bg-[#050B1A]/80 border border-zinc-800 focus:border-[#D4A55A] rounded-xl text-xs outline-none text-white cursor-pointer font-bold"
+                                  />
+                                </div>
+
+                                <div className="space-y-1.5">
+                                  <label className="block text-[9.5px] font-black text-zinc-400 uppercase tracking-widest">Límite de usos (Ej: 10) (Opcional)</label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    placeholder="Ilimitado"
+                                    value={newCouponMaxUses}
+                                    onChange={(e) => setNewCouponMaxUses(e.target.value)}
+                                    className="w-full px-3 py-2 bg-[#050B1A]/80 border border-zinc-800 focus:border-[#D4A55A] rounded-xl text-xs outline-none text-white font-mono font-bold"
                                   />
                                 </div>
 
@@ -12429,7 +12447,8 @@ export default function App() {
                             ) : (
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 {store.coupons.map((c) => {
-                                  const isExpired = c.expiration_date ? new Date(c.expiration_date).getTime() < Date.now() : false;
+                                  const isExceededUses = c.max_uses !== undefined && c.max_uses !== null && c.uses_count !== undefined && c.uses_count !== null && c.uses_count >= c.max_uses;
+                                  const isExpired = (c.expiration_date ? new Date(c.expiration_date).getTime() < Date.now() : false) || isExceededUses;
                                   return (
                                     <div 
                                       key={c.code} 
@@ -12451,7 +12470,7 @@ export default function App() {
                                             </span>
                                             {isExpired ? (
                                               <span className="text-[8px] bg-red-500/10 text-red-400 font-extrabold uppercase px-1.5 py-0.5 rounded border border-red-500/10 shrink-0">
-                                                Expirado
+                                                {isExceededUses ? "Agotado" : "Expirado"}
                                               </span>
                                             ) : (
                                               <span className="text-[8px] bg-emerald-500/10 text-emerald-400 font-extrabold uppercase px-1.5 py-0.5 rounded border border-emerald-500/15 shrink-0 animate-pulse">
@@ -12468,6 +12487,17 @@ export default function App() {
                                               </span>
                                             ) : (
                                               <span className="text-[#E6BF76] font-bold">Sin vencimiento</span>
+                                            )}
+                                          </div>
+
+                                          <div className="text-[10px] text-zinc-400 mt-1 flex items-center gap-1 font-medium">
+                                            <Sparkles className="h-3 w-3 text-[#D4A55A]" />
+                                            {c.max_uses ? (
+                                              <span className={isExceededUses ? "text-red-400 font-bold" : "text-emerald-400 font-bold"}>
+                                                Usos: {c.uses_count || 0} / {c.max_uses} {isExceededUses && "(Agotado)"}
+                                              </span>
+                                            ) : (
+                                              <span className="text-zinc-500 font-semibold">Usos ilimitados</span>
                                             )}
                                           </div>
                                         </div>

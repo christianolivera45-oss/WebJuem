@@ -214,6 +214,8 @@ export interface Coupon {
   discount_percent: number;
   expiration_date?: string; // ISO string on client side
   active?: boolean;
+  max_uses?: number;
+  uses_count?: number;
 }
 
 export interface AdminCredentials {
