@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { X, ShoppingCart, MessageSquare, ShieldCheck, Truck, RefreshCw, ChevronLeft, ChevronRight, AlertCircle, Share2, Maximize2, Cpu, Wrench, Clock, Calendar, Home, Ruler, Palette, Sun } from "lucide-react";
+import { createPortal } from "react-dom";
+import { X, ShoppingCart, MessageSquare, ShieldCheck, Truck, RefreshCw, ChevronLeft, ChevronRight, AlertCircle, Share2, Maximize2, Cpu, Wrench, Clock, Calendar, Home, Ruler, Palette, Sun, MapPin, Package, CheckCircle2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Product, SiteSettings, is3DProduct } from "../types";
 import ProductCard from "./ProductCard";
@@ -59,9 +60,49 @@ export default function ProductDetails({
     solvedCategoryName.includes("remera") || 
     solvedCategoryName.includes("panta") ||
     solvedCategoryName.includes("clothing") ||
+    solvedCategoryName.includes("pijama") ||
+    solvedCategoryName.includes("poncho") ||
+    solvedCategoryName.includes("manta") ||
+    solvedCategoryName.includes("kigurumi") ||
+    solvedCategoryName.includes("niño") ||
+    solvedCategoryName.includes("niña") ||
+    solvedCategoryName.includes("infantil") ||
     solvedCategoryName.includes("indumentaria");
 
-  const isClothing = !is3D && isClothingCategory;
+  const nameLower = (product.name || "").toLowerCase();
+  const isClothingName = nameLower.includes("buzo") ||
+    nameLower.includes("poncho") ||
+    nameLower.includes("pijama") ||
+    nameLower.includes("remera") ||
+    nameLower.includes("pantalon") ||
+    nameLower.includes("pantalón") ||
+    nameLower.includes("campera") ||
+    nameLower.includes("abrigo") ||
+    nameLower.includes("calza") ||
+    nameLower.includes("vestido") ||
+    nameLower.includes("jean") ||
+    nameLower.includes("hoodie") ||
+    nameLower.includes("short") ||
+    nameLower.includes("manta") ||
+    nameLower.includes("saco");
+
+  const isClothing = !is3D && (isClothingCategory || isClothingName);
+  
+  const isShoe = !is3D && (
+    nameLower.includes("zapato") ||
+    nameLower.includes("zapatilla") ||
+    nameLower.includes("champio") ||
+    nameLower.includes("champión") ||
+    nameLower.includes("bota") ||
+    nameLower.includes("pantufla") ||
+    nameLower.includes("sandalia") ||
+    nameLower.includes("calzado") ||
+    solvedCategoryName.includes("zapato") ||
+    solvedCategoryName.includes("zapatilla") ||
+    solvedCategoryName.includes("calzado")
+  );
+
+  const isSizeChartEligible = isClothing || isShoe;
   const isElectronics = !is3D && product.category.toLowerCase() === "artículos electrónicos";
 
   // Dynamic variants logic
@@ -151,15 +192,85 @@ export default function ProductDetails({
     setErrorMessage("");
   }, [selectedSize, selectedColor, product.id]);
 
-  // --- SIZE GUIDE / CHART INTEGRATION STATE ---
+  // --- SIZE GUIDE / CHART INTEGRATION STATE & PERSISTENCE ---
   const [showSizeChart, setShowSizeChart] = useState(false);
-  const [userHeight, setUserHeight] = useState("");
-  const [userWeight, setUserWeight] = useState("");
-  const [userShoeSize, setUserShoeSize] = useState("");
+  
+  const [userHeight, setUserHeight] = useState(() => {
+    try {
+      return localStorage.getItem("juem_user_height") || "";
+    } catch {
+      return "";
+    }
+  });
+
+  const [userWeight, setUserWeight] = useState(() => {
+    try {
+      return localStorage.getItem("juem_user_weight") || "";
+    } catch {
+      return "";
+    }
+  });
+
+  const [userShoeSize, setUserShoeSize] = useState(() => {
+    try {
+      return localStorage.getItem("juem_user_shoe_size") || "";
+    } catch {
+      return "";
+    }
+  });
+
+  // Save changes to localStorage for future views
+  useEffect(() => {
+    try {
+      localStorage.setItem("juem_user_height", userHeight);
+    } catch {}
+  }, [userHeight]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("juem_user_weight", userWeight);
+    } catch {}
+  }, [userWeight]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("juem_user_shoe_size", userShoeSize);
+    } catch {}
+  }, [userShoeSize]);
+
+  // Robustly parse sizeChartData to prevent JSON string vs object errors
+  const parsedSizeChartData = useMemo(() => {
+    if (!product.sizeChartData) return null;
+    if (typeof product.sizeChartData === "object") return product.sizeChartData;
+    try {
+      if (typeof product.sizeChartData === "string") {
+        return JSON.parse(product.sizeChartData);
+      }
+    } catch (e) {
+      console.error("Error parsing sizeChartData", e);
+    }
+    return null;
+  }, [product.sizeChartData]);
+
+  // Detect if the product is for kids / babies / infant
+  const isKidsProduct = useMemo(() => {
+    const nameLower = (product.name || "").toLowerCase();
+    const catLower = (product.category || "").toLowerCase();
+    return nameLower.includes("infantil") || 
+           nameLower.includes("niño") || 
+           nameLower.includes("niña") || 
+           nameLower.includes("kids") || 
+           nameLower.includes("bebe") || 
+           nameLower.includes("bebé") ||
+           catLower.includes("infantil") ||
+           catLower.includes("niño") ||
+           catLower.includes("niña") ||
+           catLower.includes("kids");
+  }, [product.name, product.category]);
   
   const defaultChartTab = useMemo(() => {
     const list: string[] = [];
-    const hasCustomChart = !!(product.sizeChartData && product.sizeChartData.columns && product.sizeChartData.rows && product.sizeChartData.rows.length > 0);
+    const hasCustomChart = !!(parsedSizeChartData && parsedSizeChartData.columns && parsedSizeChartData.rows && parsedSizeChartData.rows.length > 0);
     if (hasCustomChart) {
       list.push("articulo");
     }
@@ -176,10 +287,20 @@ export default function ProductDetails({
       list.push("recommender");
     }
 
-    if (list.length === 0) return "";
-
     const name = (product.name || "").toLowerCase();
     const cat = (product.category || "").toLowerCase();
+
+    if (list.length === 0) {
+      // Intelligent fallback list to prevent showing an empty modal
+      if (cat.includes("calzado") || cat.includes("zapato") || cat.includes("zapatilla") || name.includes("calzado") || name.includes("zapati") || (name.includes("buzo") === false && (name.includes("zapatos") || name.includes("champio") || name.includes("bota") || name.includes("pantu")))) {
+        list.push("calzado");
+      } else if (cat.includes("pantalon") || cat.includes("inferior") || cat.includes("shorts") || name.includes("pantalon") || name.includes("jean") || name.includes("jogger") || name.includes("short") || name.includes("calza")) {
+        list.push("inferior");
+      } else {
+        list.push("superior");
+        list.push("recommender");
+      }
+    }
     
     let preferred = "superior";
     if (cat.includes("calzado") || cat.includes("zapato") || cat.includes("zapatilla") || name.includes("calzado") || name.includes("zapati") || name.includes("buzo") === false && (name.includes("zapatos") || name.includes("champio") || name.includes("bota") || name.includes("pantu"))) {
@@ -194,7 +315,7 @@ export default function ProductDetails({
       return preferred;
     }
     return list[0];
-  }, [product.name, product.category, product.sizeChartData, product.sizeChartShowSuperior, product.sizeChartShowInferior, product.sizeChartShowCalzado, product.sizeChartShowRecommender]);
+  }, [product.name, product.category, parsedSizeChartData, product.sizeChartShowSuperior, product.sizeChartShowInferior, product.sizeChartShowCalzado, product.sizeChartShowRecommender]);
 
   const [activeChartTab, setActiveChartTab] = useState(defaultChartTab);
 
@@ -208,22 +329,60 @@ export default function ProductDetails({
     const w = parseFloat(userWeight);
     if (!h || !w || h <= 0 || w <= 0) return null;
     
-    if (w < 55) {
-      if (h < 165) return "S";
-      return "M";
-    } else if (w >= 55 && w < 68) {
-      if (h < 172) return "M";
-      return "L";
-    } else if (w >= 68 && w < 82) {
-      if (h < 180) return "L";
-      return "XL";
-    } else if (w >= 82 && w < 95) {
-      if (h < 188) return "XL";
-      return "XXL";
+    if (isKidsProduct) {
+      // Kids' sizing recommendation logic based on child height (primary factor for kids clothing)
+      if (h < 90) return "Talle 2 (1-2 años)";
+      if (h < 100) return "Talle 4 (2-3 años)";
+      if (h < 112) return "Talle 6 (4-6 años)";
+      if (h < 122) return "Talle 8 (6-8 años)";
+      if (h < 132) return "Talle 10 (8-10 años)";
+      if (h < 142) return "Talle 12 (10-12 años)";
+      if (h < 152) return "Talle 14 (12-14 años)";
+      return "Talle 16 (14-16 años)";
     } else {
-      return "XXL/3XL";
+      // Adult sizing recommendation logic
+      if (w < 55) {
+        if (h < 165) return "S";
+        return "M";
+      } else if (w >= 55 && w < 68) {
+        if (h < 172) return "M";
+        return "L";
+      } else if (w >= 68 && w < 82) {
+        if (h < 180) return "L";
+        return "XL";
+      } else if (w >= 82 && w < 95) {
+        if (h < 188) return "XL";
+        return "XXL";
+      } else {
+        return "XXL/3XL";
+      }
     }
-  }, [userHeight, userWeight]);
+  }, [userHeight, userWeight, isKidsProduct]);
+
+  // Try to match the recommended size with available size options to allow quick selection
+  const recommenderMatchResult = useMemo(() => {
+    if (!recommendedSize) return null;
+    // Extract size label like "6" or "M" to search in product sizes
+    let cleanRec = recommendedSize.toUpperCase().trim();
+    if (cleanRec.startsWith("TALLE ")) {
+      cleanRec = cleanRec.replace("TALLE ", "").split(" ")[0].trim(); // gets "6" from "Talle 6 (4-6 años)"
+    }
+    
+    const sizeOptions = sizes || [];
+    // Try exact match
+    const exactMatch = sizeOptions.find(s => s.trim().toUpperCase() === cleanRec);
+    if (exactMatch) {
+      return { size: exactMatch, available: true };
+    }
+    
+    // Try substring matching
+    const partialMatch = sizeOptions.find(s => s.trim().toUpperCase().includes(cleanRec) || cleanRec.includes(s.trim().toUpperCase()));
+    if (partialMatch) {
+      return { size: partialMatch, available: true };
+    }
+    
+    return { size: recommendedSize, available: false };
+  }, [recommendedSize, sizes]);
 
   // Dynamic stock calculations based on Cartesian variant mapping
   let currentStock = product.stock;
@@ -990,7 +1149,7 @@ Me gustaría coordinar stock, fabricación y envío.`;
                       </span>
                     )}
                   </h4>
-                  {(product.sizeChartEnabled === undefined ? isClothing : product.sizeChartEnabled) && (
+                  {(product.sizeChartEnabled === undefined ? isSizeChartEligible : product.sizeChartEnabled) && (
                     <button
                       type="button"
                       onClick={() => setShowSizeChart(true)}
@@ -1084,6 +1243,159 @@ Me gustaría coordinar stock, fabricación y envío.`;
 
           </div>
 
+          </div>
+
+          {/* --- VISUAL PRO: INVENTARIO Y ENVÍOS --- */}
+          <div className="mt-6 border-t border-zinc-200/10 dark:border-zinc-800/40 pt-5 space-y-4">
+            <div className="flex items-center justify-between mb-1">
+              <h4 className={`text-[11px] font-bold tracking-[0.18em] uppercase ${
+                isThemeDark ? "text-[#E6BF76]" : "text-[#D4A55A]"
+              }`}>
+                Logística & Disponibilidad Pro
+              </h4>
+              <span className="text-[9px] font-mono font-bold bg-[#D4A55A]/10 text-[#E6BF76] px-2 py-0.5 rounded-full uppercase tracking-wider">
+                Verificado en Tiempo Real
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              {/* Card 1: Inventario por Sucursal */}
+              <div className={`p-4 rounded-2xl border transition-all duration-300 hover:border-[#D4A55A]/35 ${
+                isThemeDark 
+                  ? "bg-[#050B1A]/85 border-zinc-800/65 text-zinc-300" 
+                  : "bg-slate-50/70 border-slate-200 text-zinc-700"
+              }`}>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="p-1.5 rounded-lg bg-[#D4A55A]/10 text-[#E6BF76]">
+                    <Package className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h5 className={`text-xs font-extrabold tracking-wide ${
+                      isThemeDark ? "text-[#F4EAD7]" : "text-zinc-900"
+                    }`}>
+                      STOCK EN SUCURSALES
+                    </h5>
+                    <p className="text-[9px] text-zinc-500 font-medium">Control de stock por depósito</p>
+                  </div>
+                </div>
+
+                <div className="space-y-2.5 text-xs">
+                  {/* Pinamar / Costa Branch */}
+                  <div className="flex items-start justify-between gap-2 pb-2.5 border-b border-zinc-200/10 dark:border-zinc-800/20">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                        <span className={`font-semibold text-[11px] truncate ${isThemeDark ? "text-zinc-200" : "text-zinc-800"}`}>
+                          Sucursal Costa / Pinamar
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-zinc-450 dark:text-zinc-400 mt-0.5 ml-5">
+                        {currentStockPinamar > 0 
+                          ? "Entrega o retiro inmediato" 
+                          : "Bajo demanda (24-48 hs)"}
+                      </p>
+                    </div>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full self-start shrink-0 ${
+                      currentStockPinamar > 0
+                        ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/25"
+                        : "bg-amber-500/10 text-amber-400 border border-amber-500/25"
+                    }`}>
+                      {currentStockPinamar > 0 ? `${currentStockPinamar} un.` : "A pedido"}
+                    </span>
+                  </div>
+
+                  {/* Montevideo Branch */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-[#5346ff] shrink-0" />
+                        <span className={`font-semibold text-[11px] truncate ${isThemeDark ? "text-zinc-200" : "text-zinc-800"}`}>
+                          Depósito Montevideo
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-zinc-450 dark:text-zinc-400 mt-0.5 ml-5">
+                        {currentStockMontevideo > 0 
+                          ? "Envío directo o retiro hoy" 
+                          : "Disponible para envío desde Costa"}
+                      </p>
+                    </div>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full self-start shrink-0 ${
+                      currentStockMontevideo > 0
+                        ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/25"
+                        : "bg-zinc-500/10 text-zinc-450 dark:text-zinc-400 border border-zinc-800/30"
+                    }`}>
+                      {currentStockMontevideo > 0 ? `${currentStockMontevideo} un.` : "Sin stock"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 2: Envíos & Tiempos */}
+              <div className={`p-4 rounded-2xl border transition-all duration-300 hover:border-[#D4A55A]/35 ${
+                isThemeDark 
+                  ? "bg-[#050B1A]/85 border-zinc-800/65 text-zinc-300" 
+                  : "bg-slate-50/70 border-slate-200 text-zinc-700"
+              }`}>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="p-1.5 rounded-lg bg-[#D4A55A]/10 text-[#E6BF76]">
+                    <Truck className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h5 className={`text-xs font-extrabold tracking-wide ${
+                      isThemeDark ? "text-[#F4EAD7]" : "text-zinc-900"
+                    }`}>
+                      ENVÍOS Y ENTREGAS
+                    </h5>
+                    <p className="text-[9px] text-zinc-500 font-medium">Zonas y velocidad de entrega</p>
+                  </div>
+                </div>
+
+                <div className="space-y-2.5 text-xs">
+                  {/* Montevideo & Costa Delivery */}
+                  <div className="pb-2.5 border-b border-zinc-200/10 dark:border-zinc-800/20">
+                    <div className="flex items-center justify-between">
+                      <span className={`font-semibold text-[11px] ${isThemeDark ? "text-zinc-200" : "text-zinc-800"}`}>
+                        Montevideo, Costa & Maldonado
+                      </span>
+                      <span className="text-[10px] font-bold text-amber-500 font-mono">24 - 48 hs</span>
+                    </div>
+                    <p className="text-[10px] text-zinc-450 dark:text-zinc-400 mt-0.5 leading-relaxed">
+                      Envíos por cadetería directa y retiros locales en Pinamar/Salinas.
+                    </p>
+                  </div>
+
+                  {/* Rest of the country */}
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className={`font-semibold text-[11px] ${isThemeDark ? "text-zinc-200" : "text-zinc-800"}`}>
+                        Envíos al Interior de Uruguay
+                      </span>
+                      <span className="text-[10px] font-bold text-[#E6BF76] font-mono">DAC / UES</span>
+                    </div>
+                    <p className="text-[10px] text-zinc-450 dark:text-zinc-400 mt-0.5 leading-relaxed">
+                      Despachamos de lunes a sábados a todo el país con código de rastreo.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Special Custom order alert / 3D detail */}
+            {(is3D || currentStock === 0) && (
+              <div className="p-3 rounded-xl border border-dashed border-[#D4A55A]/30 bg-[#D4A55A]/5 text-xs text-[#F4EAD7]/90 leading-normal flex items-start gap-2.5">
+                <CheckCircle2 className="w-4 h-4 text-[#E6BF76] shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-extrabold text-[#E6BF76] uppercase tracking-wider text-[10px]">
+                    {is3D ? "Fabricación personalizada activa" : "Opción de fabricación bajo demanda"}
+                  </span>
+                  <p className="text-[10px] text-zinc-400 mt-0.5">
+                    {is3D 
+                      ? "Este modelo es fabricado a medida en 3D utilizando polímeros de altísima calidad. El tiempo de producción es de solo 24-48 horas." 
+                      : "Si no hay stock del talle/color elegido, podemos fabricar tu artículo bajo demanda. Se coordina de forma inmediata por WhatsApp."}
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Premium call actions: Horizontal 3-column button grid */}
@@ -1285,26 +1597,27 @@ Me gustaría coordinar stock, fabricación y envío.`;
       </AnimatePresence>
 
       {/* --- REUSABLE INTERACTIVE SIZE GUIDE MODAL (TABLA DE TALLES) --- */}
-      <AnimatePresence>
-        {showSizeChart && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-            {/* Backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowSizeChart(false)}
-              className="absolute inset-0 bg-black/60 backdrop-blur-xs cursor-pointer"
-            />
+      {typeof document !== "undefined" && createPortal(
+        <AnimatePresence>
+          {showSizeChart && (
+            <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 sm:p-6">
+              {/* Backdrop with fade transition */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setShowSizeChart(false)}
+                className="absolute inset-0 bg-black/85 backdrop-blur-md cursor-pointer"
+              />
 
-            {/* Modal Card */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 15 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 15 }}
-              transition={{ duration: 0.22, ease: "easeOut" }}
-              className="w-full max-w-2xl rounded-3xl overflow-hidden shadow-2xl relative flex flex-col max-h-[85vh] border bg-[#0B1730] border-[#D4A55A]/20 text-[#F4EAD7]"
-            >
+              {/* Modal Card with spring zoom entrance */}
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                transition={{ type: "spring", duration: 0.3, bounce: 0.15 }}
+                className="relative w-full max-w-2xl rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh] border bg-[#0B1730] border-[#D4A55A]/20 text-[#F4EAD7] z-10"
+              >
               {/* Header */}
               <div className="p-5 sm:p-6 border-b flex items-start justify-between border-[#D4A55A]/15 bg-[#050B1A]">
                 <div>
@@ -1313,8 +1626,13 @@ Me gustaría coordinar stock, fabricación y envío.`;
                       <Ruler className="w-5 h-5" />
                     </div>
                     <h3 className="text-base sm:text-lg font-bold tracking-tight text-[#F4EAD7]">
-                      Guia y Tabla de Talles
+                      Guía y Tabla de Talles
                     </h3>
+                    {isKidsProduct && (
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse">
+                        ✨ Kids / Infantil
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs text-zinc-400">
                     Medidas corporales y referencias oficiales para tu compra en Ventas Juem.
@@ -1332,7 +1650,7 @@ Me gustaría coordinar stock, fabricación y envío.`;
               {/* Tabs selector */}
               <div className="flex border-b overflow-x-auto no-scrollbar scroll-smooth shrink-0 px-4 sm:px-6 border-[#D4A55A]/15 bg-[#050B1A]">
                 {(() => {
-                  const hasCustom = !!(product.sizeChartData && product.sizeChartData.columns && product.sizeChartData.rows && product.sizeChartData.rows.length > 0);
+                  const hasCustom = !!(parsedSizeChartData && parsedSizeChartData.columns && parsedSizeChartData.rows && parsedSizeChartData.rows.length > 0);
                   const list = [];
                   if (hasCustom) {
                     list.push({ id: "articulo", label: "📏 Medidas del Artículo" });
@@ -1349,6 +1667,21 @@ Me gustaría coordinar stock, fabricación y envío.`;
                   if (product.sizeChartShowRecommender !== false) {
                     list.push({ id: "recommender", label: "📏 Calculador Virtual" });
                   }
+
+                  if (list.length === 0) {
+                    // Intelligent fallback list to prevent showing an empty modal
+                    const name = (product.name || "").toLowerCase();
+                    const cat = (product.category || "").toLowerCase();
+                    if (cat.includes("calzado") || cat.includes("zapato") || cat.includes("zapatilla") || name.includes("calzado") || name.includes("zapati") || (name.includes("buzo") === false && (name.includes("zapatos") || name.includes("champio") || name.includes("bota") || name.includes("pantu")))) {
+                      list.push({ id: "calzado", label: "👟 Calzado" });
+                    } else if (cat.includes("pantalon") || cat.includes("inferior") || cat.includes("shorts") || name.includes("pantalon") || name.includes("jean") || name.includes("jogger") || name.includes("short") || name.includes("calza")) {
+                      list.push({ id: "inferior", label: "👖 Inferiores" });
+                    } else {
+                      list.push({ id: "superior", label: "👕 Superiores" });
+                      list.push({ id: "recommender", label: "📏 Calculador Virtual" });
+                    }
+                  }
+
                   return list.map((tb) => (
                     <button
                       key={tb.id}
@@ -1370,7 +1703,7 @@ Me gustaría coordinar stock, fabricación y envío.`;
               <div className="p-5 sm:p-6 overflow-y-auto max-h-[50vh] space-y-4">
                 
                 {/* 0. CUSTOM PRODUCT CHART TAB */}
-                {activeChartTab === "articulo" && product.sizeChartData && (
+                {activeChartTab === "articulo" && parsedSizeChartData && (
                   <div className="space-y-4 animate-fade-in text-left">
                     <p className={`text-xs leading-relaxed ${isThemeDark ? "text-zinc-300" : "text-zinc-650"}`}>
                       Estas son las medidas reales de este artículo para ayudarte a elegir tu talle de manera óptima:
@@ -1379,7 +1712,7 @@ Me gustaría coordinar stock, fabricación y envío.`;
                       <table className="w-full text-left border-collapse text-xs">
                         <thead>
                           <tr className={isThemeDark ? "bg-[#14121a] text-zinc-300" : "bg-slate-50 text-zinc-600"}>
-                            {(product.sizeChartData.columns || []).map((col) => (
+                            {(parsedSizeChartData.columns || []).map((col: string) => (
                               <th key={col} className="p-3 font-semibold border-b border-slate-150 dark:border-zinc-800 whitespace-nowrap">
                                 {col}
                               </th>
@@ -1387,10 +1720,10 @@ Me gustaría coordinar stock, fabricación y envío.`;
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[#D4A55A]/10">
-                          {(product.sizeChartData.rows || []).map((row, idx) => (
+                          {(parsedSizeChartData.rows || []).map((row: any, idx: number) => (
                             <tr key={idx} className="hover:bg-[#D4A55A]/5 even:bg-[#050B1A]/40">
-                              {(product.sizeChartData.columns || []).map((col) => {
-                                const isFirstCol = col === "Talle" || (product.sizeChartData?.columns?.[0] === col);
+                              {(parsedSizeChartData.columns || []).map((col: string) => {
+                                const isFirstCol = col === "Talle" || (parsedSizeChartData?.columns?.[0] === col);
                                 return (
                                   <td key={col} className={`p-3 ${isFirstCol ? "font-bold text-[#E6BF76] bg-[#050B1A]/20" : ""}`}>
                                     {row[col] || "-"}
@@ -1548,7 +1881,10 @@ Me gustaría coordinar stock, fabricación y envío.`;
                 {activeChartTab === "recommender" && (
                   <div className="space-y-4 animate-fade-in text-left">
                     <p className={`text-xs leading-relaxed ${isThemeDark ? "text-zinc-300" : "text-zinc-650"}`}>
-                      Ingresa tu estatura y peso aproximado. Nuestro motor inteligente estimará el talle que mejor se ajusta a tu contextura física para prendas superiores de corte clásico.
+                      {isKidsProduct 
+                        ? "Ingresa la estatura del niño o bebé. Nuestro motor estimará el talle recomendado para este producto infantil."
+                        : "Ingresa tu estatura y peso aproximado. Nuestro motor inteligente estimará el talle que mejor se ajusta a tu contextura física para prendas superiores de corte clásico."
+                      }
                     </p>
 
                     <div className={`p-5 rounded-2xl border flex flex-col md:flex-row gap-5 items-stretch ${
@@ -1559,14 +1895,14 @@ Me gustaría coordinar stock, fabricación y envío.`;
                           <label className={`block text-[11px] font-bold tracking-wide uppercase mb-1.5 ${
                             isThemeDark ? "text-zinc-400" : "text-zinc-500"
                           }`}>
-                            Estatura (cm)
+                            {isKidsProduct ? "Estatura del Niño (cm)" : "Estatura (cm)"}
                           </label>
                           <div className="relative">
                             <input
                               type="number"
-                              min="100"
-                              max="240"
-                              placeholder="Ej: 175"
+                              min={isKidsProduct ? "50" : "100"}
+                              max={isKidsProduct ? "170" : "240"}
+                              placeholder={isKidsProduct ? "Ej: 110" : "Ej: 175"}
                               value={userHeight}
                               onChange={(e) => setUserHeight(e.target.value)}
                               className={`w-full px-4 py-2 border rounded-xl text-sm font-bold text-center focus:outline-none focus:ring-1 focus:ring-[#D4A55A] ${
@@ -1583,14 +1919,14 @@ Me gustaría coordinar stock, fabricación y envío.`;
                           <label className={`block text-[11px] font-bold tracking-wide uppercase mb-1.5 ${
                             isThemeDark ? "text-zinc-400" : "text-zinc-500"
                           }`}>
-                            Peso estimado (kg)
+                            {isKidsProduct ? "Peso del Niño (kg)" : "Peso estimado (kg)"}
                           </label>
                           <div className="relative">
                             <input
                               type="number"
-                              min="30"
-                              max="180"
-                              placeholder="Ej: 74"
+                              min={isKidsProduct ? "5" : "30"}
+                              max={isKidsProduct ? "80" : "180"}
+                              placeholder={isKidsProduct ? "Ej: 18" : "Ej: 74"}
                               value={userWeight}
                               onChange={(e) => setUserWeight(e.target.value)}
                               className={`w-full px-4 py-2 border rounded-xl text-sm font-bold text-center focus:outline-none focus:ring-1 focus:ring-[#D4A55A] ${
@@ -1605,42 +1941,67 @@ Me gustaría coordinar stock, fabricación y envío.`;
                       </div>
 
                       {/* Calibrator results block */}
-                      <div className={`flex-grow md:max-w-[220px] rounded-xl p-4 flex flex-col items-center justify-center border text-center transition-all ${
+                      <div className={`flex-grow md:max-w-[240px] rounded-2xl p-4 flex flex-col items-center justify-center border text-center transition-all ${
                         recommendedSize 
                           ? "bg-[#D4A55A]/10 border-[#D4A55A]/35 text-[#E6BF76]"
                           : "bg-[#050B1A]/40 border-white/5 text-zinc-400"
                       }`}>
                         {recommendedSize ? (
-                          <div className="space-y-1">
+                          <div className="space-y-2 w-full">
                             <p className="text-[10px] font-bold tracking-wider uppercase opacity-75">Talle Recomendado:</p>
-                            <h4 className="text-4xl sm:text-5xl font-extrabold text-[#D4A55A] font-serif tracking-tight">
+                            <h4 className="text-3xl sm:text-4xl font-extrabold text-[#D4A55A] font-sans tracking-tight">
                               {recommendedSize}
                             </h4>
-                            <p className="text-[10px] italic pt-1 max-w-[180px] mx-auto leading-relaxed opacity-90">
-                              Recomendación orientadora basada en nuestro calce clásico de prendas.
+                            
+                            {/* Fast Selection Feature */}
+                            {recommenderMatchResult && (
+                              <div className="pt-2">
+                                {recommenderMatchResult.available ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedSize(recommenderMatchResult.size);
+                                      setShowSizeChart(false);
+                                    }}
+                                    className="w-full py-2 px-3 rounded-xl text-[11px] font-extrabold bg-[#D4A55A] hover:bg-[#E6BF76] text-[#050B1A] transition-all cursor-pointer flex items-center justify-center gap-1 shadow-md"
+                                  >
+                                    <span>✅ Aplicar Talle {recommenderMatchResult.size}</span>
+                                  </button>
+                                ) : (
+                                  <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[9px] text-amber-300">
+                                    ⚠️ El talle {recommenderMatchResult.size} no coincide exactamente con las opciones en stock de esta prenda.
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            <p className="text-[9px] italic opacity-80 leading-relaxed pt-1 block">
+                              Ref. orientadora guardada en tu navegador.
                             </p>
                           </div>
                         ) : (
                           <div className="space-y-1">
                             <p className="text-xs font-bold leading-normal max-w-[180px] mx-auto">
-                              Introduce tu estatura y peso para ver tu talle recomendado.
+                              Introduce {isKidsProduct ? "las medidas del niño" : "tu estatura y peso"} para ver el talle recomendado en tiempo real.
                             </p>
                           </div>
                         )}
                       </div>
                     </div>
 
-                    {/* Shoe size helper tool added here */}
-                    <div className="space-y-2 pt-1">
-                      <label className={`block text-[11px] font-bold tracking-wide uppercase ${
+                    {/* Shoe size helper tool */}
+                    <div className={`p-5 rounded-2xl border ${
+                      isThemeDark ? "bg-[#14121a]/30 border-zinc-800" : "bg-slate-50 border-slate-100"
+                    }`}>
+                      <label className={`block text-[11px] font-bold tracking-wide uppercase mb-2 ${
                         isThemeDark ? "text-zinc-400" : "text-zinc-500"
                       }`}>
-                        Asistente Expres de Zapatillas / Championes
+                        👟 Asistente Exprés de Zapatillas / Calzado
                       </label>
-                      <div className="flex gap-2">
+                      <div className="flex flex-col sm:flex-row gap-3">
                         <input
                           type="number"
-                          placeholder="Tu talle habitual (Ej: 41)"
+                          placeholder="Tu talle habitual en Uruguay (Ej: 41)"
                           min="30"
                           max="50"
                           value={userShoeSize}
@@ -1652,14 +2013,40 @@ Me gustaría coordinar stock, fabricación y envío.`;
                           }`}
                         />
                       </div>
+                      
                       {userShoeSize && (() => {
                         const numericShoeVal = parseInt(userShoeSize);
                         if (numericShoeVal > 25 && numericShoeVal < 50) {
                           const calculatedCms = Math.round((numericShoeVal * 0.67 - 1) * 10) / 10;
+                          
+                          // Check if the shoe size is available in current product's sizes
+                          const shoeMatch = sizes.find(s => {
+                            const cleanSz = s.trim().toUpperCase().replace("UY", "").trim();
+                            return cleanSz === String(numericShoeVal);
+                          });
+
                           return (
-                            <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1 font-semibold flex items-center gap-1">
-                              <span>✨ El largo de tu plantilla aproximada para talle {numericShoeVal} UY es de <strong>{calculatedCms} cm</strong>.</span>
-                            </p>
+                            <div className="mt-3 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-left animate-fade-in">
+                              <p className="text-[11px] font-semibold flex items-center gap-1.5">
+                                <span>✨ El largo estimado de plantilla para talle <strong>{numericShoeVal} UY</strong> es de <strong>{calculatedCms} cm</strong>.</span>
+                              </p>
+                              {shoeMatch ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedSize(shoeMatch);
+                                    setShowSizeChart(false);
+                                  }}
+                                  className="mt-2.5 py-1.5 px-3 rounded-lg text-[10px] font-extrabold bg-emerald-500 hover:bg-emerald-400 text-black cursor-pointer transition-colors"
+                                >
+                                  ✅ Seleccionar talle {shoeMatch} para este calzado
+                                </button>
+                              ) : (
+                                <p className="text-[9px] text-zinc-400 mt-1">
+                                  El talle {numericShoeVal} no coincide con las opciones de stock de este producto.
+                                </p>
+                              )}
+                            </div>
                           );
                         }
                         return null;
@@ -1683,10 +2070,12 @@ Me gustaría coordinar stock, fabricación y envío.`;
                   Entendido, Volver
                 </button>
               </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
 
       {/* Sticky Bottom Quick Buy Ribbon for Mobile */}
       {!showSizeChart && !isCartOpen && (

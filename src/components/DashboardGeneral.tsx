@@ -794,7 +794,7 @@ export function DashboardGeneral({
                     <div key={ranking.product.id} className="space-y-1.5 font-sans group">
                       <div className="flex items-center justify-between text-xs gap-3">
                         <div className="flex items-center gap-2 min-w-0">
-                          <span className="font-mono text-[9px] font-black text-zinc-500">0{idx + 1}</span>
+                          <span className="font-mono text-[9px] font-black text-zinc-500">{idx + 1 < 10 ? `0${idx + 1}` : idx + 1}</span>
                           <span className="font-bold text-zinc-300 truncate block group-hover:text-indigo-400 transition-colors">{ranking.product.name}</span>
                         </div>
                         <span className="font-mono font-bold text-white shrink-0">
