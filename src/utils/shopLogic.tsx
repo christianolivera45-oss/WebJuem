@@ -426,9 +426,9 @@ export const DEFAULT_SETTINGS: SiteSettings = {
       imageUrl: "https://images.unsplash.com/photo-1512436991641-6745cdb1723f?auto=format&fit=crop&w=1600&q=80"
     }
   ],
-  logoType: "text",
-  logoText: "J",
-  logoImageUrl: "",
+  logoType: "image",
+  logoText: "JUEM",
+  logoImageUrl: "https://res.cloudinary.com/dwqzjqjwz/image/upload/v1781632379/ventas_juem_cloudinary/vsjhahrwh1thtwiwzbia.png",
   footerCol1Title: "🚀 Compra Personalizada",
   footerCol1Text: "Realiza tus pedidos seleccionando tus talles y colores favoritos. El carrito envía una lista formateada directo a nuestro WhatsApp de atención oficial para coordinar pago y entrega express.",
   footerCol2Title: "📍 Sucursal Montevideo",
@@ -505,7 +505,8 @@ export const DEFAULT_SETTINGS: SiteSettings = {
   emailTemplateOrderCreatedSubject: "¡Gracias por tu compra! Tu pedido #{{orderId}} ha sido recibido",
   emailTemplateOrderStatusChangedSubject: "Actualización de tu pedido #{{orderId}} - {{statusText}}",
   emailTemplateOrderCreatedBody: "Muchas gracias por realizar tu compra con nosotros. Tu pago ha sido aprobado correctamente y tu pedido ya está siendo preparado para entrega. Aquí tienes los detalles completos de tu compra:",
-  emailTemplateOrderStatusChangedBody: "Te notificamos que el estado de tu pedido #{{orderId}} ha sido actualizado por nuestro equipo de logística."
+  emailTemplateOrderStatusChangedBody: "Te notificamos que el estado de tu pedido #{{orderId}} ha sido actualizado por nuestro equipo de logística.",
+  styleSystemNotes: ""
 };
 
 export const ICON_LABELS: Record<string, string> = {
@@ -722,7 +723,7 @@ export const getCategoryDisplayName = (cat: string) => {
 // Temas y Paletas de Colores Predeterminadas para el eCommerce
 export const THEME_PRESETS = [
   {
-    name: "Colores Juem 🎨",
+    name: "Áurea Nocturna Pro ⚜️",
     primaryColor: "#D4A55A",
     accentColor: "#E6BF76",
     themeMode: "dark" as "dark" | "light"

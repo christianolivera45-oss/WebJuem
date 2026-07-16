@@ -95,7 +95,8 @@ import {
   Receipt,
   Scale,
   Moon,
-  Accessibility
+  Accessibility,
+  GripVertical
 } from "lucide-react";
 import { Product, SiteSettings, ShopState, CartItem, Category, Subcategory, ProductVariant, is3DProduct, Shipping, ShippingOrigin, StockTransfer, StockAdjustment, AdminTask } from "./types";
 import ThemeStyles from "./components/ThemeStyles";
@@ -456,6 +457,8 @@ export default function App() {
   const [errorMessage, setErrorMessage] = useState("");
   const [showMpAccessToken, setShowMpAccessToken] = useState(false);
   const [showMpPublicKey, setShowMpPublicKey] = useState(false);
+  const [isJuemAccordionOpen, setIsJuemAccordionOpen] = useState(false);
+  const [isAureaAccordionOpen, setIsAureaAccordionOpen] = useState(false);
 
   // Search & Navigation
   const [activeTab, setActiveTab] = useState<"storefront" | "admin" | "checkout">("storefront");
@@ -478,6 +481,15 @@ export default function App() {
   const [uploadingEmailHeader, setUploadingEmailHeader] = useState(false);
   const [cloudinarySelectorConfig, setCloudinarySelectorConfig] = useState<{ isOpen: boolean; onSelect: (url: string) => void } | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>("todos");
+  const getCategoryDisplayNameWithDb = (cat: string) => {
+    const catObj = (store.dbCategories || []).find(
+      (c) => c.nombre.toLowerCase() === cat.toLowerCase() || c.id === cat.toLowerCase()
+    );
+    if (catObj) {
+      return catObj.nombre;
+    }
+    return getCategoryDisplayName(cat);
+  };
   const [selectedSubcategory, setSelectedSubcategory] = useState<string>("all");
   const [showAllProductsFlat, setShowAllProductsFlat] = useState<boolean>(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -979,7 +991,11 @@ export default function App() {
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newCategoryIcon, setNewCategoryIcon] = useState("Shirt");
   const [newCategoryOrder, setNewCategoryOrder] = useState<number>(1);
+  const [newCategoryHideOnHome, setNewCategoryHideOnHome] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [expandedCategoryIds, setExpandedCategoryIds] = useState<Record<string, boolean>>({});
+  const [draggedCategoryId, setDraggedCategoryId] = useState<string | null>(null);
+  const [dragOverCategoryId, setDragOverCategoryId] = useState<string | null>(null);
 
   const [newCouponCode, setNewCouponCode] = useState("");
   const [newCouponDiscount, setNewCouponDiscount] = useState<number>(10);
@@ -2443,6 +2459,11 @@ export default function App() {
         data.products = recalculateComboStocks(data.products);
       }
       if (data && data.settings) {
+        if (!data.settings.logoImageUrl || data.settings.logoImageUrl.trim() === "" || data.settings.logoType !== "image") {
+          data.settings.logoImageUrl = "https://res.cloudinary.com/dwqzjqjwz/image/upload/v1781632379/ventas_juem_cloudinary/vsjhahrwh1thtwiwzbia.png";
+          data.settings.logoType = "image";
+          data.settings.logoText = "JUEM";
+        }
         data.settings = { ...DEFAULT_SETTINGS, ...data.settings };
       }
       setStore(data);
@@ -3401,7 +3422,8 @@ export default function App() {
       nombre,
       icono: newCategoryIcon,
       orden: Number(newCategoryOrder) || ((store.dbCategories || []).length + 1),
-      active: true
+      active: true,
+      hide_on_home: newCategoryHideOnHome
     };
 
     const updatedDbCategories = [...(store.dbCategories || []), newCat];
@@ -3417,6 +3439,7 @@ export default function App() {
     setNewCategoryName("");
     setNewCategoryIcon("Shirt");
     setNewCategoryOrder((store.dbCategories || []).length + 2);
+    setNewCategoryHideOnHome(false);
   };
 
   const handleUpdateDynamicCategory = (e: FormEvent) => {
@@ -3545,6 +3568,24 @@ export default function App() {
       cats[index].orden = cats[index + 1].orden;
       cats[index + 1].orden = temp;
     }
+
+    const remapped = cats.map((c, i) => ({ ...c, orden: i + 1 }));
+
+    saveStateToServer({
+      ...store,
+      dbCategories: remapped
+    });
+  };
+
+  const handleDragReorderCategory = (draggedId: string, targetId: string) => {
+    if (draggedId === targetId) return;
+    const cats = [...(store.dbCategories || [])].sort((a, b) => (a.orden || 0) - (b.orden || 0));
+    const draggedIndex = cats.findIndex(c => c.id === draggedId);
+    const targetIndex = cats.findIndex(c => c.id === targetId);
+    if (draggedIndex === -1 || targetIndex === -1) return;
+
+    const [draggedItem] = cats.splice(draggedIndex, 1);
+    cats.splice(targetIndex, 0, draggedItem);
 
     const remapped = cats.map((c, i) => ({ ...c, orden: i + 1 }));
 
@@ -4991,7 +5032,7 @@ export default function App() {
                         "Resultados de Búsqueda"
                       ) : selectedCategory !== "todos" ? (
                         <span className="inline-flex items-center gap-1.5">
-                          <span>{getCategoryDisplayName(selectedCategory)}</span>
+                          <span>{getCategoryDisplayNameWithDb(selectedCategory)}</span>
                           {selectedSubcategory && selectedSubcategory !== "all" && (
                             <>
                               <span className="text-zinc-400 dark:text-zinc-600 font-normal">›</span>
@@ -5191,7 +5232,7 @@ export default function App() {
               /* Custom dynamic database-driven categorizations when viewing "Todos" */
               <div className="space-y-16">
                 {(store.dbCategories || [])
-                  .filter((catObj) => catObj.active !== false)
+                  .filter((catObj) => catObj.active !== false && catObj.hide_on_home !== true)
                   .sort((a, b) => (a.orden || 0) - (b.orden || 0))
                   .map((catObj) => {
                     const catProducts = store.products.filter(
@@ -6220,306 +6261,1013 @@ export default function App() {
                 
                 {/* 1. GENERAL & BRANDING EDITOR */}
                 {adminSection === "general" && (
-                  <div className="bg-white dark:bg-zinc-950 p-5 rounded-xl border border-slate-200 dark:border-zinc-800 shadow-sm space-y-4">
-                    <div className="flex items-center gap-2 border-b border-zinc-800/10 dark:border-zinc-800 pb-3 mb-2">
-                      <Palette className="h-4 w-4 theme-text-primary" />
-                      <h3 className="font-bold text-sm text-slate-950 dark:text-zinc-200">Diseño & Textos de Tienda</h3>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1.5">Nombre del eCommerce</label>
-                        <input
-                          type="text"
-                          value={editingSettings.siteTitle}
-                          onChange={(e) => setEditingSettings({ ...editingSettings, siteTitle: e.target.value })}
-                          className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 dark:text-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1.5">WhatsApp Oficial (Teléfono código país completo)</label>
-                        <input
-                          type="text"
-                          value={editingSettings.whatsappNumber}
-                          onChange={(e) => setEditingSettings({ ...editingSettings, whatsappNumber: e.target.value })}
-                          className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 dark:text-white font-mono"
-                          placeholder="p.ej. 5491123456789"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1.5">Descripción de Tienda / Eslogan</label>
-                      <input
-                        type="text"
-                        value={editingSettings.siteSubtitle}
-                        onChange={(e) => setEditingSettings({ ...editingSettings, siteSubtitle: e.target.value })}
-                        className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 dark:text-white"
-                      />
-                    </div>
-
-                    {/* SEO & Google Search Snippet Card */}
-                    <div className="border border-slate-200 dark:border-zinc-800 rounded-xl p-4 bg-blue-50/20 dark:bg-zinc-900/40 space-y-3.5">
-                      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-zinc-800/80 pb-2">
-                        <svg className="h-4 w-4 text-blue-500 shrink-0" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" strokeWidth="2">
-                          <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                        <span className="text-xs font-extrabold uppercase tracking-wider text-slate-800 dark:text-zinc-200">
-                          SEO & Posicionamiento en Google
-                        </span>
-                      </div>
-
-                      <p className="text-[10.5px] text-slate-550 dark:text-zinc-400 font-sans leading-relaxed">
-                        Controla y optimiza cómo se ve tu tienda cuando los clientes la buscan en Google, Yahoo, Bing o cuando se comparte por WhatsApp y redes sociales.
-                      </p>
-
-                      <div className="space-y-3">
+                  <div className="space-y-6 animate-fade-in text-[#F4EAD7]">
+                    <div className="bg-[#0B1730]/95 backdrop-blur-md p-6 rounded-3xl border border-[#D4A55A]/25 shadow-xl relative overflow-hidden space-y-5">
+                      <div className="absolute top-0 right-0 w-48 h-48 bg-[#D4A55A]/5 rounded-full blur-3xl pointer-events-none" />
+                      
+                      <div className="flex items-center gap-3 border-b border-[#D4A55A]/20 pb-4 mb-2 relative z-10">
+                        <div className="p-2 bg-[#D4A55A]/10 text-[#E6BF76] border border-[#D4A55A]/20 rounded-xl shadow-md">
+                          <Palette className="h-5 w-5 text-[#E6BF76]" />
+                        </div>
                         <div>
-                          <div className="flex justify-between items-center mb-1">
-                            <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest">
-                              SEO Meta Descripción (Recomendado &lt; 160 caracteres)
-                            </label>
-                            <span className={`text-[9px] font-bold ${(editingSettings.seoDescription || "").length > 160 ? "text-amber-500" : "text-emerald-500"}`}>
-                              {(editingSettings.seoDescription || "").length}/160 caracteres
-                            </span>
-                          </div>
-                          <textarea
-                            value={editingSettings.seoDescription || ""}
-                            onChange={(e) => setEditingSettings({ ...editingSettings, seoDescription: e.target.value })}
-                            rows={2}
-                            maxLength={300}
-                            className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 dark:text-white"
-                            placeholder="Escribe una descripción atractiva para los resultados de búsqueda de Google..."
+                          <h3 className="font-serif font-bold text-base text-[#F4EAD7] tracking-wide">Diseño & Textos de Tienda</h3>
+                          <p className="text-[11px] text-[#A0AEC0] mt-0.5">Define los nombres, eslóganes, enlaces de contacto y configuración del eCommerce con estilo áureo.</p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 relative z-10">
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-[#E6BF76] uppercase tracking-widest mb-1.5">Nombre del eCommerce</label>
+                          <input
+                            type="text"
+                            value={editingSettings.siteTitle}
+                            onChange={(e) => setEditingSettings({ ...editingSettings, siteTitle: e.target.value })}
+                            className="w-full px-3 py-2 bg-[#050B1A]/80 border border-[#D4A55A]/25 focus:border-[#D4A55A]/55 focus:ring-1 focus:ring-[#D4A55A]/30 text-[#F4EAD7] rounded-xl text-xs outline-none transition font-sans"
                           />
                         </div>
-
                         <div>
-                          <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1.5">
-                            Palabras Clave de Búsqueda (Keywords - separadas por comas)
+                          <label className="block text-[10px] font-extrabold text-[#E6BF76] uppercase tracking-widest mb-1.5">WhatsApp Oficial (Teléfono con código de país completo)</label>
+                          <input
+                            type="text"
+                            value={editingSettings.whatsappNumber}
+                            onChange={(e) => setEditingSettings({ ...editingSettings, whatsappNumber: e.target.value })}
+                            className="w-full px-3 py-2 bg-[#050B1A]/80 border border-[#D4A55A]/25 focus:border-[#D4A55A]/55 focus:ring-1 focus:ring-[#D4A55A]/30 text-[#F4EAD7] rounded-xl text-xs outline-none transition font-mono"
+                            placeholder="p.ej. 5491123456789"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="relative z-10">
+                        <label className="block text-[10px] font-extrabold text-[#E6BF76] uppercase tracking-widest mb-1.5">Descripción de Tienda / Eslogan</label>
+                        <input
+                          type="text"
+                          value={editingSettings.siteSubtitle}
+                          onChange={(e) => setEditingSettings({ ...editingSettings, siteSubtitle: e.target.value })}
+                          className="w-full px-3 py-2 bg-[#050B1A]/80 border border-[#D4A55A]/25 focus:border-[#D4A55A]/55 focus:ring-1 focus:ring-[#D4A55A]/30 text-[#F4EAD7] rounded-xl text-xs outline-none transition font-sans"
+                        />
+                      </div>
+
+                      {/* SEO & Google Search Snippet Card */}
+                      <div className="border border-[#D4A55A]/20 rounded-2xl p-5 bg-[#050B1A]/60 space-y-3.5 relative z-10">
+                        <div className="flex items-center gap-2 border-b border-[#D4A55A]/15 pb-2.5">
+                          <svg className="h-4 w-4 text-[#E6BF76] shrink-0" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" strokeWidth="2">
+                            <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                          <span className="text-xs font-extrabold uppercase tracking-wider text-[#E6BF76] font-serif">
+                            SEO & Posicionamiento en Google
+                          </span>
+                        </div>
+
+                        <p className="text-[10.5px] text-[#A0AEC0] font-sans leading-relaxed text-left">
+                          Controla y optimiza cómo se ve tu tienda cuando los clientes la buscan en Google, Yahoo, Bing o cuando se comparte por WhatsApp y redes sociales.
+                        </p>
+
+                        <div className="space-y-3">
+                          <div>
+                            <div className="flex justify-between items-center mb-1">
+                              <label className="block text-[10px] font-extrabold text-[#E6BF76] uppercase tracking-widest">
+                                SEO Meta Descripción (Recomendado &lt; 160 caracteres)
+                              </label>
+                              <span className={`text-[9px] font-bold ${(editingSettings.seoDescription || "").length > 160 ? "text-amber-500" : "text-emerald-500"}`}>
+                                {(editingSettings.seoDescription || "").length}/160 caracteres
+                              </span>
+                            </div>
+                            <textarea
+                              value={editingSettings.seoDescription || ""}
+                              onChange={(e) => setEditingSettings({ ...editingSettings, seoDescription: e.target.value })}
+                              rows={2}
+                              maxLength={300}
+                              className="w-full px-3 py-2 bg-[#050B1A] border border-[#D4A55A]/25 rounded-xl text-xs outline-none focus:border-[#D4A55A]/55 focus:ring-1 focus:ring-[#D4A55A]/30 text-[#F4EAD7] placeholder-zinc-600 font-sans"
+                              placeholder="Escribe una descripción atractiva para los resultados de búsqueda de Google..."
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-extrabold text-[#E6BF76] uppercase tracking-widest mb-1.5">
+                              Palabras Clave de Búsqueda (Keywords - separadas por comas)
+                            </label>
+                            <input
+                              type="text"
+                              value={editingSettings.seoKeywords || ""}
+                              onChange={(e) => setEditingSettings({ ...editingSettings, seoKeywords: e.target.value })}
+                              className="w-full px-3 py-2 bg-[#050B1A] border border-[#D4A55A]/25 rounded-xl text-xs outline-none focus:border-[#D4A55A]/55 focus:ring-1 focus:ring-[#D4A55A]/30 text-[#F4EAD7] font-mono"
+                              placeholder="ropa, calzado, camperas, montevideo, pinamar"
+                            />
+                          </div>
+
+                          {/* Google Search Result Preview */}
+                          <div className="border border-[#D4A55A]/15 rounded-xl p-4 bg-[#030611] text-left">
+                            <span className="text-[9px] font-bold text-[#E6BF76] uppercase tracking-wider block mb-2.5">Vista Previa de Resultado en Google (Celular & PC)</span>
+                            <div className="space-y-1 select-none pointer-events-none">
+                              <div className="flex items-center gap-1.5 text-xs text-zinc-300">
+                                <span className="bg-[#D4A55A]/20 border border-[#D4A55A]/30 px-1.5 py-0.5 rounded text-[10px] shrink-0 font-bold font-serif text-[#E6BF76]">J</span>
+                                <div className="flex flex-col leading-tight">
+                                  <span className="font-sans text-[10px] font-semibold text-slate-300">juem.com.uy</span>
+                                  <span className="font-sans text-[8.5px] text-[#E6BF76]">https://www.juem.com.uy</span>
+                                </div>
+                              </div>
+                              <h4 className="text-[14px] text-sky-400 font-sans font-medium line-clamp-1 mt-1">
+                                {editingSettings.siteTitle || "Juem Mvd"} | Ropa de Temporada, Abrigos Premium
+                              </h4>
+                              <p className="text-[11.5px] text-zinc-400 font-sans leading-snug line-clamp-2">
+                                {editingSettings.seoDescription || "Descubrí en Juem Mvd la mejor indumentaria de temporada, abrigos térmicos, accesorios de invierno y proyectos 3D con envíos a todo el país."}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 relative z-10">
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-[#E6BF76] uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                            <svg className="h-3.5 w-3.5 fill-[#E6BF76]" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                              <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+                            </svg>
+                            Enlace de Facebook
                           </label>
                           <input
                             type="text"
-                            value={editingSettings.seoKeywords || ""}
-                            onChange={(e) => setEditingSettings({ ...editingSettings, seoKeywords: e.target.value })}
-                            className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 dark:text-white font-mono"
-                            placeholder="ropa, calzado, camperas, montevideo, pinamar"
+                            value={editingSettings.facebookUrl || ""}
+                            onChange={(e) => setEditingSettings({ ...editingSettings, facebookUrl: e.target.value })}
+                            className="w-full px-3 py-2 bg-[#050B1A]/80 border border-[#D4A55A]/25 rounded-xl text-xs outline-none focus:border-[#D4A55A]/55 focus:ring-1 focus:ring-[#D4A55A]/30 text-[#F4EAD7] font-mono"
+                            placeholder="https://facebook.com/tu-pagina"
                           />
                         </div>
-
-                        {/* Google Search Result Preview */}
-                        <div className="border border-slate-200 dark:border-zinc-800/80 rounded-lg p-3 bg-white dark:bg-zinc-950/40">
-                          <span className="text-[9px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-wider block mb-2">Vista Previa de Resultado en Google (Celular & PC)</span>
-                          <div className="space-y-1 select-none pointer-events-none">
-                            <div className="flex items-center gap-1.5 text-xs text-slate-800 dark:text-zinc-300">
-                              <span className="bg-slate-100 dark:bg-zinc-800 p-1 rounded-md text-[10px] shrink-0 font-bold font-serif text-amber-600 dark:text-amber-500">J</span>
-                              <div className="flex flex-col leading-tight">
-                                <span className="font-sans text-[10px] font-semibold text-slate-600 dark:text-zinc-400">juem.com.uy</span>
-                                <span className="font-sans text-[8.5px] text-slate-400 dark:text-zinc-500">https://www.juem.com.uy</span>
-                              </div>
-                            </div>
-                            <h4 className="text-[14px] text-blue-700 dark:text-blue-400 hover:underline font-sans font-medium line-clamp-1 mt-1">
-                              {editingSettings.siteTitle || "Juem Mvd"} | Ropa de Temporada, Abrigos Premium
-                            </h4>
-                            <p className="text-[11.5px] text-slate-600 dark:text-zinc-400 font-sans leading-snug line-clamp-2">
-                              {editingSettings.seoDescription || "Descubrí en Juem Mvd la mejor indumentaria de temporada, abrigos térmicos, accesorios de invierno y proyectos 3D con envíos a todo el país."}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-[10px] font-extrabold text-[#1877F2] dark:text-blue-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-                          <svg className="h-3.5 w-3.5 fill-[#1877F2] dark:fill-blue-400" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
-                          </svg>
-                          Enlace de Facebook
-                        </label>
-                        <input
-                          type="text"
-                          value={editingSettings.facebookUrl || ""}
-                          onChange={(e) => setEditingSettings({ ...editingSettings, facebookUrl: e.target.value })}
-                          className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 dark:text-white font-mono"
-                          placeholder="https://facebook.com/tu-pagina"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-extrabold text-[#DD2A7B] dark:text-pink-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-                          <svg className="h-3.5 w-3.5 fill-[#DD2A7B] dark:fill-pink-400" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M12 2.163c3.204 0 3.584.012 4.85.071 3.253.147 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.148 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.051.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z" />
-                          </svg>
-                          Enlace de Instagram
-                        </label>
-                        <input
-                          type="text"
-                          value={editingSettings.instagramUrl || ""}
-                          onChange={(e) => setEditingSettings({ ...editingSettings, instagramUrl: e.target.value })}
-                          className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 dark:text-white font-mono"
-                          placeholder="https://instagram.com/tu-usuario"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1.5">Velocidad de Giro (Destacados)</label>
-                      <select
-                        value={editingSettings.featuredSliderSpeed !== undefined ? editingSettings.featuredSliderSpeed : 2500}
-                        onChange={(e) => setEditingSettings({ ...editingSettings, featuredSliderSpeed: Number(e.target.value) })}
-                        className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 dark:text-white"
-                      >
-                        <option value={1500}>Muy Rápido (1.5 segundos)</option>
-                        <option value={2500}>Rápido (2.5 segundos)</option>
-                        <option value={4000}>Normal (4 segundos)</option>
-                        <option value={6000}>Lento (6 segundos)</option>
-                        <option value={0}>Pausa (Sin rotación automática)</option>
-                      </select>
-                    </div>
-
-                    {/* Logo Configurator inside store general settings */}
-                    <div className="border border-slate-200 dark:border-zinc-800 rounded-xl p-4 bg-slate-50/50 dark:bg-zinc-900/30 space-y-3">
-                      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-zinc-800 pb-2">
-                        <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-zinc-300">
-                          Logo de la Web
-                        </span>
-                      </div>
-                      
-                      <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1.5">Tipo de Logo</label>
-                          <select
-                            value={editingSettings.logoType || "text"}
-                            onChange={(e) => setEditingSettings({ ...editingSettings, logoType: e.target.value as 'text' | 'image' })}
-                            className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 dark:text-white"
-                          >
-                            <option value="text">Texto / Iniciales (Por defecto)</option>
-                            <option value="image">Imagen por URL (Personalizada)</option>
-                          </select>
+                          <label className="block text-[10px] font-extrabold text-[#E6BF76] uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                            <svg className="h-3.5 w-3.5 fill-[#E6BF76]" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                              <path d="M12 2.163c3.204 0 3.584.012 4.85.071 3.253.147 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.148 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.051.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z" />
+                            </svg>
+                            Enlace de Instagram
+                          </label>
+                          <input
+                            type="text"
+                            value={editingSettings.instagramUrl || ""}
+                            onChange={(e) => setEditingSettings({ ...editingSettings, instagramUrl: e.target.value })}
+                            className="w-full px-3 py-2 bg-[#050B1A]/80 border border-[#D4A55A]/25 rounded-xl text-xs outline-none focus:border-[#D4A55A]/55 focus:ring-1 focus:ring-[#D4A55A]/30 text-[#F4EAD7] font-mono"
+                            placeholder="https://instagram.com/tu-usuario"
+                          />
                         </div>
-
-                        {editingSettings.logoType === "image" ? (
-                          <div className="space-y-1.5">
-                            <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1">URL de la Imagen del Logo</label>
-                            <input
-                              type="text"
-                              value={editingSettings.logoImageUrl || ""}
-                              onChange={(e) => setEditingSettings({ ...editingSettings, logoImageUrl: e.target.value })}
-                              className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 dark:text-white font-mono"
-                              placeholder="https://ejemplo.com/logo.png"
-                            />
-                            
-                            <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-zinc-900/40 border border-slate-200/50 dark:border-zinc-800/40 mt-1">
-                              <span className="text-[9px] font-semibold text-slate-500 dark:text-zinc-400">Sincronizar Logo con Cloudinary:</span>
-                              <label 
-                                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded font-bold text-[9px] cursor-pointer transition-all shadow-xs select-none ${
-                                  uploadingLogo 
-                                    ? "bg-slate-105 dark:bg-zinc-800 text-zinc-500 pointer-events-none animate-pulse" 
-                                    : "bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-white"
-                                }`}
-                              >
-                                {uploadingLogo ? (
-                                  <>
-                                    <Loader2 className="w-3 h-3 animate-spin text-[#5346ff]" />
-                                    <span>Subiendo...</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Upload className="w-2.5 h-2.5" />
-                                    <span>Subir Imagen</span>
-                                  </>
-                                )}
-                                <input
-                                  type="file"
-                                  accept="image/*"
-                                  className="hidden"
-                                  disabled={uploadingLogo}
-                                  onChange={async (e) => {
-                                    if (e.target.files && e.target.files[0]) {
-                                      const file = e.target.files[0];
-                                      const formData = new FormData();
-                                      formData.append("image", file);
-                                      try {
-                                        setUploadingLogo(true);
-                                        const uploadRes = await fetch("/api/cloudinary/upload", {
-                                          method: "POST",
-                                          headers: {
-                                            "Authorization": `Bearer ${localStorage.getItem("apex_admin_token") || ""}`
-                                          },
-                                          body: formData,
-                                        });
-                                        const resText = await uploadRes.text();
-                                        let parsedData: any = null;
-                                        try { parsedData = JSON.parse(resText); } catch (pErr) {}
-                                        if (uploadRes.ok && parsedData && parsedData.success && parsedData.url) {
-                                          setEditingSettings({ ...editingSettings, logoImageUrl: parsedData.url });
-                                          showToast("¡Logo subido e integrado con éxito! 🎨", "success");
-                                        } else {
-                                          showToast((parsedData && parsedData.message) || "Error al subir logotipo.", "error");
-                                        }
-                                      } catch (err) {
-                                        showToast("Fallo al conectar con Cloudinary.", "error");
-                                      } finally {
-                                        setUploadingLogo(false);
-                                      }
-                                    }
-                                  }}
-                                />
-                              </label>
-                            </div>
-                          </div>
-                        ) : (
-                          <div>
-                            <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1.5">Letra / Icono (Máx 3 carac.)</label>
-                            <input
-                              type="text"
-                              maxLength={3}
-                              value={editingSettings.logoText || ""}
-                              onChange={(e) => setEditingSettings({ ...editingSettings, logoText: e.target.value })}
-                              className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 dark:text-white"
-                              placeholder="J"
-                            />
-                          </div>
-                        )}
                       </div>
-                      
-                      {/* Live Preview of logo in settings */}
-                      <div className="flex items-center gap-3 p-2 bg-white dark:bg-zinc-950/45 border border-dashed border-slate-200 dark:border-zinc-800 rounded-lg">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Vista Previa:</span>
-                        <div className="flex items-center gap-2">
-                          {editingSettings.logoType === "image" && !!editingSettings.logoImageUrl ? (
-                            <img
-                              src={editingSettings.logoImageUrl || null}
-                              alt="Vista Previa Logo"
-                              className="w-8 h-8 rounded-xl object-cover shadow-sm bg-zinc-950/25"
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=100&q=80";
-                              }}
-                              referrerPolicy="no-referrer"
-                            />
-                          ) : (
-                            <div className="w-8 h-8 theme-btn-primary rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-sm">
-                              {editingSettings.logoText || "J"}
-                            </div>
-                          )}
-                          <span className="font-bold text-xs text-slate-900 dark:text-zinc-200">
-                            {editingSettings.siteTitle || "Tu Tienda"}
+
+                      <div className="relative z-10">
+                        <label className="block text-[10px] font-extrabold text-[#E6BF76] uppercase tracking-widest mb-1.5">Velocidad de Giro (Destacados)</label>
+                        <select
+                          value={editingSettings.featuredSliderSpeed !== undefined ? editingSettings.featuredSliderSpeed : 2500}
+                          onChange={(e) => setEditingSettings({ ...editingSettings, featuredSliderSpeed: Number(e.target.value) })}
+                          className="w-full px-3 py-2 bg-[#050B1A]/95 border border-[#D4A55A]/25 rounded-xl text-xs outline-none focus:border-[#D4A55A]/55 focus:ring-1 focus:ring-[#D4A55A]/30 text-[#F4EAD7]"
+                        >
+                          <option value={1500} className="bg-[#0B1730] text-[#F4EAD7]">Muy Rápido (1.5 segundos)</option>
+                          <option value={2500} className="bg-[#0B1730] text-[#F4EAD7]">Rápido (2.5 segundos)</option>
+                          <option value={4000} className="bg-[#0B1730] text-[#F4EAD7]">Normal (4 segundos)</option>
+                          <option value={6000} className="bg-[#0B1730] text-[#F4EAD7]">Lento (6 segundos)</option>
+                          <option value={0} className="bg-[#0B1730] text-[#F4EAD7]">Pausa (Sin rotación automática)</option>
+                        </select>
+                      </div>
+
+                      {/* Logo Configurator inside store general settings */}
+                      <div className="border border-[#D4A55A]/20 rounded-2xl p-4 bg-[#050B1A]/60 space-y-3 relative z-10">
+                        <div className="flex items-center gap-2 border-b border-[#D4A55A]/15 pb-2">
+                          <span className="text-xs font-bold uppercase tracking-wider text-[#E6BF76] font-serif">
+                            Logo de la Web
                           </span>
                         </div>
+                        
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-[10px] font-extrabold text-[#E6BF76] uppercase tracking-widest mb-1.5">Tipo de Logo</label>
+                            <select
+                              value={editingSettings.logoType || "text"}
+                              onChange={(e) => setEditingSettings({ ...editingSettings, logoType: e.target.value as 'text' | 'image' })}
+                              className="w-full px-3 py-2 bg-[#050B1A]/95 border border-[#D4A55A]/25 rounded-xl text-xs outline-none focus:border-[#D4A55A]/55 focus:ring-1 focus:ring-[#D4A55A]/30 text-[#F4EAD7]"
+                            >
+                              <option value="text" className="bg-[#0B1730] text-[#F4EAD7]">Texto / Iniciales (Por defecto)</option>
+                              <option value="image" className="bg-[#0B1730] text-[#F4EAD7]">Imagen por URL (Personalizada)</option>
+                            </select>
+                          </div>
+
+                          {editingSettings.logoType === "image" ? (
+                            <div className="space-y-1.5">
+                              <label className="block text-[10px] font-extrabold text-[#E6BF76] uppercase tracking-widest mb-1">URL de la Imagen del Logo</label>
+                              <input
+                                type="text"
+                                value={editingSettings.logoImageUrl || ""}
+                                onChange={(e) => setEditingSettings({ ...editingSettings, logoImageUrl: e.target.value })}
+                                className="w-full px-3 py-2 bg-[#050B1A] border border-[#D4A55A]/25 rounded-xl text-xs outline-none focus:border-[#D4A55A]/55 focus:ring-1 focus:ring-[#D4A55A]/30 text-[#F4EAD7] font-mono"
+                                placeholder="https://ejemplo.com/logo.png"
+                              />
+                              
+                              <div className="flex items-center justify-between p-2 rounded-lg bg-[#050B1A]/80 border border-[#D4A55A]/15 mt-1">
+                                <span className="text-[9px] font-semibold text-[#A0AEC0]">Sincronizar Logo con Cloudinary:</span>
+                                <label 
+                                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg font-bold text-[9px] cursor-pointer transition-all shadow-md select-none ${
+                                    uploadingLogo 
+                                      ? "bg-[#050B1A] border border-[#D4A55A]/20 text-zinc-500 pointer-events-none animate-pulse" 
+                                      : "bg-[#D4A55A] hover:bg-[#E6BF76] text-[#050B1A]"
+                                  }`}
+                                >
+                                  {uploadingLogo ? (
+                                    <>
+                                      <Loader2 className="w-3 h-3 animate-spin text-[#050B1A]" />
+                                      <span>Subiendo...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Upload className="w-2.5 h-2.5" />
+                                      <span>Subir Imagen</span>
+                                    </>
+                                  )}
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    disabled={uploadingLogo}
+                                    onChange={async (e) => {
+                                      if (e.target.files && e.target.files[0]) {
+                                        const file = e.target.files[0];
+                                        const formData = new FormData();
+                                        formData.append("image", file);
+                                        try {
+                                          setUploadingLogo(true);
+                                          const uploadRes = await fetch("/api/cloudinary/upload", {
+                                            method: "POST",
+                                            headers: {
+                                              "Authorization": `Bearer ${localStorage.getItem("apex_admin_token") || ""}`
+                                            },
+                                            body: formData,
+                                          });
+                                          const resText = await uploadRes.text();
+                                          let parsedData: any = null;
+                                          try { parsedData = JSON.parse(resText); } catch (pErr) {}
+                                          if (uploadRes.ok && parsedData && parsedData.success && parsedData.url) {
+                                            setEditingSettings({ ...editingSettings, logoImageUrl: parsedData.url });
+                                            showToast("¡Logo subido e integrado con éxito! 🎨", "success");
+                                          } else {
+                                            showToast((parsedData && parsedData.message) || "Error al subir logotipo.", "error");
+                                          }
+                                        } catch (err) {
+                                          showToast("Fallo al conectar con Cloudinary.", "error");
+                                        } finally {
+                                          setUploadingLogo(false);
+                                        }
+                                      }
+                                    }}
+                                  />
+                                </label>
+                              </div>
+                            </div>
+                          ) : (
+                            <div>
+                              <label className="block text-[10px] font-extrabold text-[#E6BF76] uppercase tracking-widest mb-1.5">Letra / Icono (Máx 3 carac.)</label>
+                              <input
+                                type="text"
+                                maxLength={3}
+                                value={editingSettings.logoText || ""}
+                                onChange={(e) => setEditingSettings({ ...editingSettings, logoText: e.target.value })}
+                                className="w-full px-3 py-2 bg-[#050B1A] border border-[#D4A55A]/25 rounded-xl text-xs outline-none focus:border-[#D4A55A]/55 focus:ring-1 focus:ring-[#D4A55A]/30 text-[#F4EAD7]"
+                                placeholder="J"
+                              />
+                            </div>
+                          )}
+                        </div>
+                        
+                        {/* Live Preview of logo in settings */}
+                        <div className="flex items-center gap-3 p-3 bg-[#030611] border border-[#D4A55A]/20 rounded-xl">
+                          <span className="text-[10px] font-bold text-[#E6BF76] uppercase tracking-wider">Vista Previa del Logotipo:</span>
+                          <div className="flex items-center gap-2">
+                            {editingSettings.logoType === "image" && !!editingSettings.logoImageUrl ? (
+                              <img
+                                src={editingSettings.logoImageUrl || null}
+                                alt="Vista Previa Logo"
+                                className="w-8 h-8 rounded-xl object-cover shadow-sm bg-zinc-950/25 border border-[#D4A55A]/20"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=100&q=80";
+                                }}
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              <div className="w-8 h-8 bg-gradient-to-br from-[#D4A55A] to-[#E6BF76] rounded-xl flex items-center justify-center text-[#050B1A] font-extrabold text-lg shadow-sm">
+                                {editingSettings.logoText || "J"}
+                              </div>
+                            )}
+                            <span className="font-serif font-bold text-xs text-[#F4EAD7]">
+                              {editingSettings.siteTitle || "Tu Tienda"}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                    </div>
+
+                    {/* 2. PALETA DE COLORES DE TIENDA Y TEMATIZACIÓN */}
+                    <div className="bg-[#0B1730]/95 backdrop-blur-md p-6 rounded-3xl border border-[#D4A55A]/25 shadow-xl relative overflow-hidden space-y-5 text-[#F4EAD7]">
+                      <div className="absolute top-0 right-0 w-48 h-48 bg-[#D4A55A]/5 rounded-full blur-3xl pointer-events-none" />
+                      
+                      <div className="flex items-center gap-2 border-b border-[#D4A55A]/15 pb-3 mb-2 relative z-10">
+                        <Palette className="h-4 w-4 text-[#E6BF76]" />
+                        <h3 className="font-serif font-bold text-sm text-[#F4EAD7]">Paleta de Colores de Tienda y Tematización</h3>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 relative z-10 text-left">
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-[#E6BF76] uppercase tracking-widest mb-1.5">Color Primario</label>
+                          <div className="flex gap-1.5">
+                            <input
+                              type="color"
+                              value={editingSettings.primaryColor}
+                              onChange={(e) => setEditingSettings({ ...editingSettings, primaryColor: e.target.value })}
+                              className="h-8 w-8 rounded-lg cursor-pointer border-0 bg-transparent shrink-0"
+                            />
+                            <input
+                              type="text"
+                              value={editingSettings.primaryColor}
+                              onChange={(e) => setEditingSettings({ ...editingSettings, primaryColor: e.target.value })}
+                              className="w-full px-2 py-1 bg-[#050B1A] border border-[#D4A55A]/25 rounded-xl text-xs font-mono text-[#F4EAD7] outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-[#E6BF76] uppercase tracking-widest mb-1.5">Color Acento</label>
+                          <div className="flex gap-1.5">
+                            <input
+                              type="color"
+                              value={editingSettings.accentColor}
+                              onChange={(e) => setEditingSettings({ ...editingSettings, accentColor: e.target.value })}
+                              className="h-8 w-8 rounded-lg cursor-pointer border-0 bg-transparent shrink-0"
+                            />
+                            <input
+                              type="text"
+                              value={editingSettings.accentColor}
+                              onChange={(e) => setEditingSettings({ ...editingSettings, accentColor: e.target.value })}
+                              className="w-full px-2 py-1 bg-[#050B1A] border border-[#D4A55A]/25 rounded-xl text-xs font-mono text-[#F4EAD7] outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-extrabold text-[#E6BF76] uppercase tracking-widest mb-1.5">Tema Predeterminado</label>
+                          <select
+                            value={editingSettings.themeMode}
+                            onChange={(e) => setEditingSettings({ ...editingSettings, themeMode: e.target.value as 'dark' | 'light' })}
+                            className="w-full px-3 py-2 bg-[#050B1A]/95 border border-[#D4A55A]/25 rounded-xl text-xs outline-none text-[#F4EAD7]"
+                          >
+                            <option value="dark" className="bg-[#0B1730] text-[#F4EAD7]">Immersive Dark Mode</option>
+                            <option value="light" className="bg-[#0B1730] text-[#F4EAD7]">Clean Light Mode</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Preloaded visual default themes for fast customization */}
+                      <div className="border border-[#D4A55A]/15 bg-[#050B1A]/50 p-4 rounded-2xl space-y-3 relative z-10 text-left">
+                        <div className="flex items-center gap-1.5 text-[#E6BF76]">
+                          <Sparkles className="h-3.5 w-3.5 text-[#E6BF76] animate-pulse" />
+                          <span className="text-[10px] font-extrabold uppercase tracking-widest">Temas Predeterminados (Haz click para aplicar)</span>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {THEME_PRESETS.map((preset) => {
+                            const isSelected = 
+                              editingSettings.primaryColor.toLowerCase() === preset.primaryColor.toLowerCase() &&
+                              editingSettings.accentColor.toLowerCase() === preset.accentColor.toLowerCase() &&
+                              editingSettings.themeMode === preset.themeMode;
+                            
+                            return (
+                              <button
+                                key={preset.name}
+                                type="button"
+                                onClick={() => {
+                                  setEditingSettings({
+                                    ...editingSettings,
+                                    primaryColor: preset.primaryColor,
+                                    accentColor: preset.accentColor,
+                                    themeMode: preset.themeMode
+                                  });
+                                  showAdminToast(`Tema "${preset.name}" seleccionado temporalmente.`, "success");
+                                }}
+                                className={`p-2 border rounded-xl text-left transition cursor-pointer flex flex-col gap-1.5 relative overflow-hidden group ${
+                                  isSelected 
+                                    ? "bg-[#0B1730] border-[#D4A55A] shadow-lg ring-1 ring-[#D4A55A]/40" 
+                                    : "bg-[#030611]/60 border-[#D4A55A]/15 hover:bg-[#0B1730]/60 hover:border-[#D4A55A]/30 text-[#F4EAD7]"
+                                }`}
+                              >
+                                <div className="flex items-center justify-between w-full">
+                                  <div className="flex items-center gap-1">
+                                    <span className="w-2.5 h-2.5 rounded-full shrink-0 border border-black/10" style={{ backgroundColor: preset.primaryColor }}></span>
+                                    <span className="w-2.5 h-2.5 rounded-full shrink-0 border border-black/10" style={{ backgroundColor: preset.accentColor }}></span>
+                                  </div>
+                                  <span className={`text-[7px] px-1 py-0.2 rounded font-extrabold tracking-wider uppercase ${
+                                    preset.themeMode === 'dark' 
+                                      ? 'bg-[#050B1A] text-[#E6BF76] border border-[#D4A55A]/20' 
+                                      : 'bg-zinc-100 text-zinc-600 border border-slate-200'
+                                    }`}>
+                                    {preset.themeMode === 'dark' ? "Oscuro" : "Claro"}
+                                  </span>
+                                </div>
+                                <span className="text-[10px] font-bold truncate group-hover:text-[#E6BF76] transition-colors">
+                                  {preset.name}
+                                </span>
+                                {isSelected && (
+                                  <div className="absolute top-0 right-0 w-3.5 h-3.5 bg-[#D4A55A] rounded-bl-lg flex items-center justify-center">
+                                    <span className="text-[7px] text-[#050B1A] font-extrabold">✓</span>
+                                  </div>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
                     </div>
 
-                    <div className="pt-4 flex justify-end">
+                  {/* 3. SISTEMAS DE DISEÑO AVANZADOS (ACORDEONES DESPLEGABLES) */}
+                  <div className="space-y-4">
+                    
+                    {/* ACORDEÓN 1: ÁUREA NOCTURNA PRO */}
+                    <div className="bg-[#0B1730]/95 backdrop-blur-md rounded-3xl border border-[#D4A55A]/25 shadow-lg overflow-hidden text-[#F4EAD7] transition-all duration-300">
+                      {/* Cabecera del Acordeón */}
                       <button
-                        onClick={handleSaveSettings}
-                        disabled={saving}
-                        className="py-2.5 px-6 bg-blue-600 text-white rounded-lg font-semibold text-xs transition-all hover:bg-blue-700 hover:scale-[1.01] active:scale-[0.99] flex items-center gap-1.5 cursor-pointer shadow-md"
+                        type="button"
+                        onClick={() => setIsAureaAccordionOpen(!isAureaAccordionOpen)}
+                        className="w-full p-6 flex items-center justify-between gap-4 text-left hover:bg-[#D4A55A]/5 transition-colors focus:outline-none cursor-pointer relative z-10"
                       >
-                        <Save className="h-4 w-4" />
-                        <span>{saving ? "Guardando..." : "Guardar Personalización"}</span>
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 bg-[#D4A55A]/10 text-[#E6BF76] border border-[#D4A55A]/20 rounded-2xl shadow-md shrink-0">
+                            <Sparkles className="h-5 w-5 animate-pulse text-[#E6BF76]" />
+                          </div>
+                          <div>
+                            <h3 className="font-serif font-bold text-sm tracking-wide flex flex-wrap items-center gap-2">
+                              <span>Sistema de Diseño Áurea Nocturna Pro</span>
+                              <span className="text-[9px] font-mono bg-[#D4A55A]/15 border border-[#D4A55A]/20 px-2 py-0.5 rounded-full text-[#E6BF76] font-bold uppercase tracking-wider">
+                                Registrado
+                              </span>
+                              {(editingSettings.primaryColor?.toLowerCase() === "#d4a55a" && 
+                                editingSettings.accentColor?.toLowerCase() === "#e6bf76" && 
+                                editingSettings.themeMode === "dark") && (
+                                <span className="text-[9px] font-mono bg-emerald-500/20 border border-emerald-500/30 px-2.5 py-0.5 rounded-full text-emerald-400 font-bold uppercase tracking-wider animate-pulse flex items-center gap-1 shadow-[0_0_10px_rgba(16,185,129,0.15)]">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span> Activo
+                                </span>
+                              )}
+                            </h3>
+                            <p className="text-[11px] text-[#A0AEC0] mt-0.5">Especificaciones técnicas, paleta cromática de lujo, tipografías y notas de estilo áureo.</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="text-[10px] font-mono font-bold text-[#E6BF76]/60 uppercase tracking-widest hidden sm:inline">
+                            {isAureaAccordionOpen ? "Colapsar" : "Expandir"}
+                          </span>
+                          <div className={`p-2 bg-[#D4A55A]/10 text-[#E6BF76] border border-[#D4A55A]/20 rounded-xl transition-transform duration-300 ${isAureaAccordionOpen ? "rotate-180" : ""}`}>
+                            <ChevronDown className="h-4 w-4" />
+                          </div>
+                        </div>
                       </button>
+
+                      {/* Contenido Desplegable */}
+                      <AnimatePresence initial={false}>
+                        {isAureaAccordionOpen && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.3, ease: "easeInOut" }}
+                            className="border-t border-[#D4A55A]/15 bg-[#050B1A]/30"
+                          >
+                            <div className="p-6 pt-4 space-y-6 relative">
+                              <div className="absolute top-0 right-0 w-48 h-48 bg-[#D4A55A]/5 rounded-full blur-3xl pointer-events-none" />
+
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#D4A55A]/20 pb-4 relative z-10">
+                                <div>
+                                  <span className="text-[9px] font-mono bg-[#D4A55A]/15 border border-[#D4A55A]/20 px-2 py-0.5 rounded-full text-[#E6BF76] font-bold uppercase tracking-wider">
+                                    Ajuste Rápido de un Clic
+                                  </span>
+                                  <p className="text-xs text-[#A0AEC0] mt-1">Aplica instantáneamente todos los colores de este sistema en el editor.</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingSettings({
+                                      ...editingSettings,
+                                      primaryColor: "#D4A55A",
+                                      accentColor: "#E6BF76",
+                                      themeMode: "dark"
+                                    });
+                                    showAdminToast("¡Paleta 'Áurea Nocturna Pro' cargada en el editor! Haz clic abajo en 'Guardar Todo' para aplicarla.", "success");
+                                  }}
+                                  className="py-2 px-4 rounded-xl border border-[#D4A55A] bg-[#D4A55A]/10 text-[#E6BF76] hover:bg-[#D4A55A] hover:text-[#050B1A] transition text-[11px] font-extrabold uppercase tracking-widest active:scale-95 cursor-pointer flex items-center gap-1.5 shadow-md"
+                                >
+                                  <Sparkles className="h-3 w-3" />
+                                  <span>Aplicar Áurea Nocturna</span>
+                                </button>
+                              </div>
+
+                              {/* Info grid of the system */}
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10">
+                                
+                                {/* Column 1: Color Palette Swatches */}
+                                <div className="space-y-4 bg-[#050B1A]/60 p-4.5 rounded-2xl border border-[#D4A55A]/15">
+                                  <h4 className="text-xs font-extrabold uppercase tracking-widest text-[#E6BF76] flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-[#D4A55A]" />
+                                    Paleta Cromática Oficial
+                                  </h4>
+                                  <p className="text-[10px] text-zinc-400 leading-relaxed text-left font-sans">Combinación selecta de tonos oscuros y destellos de oro imperial para una atmósfera premium.</p>
+                                  
+                                  <div className="space-y-2.5 pt-1">
+                                    {/* Swatch 1: Canvas deep */}
+                                    <div className="flex items-center justify-between p-2 bg-[#050B1A] rounded-xl border border-[#D4A55A]/10">
+                                      <div className="flex items-center gap-2.5">
+                                        <span className="w-6 h-6 rounded-lg bg-[#050B1A] border border-[#D4A55A]/35 shadow-xs shrink-0" />
+                                        <div className="text-left">
+                                          <p className="text-[10.5px] font-bold">Fondo General Canvas</p>
+                                          <p className="text-[9px] font-mono text-[#E6BF76]">#050B1A</p>
+                                        </div>
+                                      </div>
+                                      <button 
+                                        type="button"
+                                        onClick={() => {
+                                          navigator.clipboard.writeText("#050B1A");
+                                          showAdminToast("¡Hex #050B1A copiado!", "success");
+                                        }}
+                                        className="p-1 px-2.5 rounded bg-[#0B1730] hover:bg-[#D4A55A]/10 border border-[#D4A55A]/15 text-zinc-400 hover:text-white text-[9.5px] font-bold cursor-pointer transition-all"
+                                      >
+                                        Copiar
+                                      </button>
+                                    </div>
+
+                                    {/* Swatch 2: Cards and popups */}
+                                    <div className="flex items-center justify-between p-2 bg-[#050B1A] rounded-xl border border-[#D4A55A]/10">
+                                      <div className="flex items-center gap-2.5">
+                                        <span className="w-6 h-6 rounded-lg bg-[#0B1730] border border-[#D4A55A]/35 shadow-xs shrink-0" />
+                                        <div className="text-left">
+                                          <p className="text-[10.5px] font-bold">Fondo Tarjetas & Modales</p>
+                                          <p className="text-[9px] font-mono text-[#E6BF76]">#0B1730</p>
+                                        </div>
+                                      </div>
+                                      <button 
+                                        type="button"
+                                        onClick={() => {
+                                          navigator.clipboard.writeText("#0B1730");
+                                          showAdminToast("¡Hex #0B1730 copiado!", "success");
+                                        }}
+                                        className="p-1 px-2.5 rounded bg-[#0B1730] hover:bg-[#D4A55A]/10 border border-[#D4A55A]/15 text-zinc-400 hover:text-white text-[9.5px] font-bold cursor-pointer transition-all"
+                                      >
+                                        Copiar
+                                      </button>
+                                    </div>
+
+                                    {/* Swatch 3: Gold Primary */}
+                                    <div className="flex items-center justify-between p-2 bg-[#050B1A] rounded-xl border border-[#D4A55A]/10">
+                                      <div className="flex items-center gap-2.5">
+                                        <span className="w-6 h-6 rounded-lg bg-[#D4A55A] shadow-xs shrink-0" />
+                                        <div className="text-left">
+                                          <p className="text-[10.5px] font-bold">Acento Oro Imperial</p>
+                                          <p className="text-[9px] font-mono text-[#E6BF76]">#D4A55A</p>
+                                        </div>
+                                      </div>
+                                      <button 
+                                        type="button"
+                                        onClick={() => {
+                                          navigator.clipboard.writeText("#D4A55A");
+                                          showAdminToast("¡Hex #D4A55A copiado!", "success");
+                                        }}
+                                        className="p-1 px-2.5 rounded bg-[#0B1730] hover:bg-[#D4A55A]/10 border border-[#D4A55A]/15 text-zinc-400 hover:text-white text-[9.5px] font-bold cursor-pointer transition-all"
+                                      >
+                                        Copiar
+                                      </button>
+                                    </div>
+
+                                    {/* Swatch 4: Champagne Accent */}
+                                    <div className="flex items-center justify-between p-2 bg-[#050B1A] rounded-xl border border-[#D4A55A]/10">
+                                      <div className="flex items-center gap-2.5">
+                                        <span className="w-6 h-6 rounded-lg bg-[#E6BF76] shadow-xs shrink-0" />
+                                        <div className="text-left">
+                                          <p className="text-[10.5px] font-bold">Acento Oro Champaña</p>
+                                          <p className="text-[9px] font-mono text-[#E6BF76]">#E6BF76</p>
+                                        </div>
+                                      </div>
+                                      <button 
+                                        type="button"
+                                        onClick={() => {
+                                          navigator.clipboard.writeText("#E6BF76");
+                                          showAdminToast("¡Hex #E6BF76 copiado!", "success");
+                                        }}
+                                        className="p-1 px-2.5 rounded bg-[#0B1730] hover:bg-[#D4A55A]/10 border border-[#D4A55A]/15 text-zinc-400 hover:text-white text-[9.5px] font-bold cursor-pointer transition-all"
+                                      >
+                                        Copiar
+                                      </button>
+                                    </div>
+
+                                    {/* Swatch 5: Warm Bone text */}
+                                    <div className="flex items-center justify-between p-2 bg-[#050B1A] rounded-xl border border-[#D4A55A]/10">
+                                      <div className="flex items-center gap-2.5">
+                                        <span className="w-6 h-6 rounded-lg bg-[#F4EAD7] shadow-xs shrink-0" />
+                                        <div className="text-left">
+                                          <p className="text-[10.5px] font-bold">Texto Principal Cálido</p>
+                                          <p className="text-[9px] font-mono text-[#E6BF76]">#F4EAD7</p>
+                                        </div>
+                                      </div>
+                                      <button 
+                                        type="button"
+                                        onClick={() => {
+                                          navigator.clipboard.writeText("#F4EAD7");
+                                          showAdminToast("¡Hex #F4EAD7 copiado!", "success");
+                                        }}
+                                        className="p-1 px-2.5 rounded bg-[#0B1730] hover:bg-[#D4A55A]/10 border border-[#D4A55A]/15 text-zinc-400 hover:text-white text-[9.5px] font-bold cursor-pointer transition-all"
+                                      >
+                                        Copiar
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Column 2: Typography & Rounding specs */}
+                                <div className="space-y-4 bg-[#050B1A]/60 p-4.5 rounded-2xl border border-[#D4A55A]/15">
+                                  <h4 className="text-xs font-extrabold uppercase tracking-widest text-[#E6BF76] flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-[#D4A55A]" />
+                                    Tipografía & Escala Visual
+                                  </h4>
+                                  <p className="text-[10px] text-zinc-400 leading-relaxed text-left font-sans">Contraste de fuentes serif de alta costura con tipos de código tecnológico y de lectura limpia.</p>
+                                  
+                                  <div className="space-y-3 pt-1">
+                                    <div className="text-left font-sans">
+                                      <span className="text-[9px] font-mono font-bold text-zinc-500 uppercase tracking-widest block mb-1">Fuentes de Título</span>
+                                      <div className="p-2 bg-[#050B1A] border border-[#D4A55A]/10 rounded-xl">
+                                        <p className="font-serif font-bold text-xs tracking-wide text-[#F4EAD7]">Playfair Display (Serif)</p>
+                                        <p className="text-[9px] text-zinc-500 mt-0.5">Estilo elegante de alta costura para títulos y secciones importantes.</p>
+                                      </div>
+                                    </div>
+
+                                    <div className="text-left font-sans">
+                                      <span className="text-[9px] font-mono font-bold text-zinc-500 uppercase tracking-widest block mb-1">Fuentes de Cuerpo</span>
+                                      <div className="p-2 bg-[#050B1A] border border-[#D4A55A]/10 rounded-xl">
+                                        <p className="font-sans font-medium text-xs text-[#F4EAD7]">Inter (Sans-Serif)</p>
+                                        <p className="text-[9px] text-zinc-500 mt-0.5">Para descripción de artículos, listas, botones y textos generales de alta legibilidad.</p>
+                                      </div>
+                                    </div>
+
+                                    <div className="text-left font-mono">
+                                      <span className="text-[9px] font-mono font-bold text-zinc-500 uppercase tracking-widest block mb-1">Fuentes de Datos & Contadores</span>
+                                      <div className="p-2 bg-[#050B1A] border border-[#D4A55A]/10 rounded-xl">
+                                        <p className="font-mono text-[10.5px] text-[#E6BF76]">JetBrains Mono (Monospace)</p>
+                                        <p className="text-[9px] text-zinc-500 mt-0.5">Para precios, cupones, códigos, contadores y prioridades de orden.</p>
+                                      </div>
+                                    </div>
+
+                                    <div className="text-left font-sans">
+                                      <span className="text-[9px] font-mono font-bold text-zinc-500 uppercase tracking-widest block mb-1">Curvatura y Radio de Bordes</span>
+                                      <div className="p-2 bg-[#050B1A] border border-[#D4A55A]/10 rounded-xl flex items-center justify-between">
+                                        <div className="text-left font-sans">
+                                          <p className="text-[10px] font-bold text-[#F4EAD7]">Tarjetas: 24px (rounded-3xl)</p>
+                                          <p className="text-[10px] font-bold text-[#F4EAD7]">Botones: 12px (rounded-xl)</p>
+                                        </div>
+                                        <span className="text-[18px] text-[#E6BF76]">📐</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Column 3: Custom notes with quick persistence */}
+                                <div className="space-y-4 bg-[#050B1A]/60 p-4.5 rounded-2xl border border-[#D4A55A]/15 flex flex-col justify-between">
+                                  <div className="space-y-3">
+                                    <h4 className="text-xs font-extrabold uppercase tracking-widest text-[#E6BF76] flex items-center gap-1.5">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-[#D4A55A]" />
+                                      Notas del Diseñador Admin
+                                    </h4>
+                                    <p className="text-[10px] text-zinc-400 leading-relaxed text-left font-sans">
+                                      Guarda especificaciones, ideas o recordatorios sobre este formato visual para solicitarlos de nuevo en el futuro. Se guardará de forma persistente en tu servidor.
+                                    </p>
+                                    
+                                    <textarea
+                                      rows={5}
+                                      value={editingSettings.styleSystemNotes || ""}
+                                      onChange={(e) => setEditingSettings({ ...editingSettings, styleSystemNotes: e.target.value })}
+                                      className="w-full p-3 bg-[#050B1A] border border-[#D4A55A]/25 rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#D4A55A]/45 text-[#F4EAD7] placeholder-zinc-600 resize-none font-sans"
+                                      placeholder="Escribe aquí notas sobre colores, fuentes o ideas del estilo visual actual..."
+                                    />
+                                  </div>
+
+                                  <div className="pt-2">
+                                    <button
+                                      onClick={handleSaveSettings}
+                                      disabled={saving}
+                                      className="w-full py-2.5 bg-[#D4A55A] hover:bg-[#E6BF76] text-[#050B1A] font-extrabold rounded-xl text-xs transition duration-200 flex items-center justify-center gap-2 cursor-pointer uppercase tracking-wider shadow-md font-sans"
+                                    >
+                                      {saving ? (
+                                        <>
+                                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                                          <span>Guardando Notas...</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Save className="h-3.5 w-3.5" />
+                                          <span>Guardar Notas del Estilo</span>
+                                        </>
+                                      )}
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Technical specifications raw data for developers */}
+                              <div className="bg-[#050B1A] p-4 rounded-2xl border border-[#D4A55A]/15 relative z-10 space-y-3">
+                                <div className="flex items-center justify-between border-b border-[#D4A55A]/10 pb-2">
+                                  <span className="text-[10px] uppercase font-extrabold tracking-wider text-zinc-400 flex items-center gap-1.5">
+                                    <span>🛠️ Hoja de Especificaciones (Tokens JSON para Copiado Rápido)</span>
+                                  </span>
+                                  <span className="text-[9px] text-[#E6BF76] font-mono font-bold">FORMAT_ID: PRO_AUREA_NOCTURNA_V1</span>
+                                </div>
+                                <div className="relative">
+                                  <pre className="text-[9.5px] font-mono text-[#E6BF76] bg-[#030611] p-3 rounded-xl overflow-x-auto max-h-36 border border-[#D4A55A]/10 leading-relaxed text-left select-all">
+{`{
+  "themeName": "Áurea Nocturna / Imperial Gold Pro",
+  "developerPrompt": "Please build the interface with dark gold theme. Primary Background: #050B1A, Secondary Background (cards, overlays): #0B1730 with 95% opacity and backdrop blur, primary accent: #D4A55A (imperial gold), secondary accent: #E6BF76 (champagne gold highlighting), text color: #F4EAD7, cards border radius: 24px (rounded-3xl), buttons border radius: 12px (rounded-xl), borders: 1px solid of gold/25 opacity.",
+  "tokens": {
+    "colors": {
+      "canvas_bg": "#050B1A",
+      "card_bg": "#0B1730",
+      "gold_primary": "#D4A55A",
+      "gold_secondary": "#E6BF76",
+      "bone_white_text": "#F4EAD7"
+    },
+    "typography": {
+      "titles": "Playfair Display, serif",
+      "body": "Inter, sans-serif",
+      "stats_mono": "JetBrains Mono, monospace"
+    },
+    "radii": {
+      "cards": "24px (rounded-3xl)",
+      "buttons_inputs": "12px (rounded-xl)"
+    }
+  }
+}`}
+                                  </pre>
+                                </div>
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
+
+                    {/* ACORDEÓN 2: COLORES JUEM */}
+                    <div className="bg-[#0B1730]/95 backdrop-blur-md rounded-3xl border border-[#D4A55A]/25 shadow-lg overflow-hidden text-[#F4EAD7] transition-all duration-300">
+                      {/* Cabecera del Acordeón */}
+                      <button
+                        type="button"
+                        onClick={() => setIsJuemAccordionOpen(!isJuemAccordionOpen)}
+                        className="w-full p-6 flex items-center justify-between gap-4 text-left hover:bg-[#D4A55A]/5 transition-colors focus:outline-none cursor-pointer relative z-10"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 bg-[#D4A55A]/10 text-[#E6BF76] border border-[#D4A55A]/20 rounded-2xl shadow-md shrink-0">
+                            <Palette className="h-5 w-5 text-[#E6BF76]" />
+                          </div>
+                          <div>
+                            <h3 className="font-serif font-bold text-sm tracking-wide flex flex-wrap items-center gap-2">
+                              <span>Colores Juem 🎨</span>
+                              <span className="text-[9px] font-mono bg-[#D4A55A]/15 border border-[#D4A55A]/20 px-2.5 py-0.5 rounded-full text-[#E6BF76] font-bold uppercase tracking-wider">
+                                Alta Costura
+                              </span>
+                            </h3>
+                            <p className="text-[11px] text-[#A0AEC0] mt-0.5">Especificación de Alta Costura y Lujo Editorial para la identidad de la tienda.</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="text-[10px] font-mono font-bold text-[#E6BF76]/60 uppercase tracking-widest hidden sm:inline">
+                            {isJuemAccordionOpen ? "Colapsar" : "Expandir"}
+                          </span>
+                          <div className={`p-2 bg-[#D4A55A]/10 text-[#E6BF76] border border-[#D4A55A]/20 rounded-xl transition-transform duration-300 ${isJuemAccordionOpen ? "rotate-180" : ""}`}>
+                            <ChevronDown className="h-4 w-4" />
+                          </div>
+                        </div>
+                      </button>
+
+                      {/* Contenido Desplegable */}
+                      <AnimatePresence initial={false}>
+                        {isJuemAccordionOpen && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.3, ease: "easeInOut" }}
+                            className="border-t border-[#D4A55A]/15 bg-[#050B1A]/30"
+                          >
+                            <div className="p-6 pt-4 space-y-6 relative">
+                              <div className="absolute top-0 right-0 w-48 h-48 bg-[#D4A55A]/5 rounded-full blur-3xl pointer-events-none" />
+
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#D4A55A]/20 pb-4 relative z-10">
+                                <div>
+                                  <span className="text-[9px] font-mono bg-[#D4A55A]/15 border border-[#D4A55A]/20 px-2.5 py-0.5 rounded-full text-[#E6BF76] font-bold uppercase tracking-wider">
+                                    Ajuste de Identidad Editorial
+                                  </span>
+                                  <p className="text-xs text-[#A0AEC0] mt-1">Aplica la paleta insignia de Juem de inmediato.</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingSettings({
+                                      ...editingSettings,
+                                      primaryColor: "#D4A55A",
+                                      accentColor: "#E6BF76",
+                                      themeMode: "dark"
+                                    });
+                                    showAdminToast('Tema "Colores Juem 🎨" seleccionado temporalmente. Haz clic abajo en "Guardar Todo" para aplicarlo.', "success");
+                                  }}
+                                  className="py-2 px-4 rounded-xl border border-[#D4A55A] bg-[#D4A55A]/10 text-[#E6BF76] hover:bg-[#D4A55A] hover:text-[#050B1A] transition text-[11px] font-extrabold uppercase tracking-widest active:scale-95 cursor-pointer flex items-center gap-1.5 shadow-md"
+                                >
+                                  <Sparkles className="h-3 w-3" />
+                                  <span>Aplicar Tema Juem</span>
+                                </button>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10">
+                                {/* Left Side: Swatches */}
+                                <div className="space-y-4 bg-[#050B1A]/60 p-4.5 rounded-2xl border border-[#D4A55A]/15">
+                                  <h4 className="text-xs font-extrabold uppercase tracking-widest text-[#E6BF76] flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-[#D4A55A]" />
+                                    🎨 Paleta de Colores Aplicados en la Web
+                                  </h4>
+                                  <div className="space-y-3">
+                                    {/* Swatch 1: #050B1A */}
+                                    <div className="flex items-center justify-between p-2 bg-[#050B1A] rounded-xl border border-[#D4A55A]/10">
+                                      <div className="flex items-center gap-2.5">
+                                        <span className="w-6 h-6 rounded-lg bg-[#050B1A] border border-zinc-700 shrink-0" />
+                                        <div className="text-left font-sans">
+                                          <p className="text-[10.5px] font-bold text-[#F4EAD7]">#050B1A</p>
+                                          <p className="text-[9px] font-medium text-slate-300">Fondo Principal (Azul Profundo)</p>
+                                          <p className="text-[8px] text-zinc-500">Fondo del sitio o de la página, pie de página y fondos principales de desplegables.</p>
+                                        </div>
+                                      </div>
+                                      <button 
+                                        type="button"
+                                        onClick={() => {
+                                          navigator.clipboard.writeText("#050B1A");
+                                          showAdminToast("¡Hex #050B1A copiado!", "success");
+                                        }}
+                                        className="p-1 px-2.5 rounded bg-[#0B1730] hover:bg-[#D4A55A]/10 border border-[#D4A55A]/15 text-zinc-400 hover:text-white text-[9.5px] font-bold cursor-pointer transition-all"
+                                      >
+                                        Copiar
+                                      </button>
+                                    </div>
+
+                                    {/* Swatch 2: #0B1730 */}
+                                    <div className="flex items-center justify-between p-2 bg-[#050B1A] rounded-xl border border-[#D4A55A]/10">
+                                      <div className="flex items-center gap-2.5">
+                                        <span className="w-6 h-6 rounded-lg bg-[#0B1730] border border-zinc-700 shrink-0" />
+                                        <div className="text-left font-sans">
+                                          <p className="text-[10.5px] font-bold text-[#F4EAD7]">#0B1730</p>
+                                          <p className="text-[9px] font-medium text-slate-300">Fondo Secundario (Azul Cobalto Oscuro)</p>
+                                          <p className="text-[8px] text-zinc-500">Tarjetas de producto, contenedor de carrito, inputs y botones inactivos de menú.</p>
+                                        </div>
+                                      </div>
+                                      <button 
+                                        type="button"
+                                        onClick={() => {
+                                          navigator.clipboard.writeText("#0B1730");
+                                          showAdminToast("¡Hex #0B1730 copiado!", "success");
+                                        }}
+                                        className="p-1 px-2.5 rounded bg-[#0B1730] hover:bg-[#D4A55A]/10 border border-[#D4A55A]/15 text-zinc-400 hover:text-white text-[9.5px] font-bold cursor-pointer transition-all"
+                                      >
+                                        Copiar
+                                      </button>
+                                    </div>
+
+                                    {/* Swatch 3: #D4A55A */}
+                                    <div className="flex items-center justify-between p-2 bg-[#050B1A] rounded-xl border border-[#D4A55A]/10">
+                                      <div className="flex items-center gap-2.5">
+                                        <span className="w-6 h-6 rounded-lg bg-[#D4A55A] shrink-0" />
+                                        <div className="text-left font-sans">
+                                          <p className="text-[10.5px] font-bold text-[#F4EAD7]">#D4A55A</p>
+                                          <p className="text-[9px] font-medium text-slate-300">Dorado Principal (Accent Gold)</p>
+                                          <p className="text-[8px] text-zinc-500">Botones principales, categorías activas, precio seleccionado y acentos decorativos.</p>
+                                        </div>
+                                      </div>
+                                      <button 
+                                        type="button"
+                                        onClick={() => {
+                                          navigator.clipboard.writeText("#D4A55A");
+                                          showAdminToast("¡Hex #D4A55A copiado!", "success");
+                                        }}
+                                        className="p-1 px-2.5 rounded bg-[#0B1730] hover:bg-[#D4A55A]/10 border border-[#D4A55A]/15 text-zinc-400 hover:text-white text-[9.5px] font-bold cursor-pointer transition-all"
+                                      >
+                                        Copiar
+                                      </button>
+                                    </div>
+
+                                    {/* Swatch 4: #E6BF76 */}
+                                    <div className="flex items-center justify-between p-2 bg-[#050B1A] rounded-xl border border-[#D4A55A]/10">
+                                      <div className="flex items-center gap-2.5">
+                                        <span className="w-6 h-6 rounded-lg bg-[#E6BF76] shrink-0" />
+                                        <div className="text-left font-sans">
+                                          <p className="text-[10.5px] font-bold text-[#F4EAD7]">#E6BF76</p>
+                                          <p className="text-[9px] font-medium text-slate-300">Dorado Arena (Light Gold)</p>
+                                          <p className="text-[8px] text-zinc-500">Enlaces interactivos, subtextos destacados, indicador activo de talles.</p>
+                                        </div>
+                                      </div>
+                                      <button 
+                                        type="button"
+                                        onClick={() => {
+                                          navigator.clipboard.writeText("#E6BF76");
+                                          showAdminToast("¡Hex #E6BF76 copiado!", "success");
+                                        }}
+                                        className="p-1 px-2.5 rounded bg-[#0B1730] hover:bg-[#D4A55A]/10 border border-[#D4A55A]/15 text-zinc-400 hover:text-white text-[9.5px] font-bold cursor-pointer transition-all"
+                                      >
+                                        Copiar
+                                      </button>
+                                    </div>
+
+                                    {/* Swatch 5: #F4EAD7 */}
+                                    <div className="flex items-center justify-between p-2 bg-[#050B1A] rounded-xl border border-[#D4A55A]/10">
+                                      <div className="flex items-center gap-2.5">
+                                        <span className="w-6 h-6 rounded-lg bg-[#F4EAD7] shrink-0" />
+                                        <div className="text-left font-sans">
+                                          <p className="text-[10.5px] font-bold text-[#F4EAD7]">#F4EAD7</p>
+                                          <p className="text-[9px] font-medium text-slate-300">Blanco Crema Elegante</p>
+                                          <p className="text-[8px] text-zinc-500">Títulos principales de sección, títulos de productos en portada y textos esenciales.</p>
+                                        </div>
+                                      </div>
+                                      <button 
+                                        type="button"
+                                        onClick={() => {
+                                          navigator.clipboard.writeText("#F4EAD7");
+                                          showAdminToast("¡Hex #F4EAD7 copiado!", "success");
+                                        }}
+                                        className="p-1 px-2.5 rounded bg-[#0B1730] hover:bg-[#D4A55A]/10 border border-[#D4A55A]/15 text-zinc-400 hover:text-white text-[9.5px] font-bold cursor-pointer transition-all"
+                                      >
+                                        Copiar
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Right Side: Typography & Interactions */}
+                                <div className="space-y-6 bg-[#050B1A]/60 p-4.5 rounded-2xl border border-[#D4A55A]/15 flex flex-col justify-between">
+                                  <div className="space-y-4">
+                                    <div className="text-left">
+                                      <h4 className="text-xs font-extrabold uppercase tracking-widest text-[#E6BF76] mb-2 flex items-center gap-1.5">
+                                        ✍️ Estilo de Tipografía (Letras)
+                                      </h4>
+                                      <ul className="text-xs space-y-2.5 text-zinc-300 font-sans leading-relaxed">
+                                        <li>
+                                          <strong className="text-[#F4EAD7] font-serif block">Tipografía Display / Serif:</strong>
+                                          Utilizada en títulos principales, cabeceras del carrusel y título de tu marca para transmitir elegancia y prestigio de alta gama.
+                                        </li>
+                                        <li>
+                                          <strong className="text-[#F4EAD7] font-sans block">Tipografía Sans (Inter):</strong>
+                                          Para cuerpo de texto, descripciones del producto, botones de compra y tablas de medidas, garantizando legibilidad perfecta.
+                                        </li>
+                                        <li>
+                                          <strong className="text-[#F4EAD7] font-mono text-[10px] block">Tipografía Mono (JetBrains Mono):</strong>
+                                          Reservada para números de transacciones, códigos de cupones y medidas exactas de talles.
+                                        </li>
+                                      </ul>
+                                    </div>
+
+                                    <div className="text-left border-t border-[#D4A55A]/10 pt-4">
+                                      <h4 className="text-xs font-extrabold uppercase tracking-widest text-[#E6BF76] mb-2 flex items-center gap-1.5">
+                                        ✨ Interacciones y Hover de Menú Aplicados
+                                      </h4>
+                                      <ul className="text-xs space-y-2.5 text-zinc-300 font-sans leading-relaxed">
+                                        <li>
+                                          <strong className="text-[#F4EAD7] block">Botones e Items de Menú:</strong>
+                                          Reaccionan con animación de escala (<code className="text-[#E6BF76] font-mono text-[10px]">scale-[1.03]</code>), cambio suave de borde a un tono dorado vibrante y destellos de opacidad dorada al pasar el cursor.
+                                        </li>
+                                        <li>
+                                          <strong className="text-[#F4EAD7] block">Botón del Carrito:</strong>
+                                          Reacciona dinámicamente convirtiendo su icono de dorado a crema claro con fondo cobalto satinado.
+                                        </li>
+                                      </ul>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+
                   </div>
-                )}
+
+                  {/* Unidificated Global Save Button */}
+                  <div className="pt-4 flex justify-end">
+                    <button
+                      onClick={handleSaveSettings}
+                      disabled={saving}
+                      className="py-3 px-8 theme-btn-primary text-white rounded-xl font-bold text-xs uppercase tracking-wider transition-all hover:scale-[1.01] active:scale-[0.99] flex items-center gap-2 cursor-pointer shadow-md"
+                    >
+                      {saving ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span>Guardando Toda la Configuración...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Save className="h-4 w-4" />
+                          <span>Guardar Toda la Personalización</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
 
                 {adminSection === "banner" && (
                   <div className="bg-[#0B1730]/40 backdrop-blur-md p-6 rounded-2xl border border-zinc-800/80 hover:border-amber-500/20 transition-all duration-300 space-y-6 shadow-xl animate-fade-in">
@@ -7381,253 +8129,7 @@ export default function App() {
                   </div>
                 )}
 
-                {/* Colors section remains combined with general branding */}
-                {adminSection === "general" && (
-                  <div className="bg-white dark:bg-zinc-950 p-5 rounded-xl border border-slate-200 dark:border-zinc-800 shadow-sm space-y-4 animate-fade-in mt-4">
-                    <div className="flex items-center gap-2 border-b border-zinc-800/10 dark:border-zinc-800 pb-3 mb-2">
-                      <Palette className="h-4 w-4 theme-text-primary" />
-                      <h3 className="font-bold text-sm text-slate-950 dark:text-zinc-200 font-sans">Paleta de Colores de Tienda y Tematización</h3>
-                    </div>
 
-                    <div className="grid grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1.5">Color Primario</label>
-                        <div className="flex gap-1.5">
-                          <input
-                            type="color"
-                            value={editingSettings.primaryColor}
-                            onChange={(e) => setEditingSettings({ ...editingSettings, primaryColor: e.target.value })}
-                            className="h-8 w-8 rounded cursor-pointer border-0 bg-transparent"
-                          />
-                          <input
-                            type="text"
-                            value={editingSettings.primaryColor}
-                            onChange={(e) => setEditingSettings({ ...editingSettings, primaryColor: e.target.value })}
-                            className="w-full px-2 py-1 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded text-xs font-mono text-slate-900 dark:text-white"
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1.5">Color Acento</label>
-                        <div className="flex gap-1.5">
-                          <input
-                            type="color"
-                            value={editingSettings.accentColor}
-                            onChange={(e) => setEditingSettings({ ...editingSettings, accentColor: e.target.value })}
-                            className="h-8 w-8 rounded cursor-pointer border-0 bg-transparent"
-                          />
-                          <input
-                            type="text"
-                            value={editingSettings.accentColor}
-                            onChange={(e) => setEditingSettings({ ...editingSettings, accentColor: e.target.value })}
-                            className="w-full px-2 py-1 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded text-xs font-mono text-slate-900 dark:text-white"
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1.5">Tema Predeterminado</label>
-                        <select
-                          value={editingSettings.themeMode}
-                          onChange={(e) => setEditingSettings({ ...editingSettings, themeMode: e.target.value as 'dark' | 'light' })}
-                          className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none text-slate-900 dark:text-white"
-                        >
-                          <option value="dark">Immersive Dark Mode</option>
-                          <option value="light">Clean Light Mode</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    {/* Preloaded visual default themes for fast customization */}
-                    <div className="border border-slate-200 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-900/40 p-4 rounded-xl space-y-3">
-                      <div className="flex items-center gap-1.5 text-slate-700 dark:text-zinc-300">
-                        <Sparkles className="h-3.5 w-3.5 text-blue-500" />
-                        <span className="text-[10px] font-extrabold uppercase tracking-widest">Temas Predeterminados (Haz click para aplicar)</span>
-                      </div>
-                      
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        {THEME_PRESETS.map((preset) => {
-                          const isSelected = 
-                            editingSettings.primaryColor.toLowerCase() === preset.primaryColor.toLowerCase() &&
-                            editingSettings.accentColor.toLowerCase() === preset.accentColor.toLowerCase() &&
-                            editingSettings.themeMode === preset.themeMode;
-                          
-                          return (
-                            <button
-                              key={preset.name}
-                              type="button"
-                              onClick={() => {
-                                setEditingSettings({
-                                  ...editingSettings,
-                                  primaryColor: preset.primaryColor,
-                                  accentColor: preset.accentColor,
-                                  themeMode: preset.themeMode
-                                });
-                                showAdminToast(`Tema "${preset.name}" seleccionado temporalmente.`, "success");
-                              }}
-                              className={`p-2 border rounded-xl text-left transition cursor-pointer flex flex-col gap-1.5 relative overflow-hidden group ${
-                                isSelected 
-                                  ? "bg-white dark:bg-zinc-900 border-indigo-500 shadow-md ring-1 ring-indigo-500/30" 
-                                  : "bg-white/80 dark:bg-zinc-900/20 border-slate-200 dark:border-zinc-800 hover:bg-white dark:hover:bg-zinc-900/60 hover:border-zinc-400 dark:hover:border-zinc-700"
-                              }`}
-                            >
-                              <div className="flex items-center justify-between w-full">
-                                <div className="flex items-center gap-1">
-                                  <span className="w-2.5 h-2.5 rounded-full shrink-0 border border-black/10" style={{ backgroundColor: preset.primaryColor }}></span>
-                                  <span className="w-2.5 h-2.5 rounded-full shrink-0 border border-black/10" style={{ backgroundColor: preset.accentColor }}></span>
-                                </div>
-                                <span className={`text-[7px] px-1 py-0.2 rounded font-extrabold tracking-wider uppercase ${
-                                  preset.themeMode === 'dark' 
-                                    ? 'bg-zinc-800 text-zinc-400 border border-zinc-800' 
-                                    : 'bg-zinc-100 text-zinc-600 border border-slate-200'
-                                }`}>
-                                  {preset.themeMode === 'dark' ? "Oscuro" : "Claro"}
-                                </span>
-                              </div>
-                              <span className="text-[10px] font-bold text-slate-800 dark:text-zinc-200 truncate group-hover:text-blue-500 transition-colors">
-                                {preset.name}
-                              </span>
-                              {isSelected && (
-                                <div className="absolute top-0 right-0 w-3 h-3 bg-indigo-500 rounded-bl-lg flex items-center justify-center">
-                                  <span className="text-[6px] text-white font-extrabold">✓</span>
-                                </div>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Luxurious Info Card: Colores Juem & Style Specifications */}
-                    <div className="border border-[#D4A55A]/30 bg-[#050B1A] p-6 rounded-2xl text-[#F4EAD7] space-y-6 mt-4 shadow-xl">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#D4A55A]/20 pb-4">
-                        <div>
-                          <h4 className="font-serif text-lg font-bold tracking-tight text-[#E6BF76] flex items-center gap-2">
-                            Colores Juem 🎨
-                          </h4>
-                          <p className="text-[10px] uppercase font-bold tracking-widest text-[#D4A55A]/80 mt-1">
-                            Especificación de Alta Costura y Lujo Editorial
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingSettings({
-                              ...editingSettings,
-                              primaryColor: "#D4A55A",
-                              accentColor: "#E6BF76",
-                              themeMode: "dark"
-                            });
-                            showAdminToast('Tema "Colores Juem 🎨" seleccionado temporalmente.', "success");
-                          }}
-                          className="py-2 px-4 rounded-xl border border-[#D4A55A] bg-[#D4A55A]/10 text-[#E6BF76] hover:bg-[#D4A55A] hover:text-[#050B1A] transition text-[11px] font-extrabold uppercase tracking-widest active:scale-95 cursor-pointer flex items-center gap-1.5 self-start sm:self-center"
-                        >
-                          <Sparkles className="h-3 w-3" />
-                          <span>Aplicar Tema Juem</span>
-                        </button>
-                      </div>
-
-                      <div className="space-y-4">
-                        <div>
-                          <span className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-400 block mb-2">
-                            🎨 Paleta de Colores Aplicados en la Web
-                          </span>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                            <div className="p-3 rounded-xl border border-zinc-900 bg-[#0B1730]/40 space-y-1">
-                              <div className="flex items-center gap-2">
-                                <span className="w-3 h-3 rounded-full bg-[#050B1A] border border-zinc-700"></span>
-                                <span className="font-bold text-[#E6BF76] font-mono">#050B1A</span>
-                              </div>
-                              <p className="font-medium text-slate-200">Fondo Principal (Azul Profundo)</p>
-                              <p className="text-[10px] text-zinc-400">Fondo del sitio o de la página, pie de página y fondos principales de desplegables.</p>
-                            </div>
-
-                            <div className="p-3 rounded-xl border border-zinc-900 bg-[#0B1730]/40 space-y-1">
-                              <div className="flex items-center gap-2">
-                                <span className="w-3 h-3 rounded-full bg-[#0B1730] border border-zinc-700"></span>
-                                <span className="font-bold text-[#E6BF76] font-mono">#0B1730</span>
-                              </div>
-                              <p className="font-medium text-slate-200">Fondo Secundario (Azul Cobalto Oscuro)</p>
-                              <p className="text-[10px] text-zinc-400">Tarjetas de producto, contenedor de carrito, inputs y botones inactivos de menú.</p>
-                            </div>
-
-                            <div className="p-3 rounded-xl border border-zinc-900 bg-[#0B1730]/40 space-y-1">
-                              <div className="flex items-center gap-2">
-                                <span className="w-3 h-3 rounded-full bg-[#D4A55A] border border-black/10"></span>
-                                <span className="font-bold text-[#E6BF76] font-mono">#D4A55A</span>
-                              </div>
-                              <p className="font-medium text-slate-200">Dorado Principal (Accent Gold)</p>
-                              <p className="text-[10px] text-zinc-400">Botones principales, categorías activas, precio seleccionado y acentos decorativos.</p>
-                            </div>
-
-                            <div className="p-3 rounded-xl border border-zinc-900 bg-[#0B1730]/40 space-y-1">
-                              <div className="flex items-center gap-2">
-                                <span className="w-3 h-3 rounded-full bg-[#E6BF76] border border-black/10"></span>
-                                <span className="font-bold text-[#E6BF76] font-mono">#E6BF76</span>
-                              </div>
-                              <p className="font-medium text-slate-200">Dorado Arena (Light Gold)</p>
-                              <p className="text-[10px] text-zinc-400">Enlaces interactivos, subtextos destacados, indicador activo de talles.</p>
-                            </div>
-
-                            <div className="p-3 rounded-xl border border-zinc-900 bg-[#0B1730]/40 space-y-1 col-span-1 md:col-span-2">
-                              <div className="flex items-center gap-2">
-                                <span className="w-3 h-3 rounded-full bg-[#F4EAD7] border border-zinc-400"></span>
-                                <span className="font-bold text-[#E6BF76] font-mono">#F4EAD7</span>
-                              </div>
-                              <p className="font-medium text-slate-200">Blanco Crema Elegante</p>
-                              <p className="text-[10px] text-zinc-400">Títulos principales de sección, títulos de productos en portada y textos esenciales.</p>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="border-t border-[#D4A55A]/10 pt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div>
-                            <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#E6BF76] block mb-2">
-                              ✍️ Estilo de Tipografía (Letras)
-                            </span>
-                            <ul className="text-xs space-y-2 text-zinc-300">
-                              <li>
-                                <strong className="text-[#F4EAD7] font-serif">Tipografía Display / Serif:</strong> Utilizada en títulos principales, cabeceras del carrusel y título de tu marca para transmitir elegancia y prestigio de alta gama.
-                              </li>
-                              <li>
-                                <strong className="text-[#F4EAD7] font-sans">Tipografía Sans (Inter):</strong> Para cuerpo de texto, descripciones del producto, botones de compra y tablas de medidas, garantizando legibilidad perfecta.
-                              </li>
-                              <li>
-                                <strong className="text-[#F4EAD7] font-mono text-[10px]">Tipografía Mono (JetBrains Mono):</strong> Reservada para números de transacciones, códigos de cupones y medidas exactas de talles.
-                              </li>
-                            </ul>
-                          </div>
-
-                          <div>
-                            <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#E6BF76] block mb-2">
-                              ✨ Interacciones y Hover de Menú Aplicados
-                            </span>
-                            <ul className="text-xs space-y-2 text-zinc-300">
-                              <li>
-                                <strong className="text-[#F4EAD7]">Botones e Items de Menú:</strong> Reaccionan con animación de escala (<code className="text-[#E6BF76] font-mono text-[10px]">scale-[1.03]</code>), cambio suave de borde a un tono dorado vibrante y destellos de opacidad dorada al pasar el cursor.
-                              </li>
-                              <li>
-                                <strong className="text-[#F4EAD7]">Botón del Carrito:</strong> Reacciona dinámicamente convirtiendo su icono de dorado a crema claro con fondo cobalto satinado.
-                              </li>
-                            </ul>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="pt-4 flex justify-end">
-                      <button
-                        onClick={handleSaveSettings}
-                        disabled={saving}
-                        className="py-2.5 px-6 bg-blue-600 text-white rounded-lg font-semibold text-xs transition-all hover:bg-blue-700 hover:scale-[1.01] active:scale-[0.99] flex items-center gap-1.5 cursor-pointer shadow-md"
-                      >
-                        <Save className="h-4 w-4" />
-                        <span>{saving ? "Guardando..." : "Guardar Personalización"}</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
 
                 {/* 2. CHOOSE CAT LIST FOR PRODUCTS EDITOR */}
                 {adminSection === "products" && !isNewProductMode && !editingProduct && (() => {
@@ -11659,41 +12161,69 @@ export default function App() {
 
                 {/* 5. CATEGORIES MANAGER */}
                 {adminSection === "categories" && (
-                  <div className="space-y-6">
+                  <div className="space-y-8 animate-fade-in text-[#F4EAD7]">
+                    {/* Header with quick summary */}
+                    <div className="bg-[#0B1730]/95 border border-[#D4A55A]/25 rounded-3xl p-6 text-[#F4EAD7] relative overflow-hidden shadow-xl">
+                      <div className="absolute top-0 right-0 w-48 h-48 bg-[#D4A55A]/5 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none" />
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
+                        <div className="space-y-2">
+                          <span className="text-[10px] uppercase font-extrabold tracking-widest text-[#E6BF76] bg-[#D4A55A]/15 px-3 py-1 rounded-full border border-[#D4A55A]/20">Gestión Profesional</span>
+                          <h3 className="font-serif font-bold text-2xl text-[#F4EAD7] tracking-wide">Estructura del Menú y Catálogos</h3>
+                          <p className="text-xs text-[#A0AEC0] max-w-xl leading-relaxed">Crea, edita y organiza las colecciones principales de tu tienda. Define cuáles se muestran en el carrusel de inicio o solo como accesos directos en el menú superior.</p>
+                        </div>
+                        <div className="flex items-center gap-4 shrink-0 bg-[#050B1A]/80 border border-[#D4A55A]/20 p-4 rounded-2xl shadow-inner">
+                          <div className="text-center px-4 border-r border-[#D4A55A]/15">
+                            <span className="block text-2xl font-mono font-bold text-[#D4A55A]">{(store.dbCategories || []).length}</span>
+                            <span className="text-[10px] uppercase tracking-wider text-[#A0AEC0] font-extrabold">Colecciones</span>
+                          </div>
+                          <div className="text-center px-4">
+                            <span className="block text-2xl font-mono font-bold text-[#E6BF76]">{(store.dbSubcategories || []).length}</span>
+                            <span className="text-[10px] uppercase tracking-wider text-[#A0AEC0] font-extrabold">Subcategorías</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
                     {/* Category forms row */}
-                    <div id="admin-categories-editor-form-row" className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div id="admin-categories-editor-form-row" className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                       
                       {/* Left: main category form (create or edit) */}
-                      <div className="bg-white dark:bg-zinc-950 p-5 rounded-2xl border border-slate-200 dark:border-zinc-800 shadow-sm space-y-4">
+                      <div className="bg-[#0B1730]/95 backdrop-blur-md p-6 rounded-3xl border border-[#D4A55A]/25 shadow-lg relative overflow-hidden space-y-5 text-[#F4EAD7]">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-[#D4A55A]/5 rounded-full blur-2xl pointer-events-none" />
                         {editingCategory ? (
-                          <form onSubmit={handleUpdateDynamicCategory} className="space-y-3">
-                            <div className="flex items-center justify-between border-b border-zinc-100/10 dark:border-zinc-900 pb-2">
-                              <h4 className="font-bold text-xs uppercase tracking-wider text-amber-500">Editar Categoría</h4>
+                          <form onSubmit={handleUpdateDynamicCategory} className="space-y-4 relative z-10">
+                            <div className="flex items-center justify-between border-b border-[#D4A55A]/20 pb-3">
+                              <div className="flex items-center gap-2">
+                                <span className="w-2.5 h-2.5 bg-[#D4A55A] rounded-full animate-pulse" />
+                                <h4 className="font-serif font-bold text-sm text-[#F4EAD7] tracking-wide">Editar Categoría Principal</h4>
+                              </div>
                               <button
                                 type="button"
                                 onClick={() => setEditingCategory(null)}
-                                className="text-[10px] text-zinc-400 hover:text-white underline cursor-pointer"
+                                className="text-xs text-[#E6BF76] hover:text-[#F4EAD7] hover:underline cursor-pointer font-bold transition-all"
                               >
-                                Cancelar edición
+                                Cancelar Edición
                               </button>
                             </div>
+                            
                             <div>
-                              <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1">Nombre</label>
+                              <label className="block text-[10px] font-extrabold text-[#E6BF76]/90 uppercase tracking-widest mb-1.5">Nombre de la Colección</label>
                               <input
                                 required
                                 type="text"
                                 value={editingCategory.nombre || ""}
                                 onChange={(e) => setEditingCategory({ ...editingCategory, nombre: e.target.value })}
-                                className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 dark:text-white font-semibold"
+                                className="w-full px-4 py-2.5 bg-[#050B1A] border border-[#D4A55A]/25 rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#D4A55A]/40 text-[#F4EAD7] font-semibold transition"
                               />
                             </div>
-                            <div className="grid grid-cols-2 gap-3">
+
+                            <div className="grid grid-cols-2 gap-4">
                               <div>
-                                <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1">Ícono (Lucide)</label>
+                                <label className="block text-[10px] font-extrabold text-[#E6BF76]/90 uppercase tracking-widest mb-1.5 font-sans">Ícono Representativo</label>
                                 <select
                                   value={editingCategory.icono || "Shirt"}
                                   onChange={(e) => setEditingCategory({ ...editingCategory, icono: e.target.value })}
-                                  className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none text-slate-900 dark:text-white font-semibold"
+                                  className="w-full px-4 py-2.5 bg-[#050B1A] border border-[#D4A55A]/25 rounded-xl text-xs outline-none text-[#F4EAD7] font-semibold cursor-pointer transition [&_option]:bg-[#050B1A]"
                                 >
                                   {Object.keys(ICON_LABELS).map((ico) => (
                                     <option key={ico} value={ico}>
@@ -11703,59 +12233,94 @@ export default function App() {
                                 </select>
                               </div>
                               <div>
-                                <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1">Orden de visualización</label>
+                                <label className="block text-[10px] font-extrabold text-[#E6BF76]/90 uppercase tracking-widest mb-1.5">Prioridad de Orden</label>
                                 <input
                                   type="number"
+                                  placeholder="p.ej. 1"
                                   value={editingCategory.orden === undefined ? "" : editingCategory.orden}
                                   onChange={(e) => setEditingCategory({ ...editingCategory, orden: Number(e.target.value) })}
-                                  className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none text-slate-900 dark:text-white font-mono"
+                                  className="w-full px-4 py-2.5 bg-[#050B1A] border border-[#D4A55A]/25 rounded-xl text-xs outline-none text-[#F4EAD7] font-mono transition"
                                 />
                               </div>
                             </div>
-                            <div className="flex items-center gap-2 mt-2">
-                              <input
-                                type="checkbox"
-                                id="editingCategoryActive"
-                                checked={editingCategory.active !== false}
-                                onChange={(e) => setEditingCategory({ ...editingCategory, active: e.target.checked })}
-                                className="rounded border-zinc-700 bg-zinc-900 text-indigo-500 focus:ring-0 cursor-pointer h-4 w-4"
-                              />
-                              <label htmlFor="editingCategoryActive" className="text-xs text-zinc-300 font-semibold select-none cursor-pointer">
-                                Categoría activa (se muestra en menú)
-                              </label>
+
+                            <div className="bg-[#050B1A] p-4 rounded-xl border border-[#D4A55A]/15 space-y-3.5">
+                              <div className="flex items-start gap-3">
+                                <input
+                                  type="checkbox"
+                                  id="editingCategoryActive"
+                                  checked={editingCategory.active !== false}
+                                  onChange={(e) => setEditingCategory({ ...editingCategory, active: e.target.checked })}
+                                  className="rounded border-[#D4A55A]/25 bg-[#050B1A] text-[#D4A55A] focus:ring-0 cursor-pointer h-4 w-4 mt-0.5 accent-[#D4A55A]"
+                                />
+                                <div className="space-y-0.5">
+                                  <label htmlFor="editingCategoryActive" className="text-xs text-[#F4EAD7] font-bold select-none cursor-pointer block">
+                                    Categoría Activa (Visible en el sitio)
+                                  </label>
+                                  <p className="text-[10px] text-[#A0AEC0] mt-0.5 leading-relaxed">
+                                    Si desactivas esta opción, la categoría completa y todos sus accesos se ocultarán para el público.
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="border-t border-[#D4A55A]/15" />
+                              <div className="flex items-start gap-3">
+                                <input
+                                  type="checkbox"
+                                  id="editingCategoryHideOnHome"
+                                  checked={!!editingCategory.hide_on_home}
+                                  onChange={(e) => setEditingCategory({ ...editingCategory, hide_on_home: e.target.checked })}
+                                  className="rounded border-[#D4A55A]/25 bg-[#050B1A] text-[#D4A55A] focus:ring-0 cursor-pointer h-4 w-4 mt-0.5 accent-[#D4A55A]"
+                                />
+                                <div className="space-y-0.5">
+                                  <label htmlFor="editingCategoryHideOnHome" className="text-xs text-[#F4EAD7] font-bold select-none cursor-pointer block">
+                                    Ocultar Faja/Sección en Inicio
+                                  </label>
+                                  <p className="text-[10px] text-[#A0AEC0] mt-0.5 leading-relaxed">
+                                    Mantiene los botones de acceso en el menú principal, pero oculta la sección de productos en la portada de la tienda.
+                                  </p>
+                                </div>
+                              </div>
                             </div>
+
                             <button
                               type="submit"
                               disabled={saving}
-                              className="w-full py-2 bg-amber-500 text-slate-950 font-bold rounded-lg text-xs hover:bg-amber-400 transition-all cursor-pointer"
+                              className="w-full py-3 bg-[#D4A55A] hover:bg-[#E6BF76] text-[#050B1A] font-extrabold rounded-xl text-xs transition-all duration-300 shadow-md flex items-center justify-center gap-2 cursor-pointer uppercase tracking-widest"
                             >
-                              {saving ? "Salvando..." : "Guardar Cambios"}
+                              {saving ? (
+                                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Sliders className="h-3.5 w-3.5" />
+                              )}
+                              <span>{saving ? "Guardando..." : "Guardar Cambios de Categoría"}</span>
                             </button>
                           </form>
                         ) : (
-                          <form onSubmit={handleAddCategory} className="space-y-3">
-                            <h4 className="font-bold text-xs uppercase tracking-wider text-slate-500 dark:text-zinc-400 border-b border-zinc-100/5 pb-2 flex items-center gap-1.5">
-                              <span className="w-1.5 h-3 bg-blue-500 rounded-full"></span>
-                              <span>Crear Categoría Principal</span>
+                          <form onSubmit={handleAddCategory} className="space-y-4 relative z-10">
+                            <h4 className="font-serif font-bold text-sm text-[#F4EAD7] border-b border-[#D4A55A]/20 pb-3 flex items-center gap-2">
+                              <span className="w-1.5 h-3 bg-[#D4A55A] rounded-full" />
+                              <span>Crear Nueva Categoría Principal</span>
                             </h4>
+                            
                             <div>
-                              <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1">Nombre de Categoría *</label>
+                              <label className="block text-[10px] font-extrabold text-[#E6BF76]/90 uppercase tracking-widest mb-1.5">Nombre de Categoría *</label>
                               <input
                                 required
                                 type="text"
-                                placeholder="p.ej. Accesorios premium"
+                                placeholder="p.ej. Edición de Invierno, Ropa Unisex"
                                 value={newCategoryName}
                                 onChange={(e) => setNewCategoryName(e.target.value)}
-                                className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 dark:text-white"
+                                className="w-full px-4 py-2.5 bg-[#050B1A] border border-[#D4A55A]/25 rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#D4A55A]/40 text-[#F4EAD7] placeholder-zinc-650"
                               />
                             </div>
-                            <div className="grid grid-cols-2 gap-3">
+
+                            <div className="grid grid-cols-2 gap-4">
                               <div>
-                                <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1">Ícono</label>
+                                <label className="block text-[10px] font-extrabold text-[#E6BF76]/90 uppercase tracking-widest mb-1.5">Ícono Representativo</label>
                                 <select
                                   value={newCategoryIcon}
                                   onChange={(e) => setNewCategoryIcon(e.target.value)}
-                                  className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none text-slate-900 dark:text-white font-semibold"
+                                  className="w-full px-4 py-2.5 bg-[#050B1A] border border-[#D4A55A]/25 rounded-xl text-xs outline-none text-[#F4EAD7] font-semibold cursor-pointer [&_option]:bg-[#050B1A]"
                                 >
                                   {Object.keys(ICON_LABELS).map((ico) => (
                                     <option key={ico} value={ico}>
@@ -11765,94 +12330,111 @@ export default function App() {
                                 </select>
                               </div>
                               <div>
-                                <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1">Orden</label>
+                                <label className="block text-[10px] font-extrabold text-[#E6BF76]/90 uppercase tracking-widest mb-1.5">Número de Orden</label>
                                 <input
                                   type="number"
                                   value={newCategoryOrder}
                                   onChange={(e) => setNewCategoryOrder(Number(e.target.value))}
-                                  className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none text-slate-900 dark:text-white font-mono"
+                                  className="w-full px-4 py-2.5 bg-[#050B1A] border border-[#D4A55A]/25 rounded-xl text-xs outline-none text-[#F4EAD7] font-mono"
                                 />
                               </div>
                             </div>
+
+
+
                             <button
                               type="submit"
                               disabled={saving}
-                              className="w-full py-2 bg-blue-600 text-white font-semibold rounded-lg text-xs hover:bg-blue-700 transition flex items-center justify-center gap-1.5 cursor-pointer font-bold"
+                              className="w-full py-3 bg-[#D4A55A] hover:bg-[#E6BF76] text-[#050B1A] font-extrabold rounded-xl text-xs transition-all duration-300 flex items-center justify-center gap-2 cursor-pointer uppercase tracking-widest shadow-md"
                             >
-                              <Plus className="h-3.5 w-3.5" />
-                              <span>Crear Categoría</span>
+                              <Plus className="h-4 w-4 text-[#050B1A]" />
+                              <span>Crear Categoría Principal</span>
                             </button>
                           </form>
                         )}
                       </div>
 
                       {/* Right: subcategory form (create or edit) */}
-                      <div className="bg-white dark:bg-zinc-950 p-5 rounded-2xl border border-slate-200 dark:border-zinc-800 shadow-sm space-y-4">
+                      <div className="bg-[#0B1730]/95 backdrop-blur-md p-6 rounded-3xl border border-[#D4A55A]/25 shadow-lg relative overflow-hidden space-y-5 text-[#F4EAD7]">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-[#D4A55A]/5 rounded-full blur-2xl pointer-events-none" />
                         {editingSubcategory ? (
-                          <form onSubmit={handleUpdateSubcategory} className="space-y-3">
-                            <div className="flex items-center justify-between border-b border-zinc-100/10 dark:border-zinc-900 pb-2">
-                              <h4 className="font-bold text-xs uppercase tracking-wider text-indigo-400">Editar Subcategoría</h4>
+                          <form onSubmit={handleUpdateSubcategory} className="space-y-4 relative z-10">
+                            <div className="flex items-center justify-between border-b border-[#D4A55A]/20 pb-3">
+                              <div className="flex items-center gap-2">
+                                <span className="w-2 h-2 bg-[#D4A55A] rounded-full animate-ping" />
+                                <h4 className="font-serif font-bold text-sm text-[#F4EAD7] tracking-wide">Editar Subcategoría</h4>
+                              </div>
                               <button
                                 type="button"
                                 onClick={() => setEditingSubcategory(null)}
-                                className="text-[10px] text-zinc-400 hover:text-white underline cursor-pointer"
+                                className="text-xs text-[#E6BF76] hover:text-[#F4EAD7] hover:underline cursor-pointer font-bold transition-all"
                               >
-                                Cancelar edición
+                                Cancelar Edición
                               </button>
                             </div>
+                            
                             <div>
-                              <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1">Nombre</label>
+                              <label className="block text-[10px] font-extrabold text-[#E6BF76]/90 uppercase tracking-widest mb-1.5">Nombre de la Subcategoría</label>
                               <input
                                 required
                                 type="text"
                                 value={editingSubcategory.nombre || ""}
                                 onChange={(e) => setEditingSubcategory({ ...editingSubcategory, nombre: e.target.value })}
-                                className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 dark:text-white font-semibold"
+                                className="w-full px-4 py-2.5 bg-[#050B1A] border border-[#D4A55A]/25 rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#D4A55A]/40 text-[#F4EAD7] font-semibold transition"
                               />
                             </div>
+
                             <div>
-                              <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1">Categoría Principal Asignada</label>
+                              <label className="block text-[10px] font-extrabold text-[#E6BF76]/90 uppercase tracking-widest mb-1.5">Categoría Madre Asignada</label>
                               <select
                                 value={editingSubcategory.categoria_id || ""}
                                 onChange={(e) => setEditingSubcategory({ ...editingSubcategory, categoria_id: e.target.value })}
-                                className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none text-slate-900 dark:text-white font-bold"
+                                className="w-full px-4 py-2.5 bg-[#050B1A] border border-[#D4A55A]/25 rounded-xl text-xs outline-none text-[#F4EAD7] font-bold cursor-pointer transition [&_option]:bg-[#050B1A]"
                               >
                                 {(store.dbCategories || []).map((cat) => (
                                   <option key={cat.id} value={cat.id}>{cat.nombre}</option>
                                 ))}
                               </select>
                             </div>
+
                             <button
                               type="submit"
                               disabled={saving}
-                              className="w-full py-2 bg-indigo-600 bg-indigo-600 text-white font-bold rounded-lg text-xs hover:bg-indigo-700 transition shadow cursor-pointer text-center"
+                              className="w-full py-3 bg-[#D4A55A] hover:bg-[#E6BF76] text-[#050B1A] font-extrabold rounded-xl text-xs transition-all duration-300 shadow-md flex items-center justify-center gap-2 cursor-pointer uppercase tracking-widest"
                             >
-                              {saving ? "Salvando..." : "Guardar Modificaciones"}
+                              {saving ? (
+                                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Sliders className="h-3.5 w-3.5" />
+                              )}
+                              <span>{saving ? "Guardando..." : "Guardar Cambios de Subcategoría"}</span>
                             </button>
                           </form>
                         ) : (
-                          <form onSubmit={handleCreateSubcategory} className="space-y-3">
-                            <h4 className="font-bold text-xs uppercase tracking-wider text-slate-500 dark:text-zinc-400 border-b border-zinc-100/5 pb-2 flex items-center gap-1.5">
-                              <span className="w-1.5 h-3 bg-violet-500 rounded-full"></span>
+                          <form onSubmit={handleCreateSubcategory} className="space-y-4 relative z-10">
+                            <h4 className="font-serif font-bold text-sm text-[#F4EAD7] border-b border-[#D4A55A]/20 pb-3 flex items-center gap-2">
+                              <span className="w-1.5 h-3 bg-[#D4A55A] rounded-full" />
                               <span>Crear Nueva Subcategoría</span>
                             </h4>
+                            
                             <div>
-                              <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1">Nombre de Subcategoría *</label>
+                              <label className="block text-[10px] font-extrabold text-[#E6BF76]/90 uppercase tracking-widest mb-1.5 font-sans">Nombre de Subcategoría *</label>
                               <input
                                 required
                                 type="text"
-                                placeholder="p.ej. Zapatos de vestir"
+                                placeholder="p.ej. Camisas de Lino, Pantalones Chinos"
                                 value={newSubcategoryName}
                                 onChange={(e) => setNewSubcategoryName(e.target.value)}
-                                className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 dark:text-white"
+                                className="w-full px-4 py-2.5 bg-[#050B1A] border border-[#D4A55A]/25 rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#D4A55A]/40 text-[#F4EAD7] placeholder-zinc-650"
                               />
                             </div>
+
                             <div>
-                              <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1">Categoría Principal Madre</label>
+                              <label className="block text-[10px] font-extrabold text-[#E6BF76]/90 uppercase tracking-widest mb-1.5">Categoría Principal Madre</label>
                               <select
                                 value={newSubcategoryParent}
                                 onChange={(e) => setNewSubcategoryParent(e.target.value)}
-                                className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs outline-none text-slate-900 dark:text-white font-semibold"
+                                className="w-full px-4 py-2.5 bg-[#050B1A] border border-[#D4A55A]/25 rounded-xl text-xs outline-none text-[#F4EAD7] font-semibold cursor-pointer [&_option]:bg-[#050B1A]"
                               >
                                 <option value="">-- Elige categoría madre --</option>
                                 {(store.dbCategories || []).map((cat) => (
@@ -11860,12 +12442,13 @@ export default function App() {
                                 ))}
                               </select>
                             </div>
+
                             <button
                               type="submit"
                               disabled={saving || !newSubcategoryParent}
-                              className="w-full py-2 bg-violet-600 disabled:opacity-40 text-white font-semibold rounded-lg text-xs hover:bg-violet-700 transition flex items-center justify-center gap-1.5 cursor-pointer font-bold"
+                              className="w-full py-3.5 bg-[#D4A55A] hover:bg-[#E6BF76] disabled:bg-[#0B1730] disabled:text-[#F4EAD7]/40 disabled:border-[#D4A55A]/15 disabled:opacity-50 text-[#050B1A] font-extrabold rounded-xl text-xs transition-all duration-300 flex items-center justify-center gap-2 cursor-pointer uppercase tracking-widest shadow-md"
                             >
-                              <Plus className="h-3.5 w-3.5" />
+                              <Plus className="h-4 w-4 shrink-0" />
                               <span>Crear Subcategoría</span>
                             </button>
                           </form>
@@ -11874,23 +12457,23 @@ export default function App() {
                     </div>
 
                     {/* Listing of all categories and nested subcategories */}
-                    <div className="bg-white dark:bg-zinc-950 rounded-2xl border border-slate-200 dark:border-zinc-800 shadow-sm overflow-hidden">
-                      <div className="p-4 border-b border-slate-100 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-950/80 flex items-center justify-between">
+                    <div className="space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-[#D4A55A]/20">
                         <div>
-                          <h4 className="font-extrabold text-xs uppercase tracking-wider text-slate-800 dark:text-zinc-300">
-                            Jerarquía de Categorías y Subcategorías
+                          <h4 className="font-serif font-bold text-base text-[#F4EAD7] flex items-center gap-2">
+                            <span>Jerarquía de Colecciones</span>
+                            <span className="text-[10px] font-mono bg-[#D4A55A]/15 border border-[#D4A55A]/20 px-2 py-0.5 rounded-md text-[#E6BF76] font-bold">
+                              {(store.dbCategories || []).length} Principales
+                            </span>
                           </h4>
-                          <p className="text-[10px] text-zinc-400 mt-0.5">Organiza tu menú y segmenta tus productos sin tocar código.</p>
+                          <p className="text-[11px] text-[#A0AEC0]">Ordena y configura los accesos dinámicos en tiempo real con diseño áureo.</p>
                         </div>
-                        <span className="text-[10px] font-mono bg-zinc-800 px-2 py-0.5 rounded text-zinc-400 font-bold">
-                          {(store.dbCategories || []).length} principales | {(store.dbSubcategories || []).length} secundarias
-                        </span>
                       </div>
 
-                      <div className="divide-y divide-slate-100 dark:divide-zinc-800">
+                      <div className="grid grid-cols-1 gap-6">
                         {(store.dbCategories || []).length === 0 ? (
-                          <div className="p-8 text-center text-zinc-500 text-xs">
-                            No hay categorías principales creadas aún. Utiliza el formulario superior para crear la primera.
+                          <div className="bg-[#0B1730]/65 text-[#F4EAD7]/70 p-12 text-center rounded-3xl border border-dashed border-[#D4A55A]/20 text-xs">
+                            No hay categorías principales creadas aún. Utiliza el formulario superior para crear la primera colección.
                           </div>
                         ) : (
                           (store.dbCategories || [])
@@ -11899,140 +12482,306 @@ export default function App() {
                               const catProductsCount = store.products.filter(p => p.categoria_id === cat.id || p.category?.toLowerCase() === cat.nombre?.toLowerCase()).length;
                               const children = (store.dbSubcategories || []).filter(s => s.categoria_id === cat.id);
                               
+                              const isExpanded = !!expandedCategoryIds[cat.id];
+                              
                               return (
-                                <div key={cat.id} className="p-5 flex flex-col gap-3 hover:bg-slate-50/40 dark:hover:bg-zinc-900/10 transition">
-                                  {/* Main Category Header details */}
-                                  <div className="flex items-center justify-between flex-wrap gap-2">
-                                    <div className="flex items-center gap-2.5">
-                                      <div className="text-[10px] font-bold bg-zinc-800 text-indigo-400 px-2 py-0.5 rounded font-mono" title="Orden de visualización">
-                                        N° {cat.orden || 0}
+                                <div 
+                                  key={cat.id} 
+                                  draggable={true}
+                                  onDragStart={(e) => {
+                                    setDraggedCategoryId(cat.id);
+                                    e.dataTransfer.effectAllowed = "move";
+                                  }}
+                                  onDragEnd={() => {
+                                    setDraggedCategoryId(null);
+                                    setDragOverCategoryId(null);
+                                  }}
+                                  onDragOver={(e) => {
+                                    e.preventDefault();
+                                    if (draggedCategoryId && draggedCategoryId !== cat.id) {
+                                      setDragOverCategoryId(cat.id);
+                                    }
+                                  }}
+                                  onDragLeave={() => {
+                                    if (dragOverCategoryId === cat.id) {
+                                      setDragOverCategoryId(null);
+                                    }
+                                  }}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+                                    if (draggedCategoryId && draggedCategoryId !== cat.id) {
+                                      handleDragReorderCategory(draggedCategoryId, cat.id);
+                                    }
+                                    setDraggedCategoryId(null);
+                                    setDragOverCategoryId(null);
+                                  }}
+                                  className={`bg-[#0B1730]/95 backdrop-blur-sm rounded-3xl border p-5 shadow-md hover:border-[#D4A55A]/45 transition-all duration-300 relative overflow-hidden select-none ${
+                                    draggedCategoryId === cat.id ? 'opacity-40 border-dashed border-[#D4A55A]/50 scale-[0.98]' :
+                                    dragOverCategoryId === cat.id ? 'border-[#D4A55A] bg-[#050B1A]/80 translate-y-[-2px] shadow-lg shadow-[#D4A55A]/15' :
+                                    'border-[#D4A55A]/25'
+                                  }`}
+                                >
+                                  <div className="absolute top-0 right-0 w-32 h-32 bg-[#D4A55A]/5 rounded-full blur-2xl pointer-events-none" />
+                                  
+                                  {/* Main Category Header details (Accordion Header) */}
+                                  <div 
+                                    onClick={() => {
+                                      setExpandedCategoryIds(prev => ({
+                                        ...prev,
+                                        [cat.id]: !prev[cat.id]
+                                      }));
+                                    }}
+                                    className="flex items-center justify-between flex-wrap gap-3 relative z-10 cursor-pointer"
+                                  >
+                                    <div className="flex items-center gap-3.5">
+                                      {/* Drag Handle icon */}
+                                      <div 
+                                        className="text-[#D4A55A]/40 hover:text-[#E6BF76] p-1 cursor-grab active:cursor-grabbing transition-colors"
+                                        title="Arrastrar para cambiar orden"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        <GripVertical className="h-5 w-5" />
                                       </div>
-                                      <span className="p-1.5 bg-zinc-800/80 text-zinc-300 rounded flex items-center justify-center [&_svg]:h-4 [&_svg]:w-4">
-                                        {getCategoryIcon(cat.icono || cat.nombre)}
-                                      </span>
+
+                                      {/* Icon Badge */}
+                                      <div className="relative">
+                                        <span className="p-3 bg-[#D4A55A]/10 text-[#E6BF76] border border-[#D4A55A]/20 rounded-2xl flex items-center justify-center [&_svg]:h-5 [&_svg]:w-5 shadow-xs">
+                                          {getCategoryIcon(cat.icono || cat.nombre)}
+                                        </span>
+                                        <div className="absolute -top-1.5 -left-1.5 text-[8.5px] font-bold bg-[#050B1A] text-[#E6BF76] border border-[#D4A55A]/30 px-1.5 py-0.5 rounded-lg font-mono">
+                                          {cat.orden || 0}
+                                        </div>
+                                      </div>
+                                      
                                       <div>
-                                        <div className="flex items-center gap-2">
-                                          <span className="text-xs font-bold text-slate-800 dark:text-zinc-200">{cat.nombre}</span>
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <span className="text-sm font-serif font-bold text-[#F4EAD7]">{cat.nombre}</span>
                                           {cat.active === false ? (
-                                            <span className="text-[9px] bg-amber-500/10 text-amber-500 dark:text-amber-400 px-1.5 rounded font-bold uppercase tracking-wider flex items-center gap-1">
-                                              <span>👁</span> Oculta en Web
+                                            <span className="text-[9px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-1">
+                                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Oculta en Web
                                             </span>
                                           ) : (
-                                            <span className="text-[9px] bg-emerald-500/10 text-emerald-400 px-1.5 rounded font-bold uppercase tracking-wider flex items-center gap-1">
-                                              <span>✨</span> Visible en Web
+                                            <span className="text-[9px] bg-[#D4A55A]/15 text-[#E6BF76] border border-[#D4A55A]/25 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-1">
+                                              <span className="w-1.5 h-1.5 rounded-full bg-[#D4A55A] animate-pulse" /> Visible en Web
+                                            </span>
+                                          )}
+                                          {cat.hide_on_home === true && cat.active !== false && (
+                                            <span className="text-[9px] bg-blue-500/15 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-1" title="Solo botón en el menú principal, no se muestra sección en el inicio">
+                                              <span>📌</span> Solo en Menú (Oculto en Inicio)
                                             </span>
                                           )}
                                         </div>
-                                        <p className="text-[10px] text-zinc-500 font-semibold mt-0.5">
-                                          {catProductsCount} {catProductsCount === 1 ? "producto asignado" : "productos asignados"}
+                                        <p className="text-[10px] text-[#A0AEC0] font-semibold mt-1">
+                                          {catProductsCount} {catProductsCount === 1 ? "producto" : "productos"} en total asignados
                                         </p>
                                       </div>
                                     </div>
 
-                                    {/* Action items */}
-                                    <div className="flex items-center gap-1.5">
-                                      <button
-                                        onClick={() => {
-                                          const nextActiveStatus = cat.active === false ? true : false;
-                                          const updatedDbCategories = (store.dbCategories || []).map(c => {
-                                            if (c.id === cat.id) return { ...c, active: nextActiveStatus };
-                                            return c;
-                                          });
-                                          saveStateToServer({ ...store, dbCategories: updatedDbCategories });
-                                        }}
-                                        className={`text-[10.5px] font-bold py-1 px-2.5 rounded-lg border transition cursor-pointer ${
-                                          cat.active === false
-                                            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
-                                            : "border-zinc-700 bg-zinc-900/50 hover:bg-zinc-800 text-zinc-400 hover:text-white"
-                                        }`}
-                                      >
-                                        {cat.active === false ? "Mostrar en Web" : "Ocultar de Web"}
-                                      </button>
-                                      
+                                    {/* Action items & Chevron */}
+                                    <div className="flex items-center gap-2.5" onClick={(e) => e.stopPropagation()}>
                                       <button
                                         onClick={() => handleStartEditCategory(cat)}
-                                        className="p-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition cursor-pointer"
+                                        className="p-2 rounded-xl bg-[#050B1A] border border-[#D4A55A]/15 hover:bg-[#D4A55A]/15 hover:border-[#D4A55A]/35 text-[#F4EAD7]/70 hover:text-[#E6BF76] transition-all cursor-pointer"
                                         title="Editar Categoría"
                                       >
-                                        <Edit className="h-3.5 w-3.5" />
+                                        <Edit className="h-4 w-4" />
                                       </button>
                                       
                                       <button
                                         onClick={() => handleDeleteCategory(cat.id)}
-                                        className="p-1.5 rounded bg-red-500/10 hover:bg-red-500 hover:text-white text-red-400 transition cursor-pointer"
+                                        className="p-2 rounded-xl bg-[#050B1A] border border-red-500/20 hover:bg-red-500 hover:text-white text-red-400 transition-all cursor-pointer"
                                         title="Eliminar Categoría"
                                       >
-                                        <Trash2 className="h-3.5 w-3.5" />
+                                        <Trash2 className="h-4 w-4" />
                                       </button>
+
+                                      <div 
+                                        onClick={() => {
+                                          setExpandedCategoryIds(prev => ({
+                                            ...prev,
+                                            [cat.id]: !prev[cat.id]
+                                          }));
+                                        }}
+                                        className="p-2 rounded-xl bg-[#050B1A] border border-[#D4A55A]/15 text-[#E6BF76] hover:bg-[#D4A55A]/10 transition-all cursor-pointer flex items-center justify-center"
+                                      >
+                                        <ChevronDown className={`h-4 w-4 transition-transform duration-300 ${isExpanded ? 'rotate-180' : 'rotate-0'}`} />
+                                      </div>
                                     </div>
                                   </div>
 
-                                  {/* Subcategories list box inside parent Category */}
-                                  <div className="pl-6 border-l border-dashed border-zinc-200 dark:border-zinc-800 flex flex-col gap-2 mt-1">
-                                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-400">Subcategorías Relacionadas</span>
-                                    
-                                    {children.length === 0 ? (
-                                      <p className="text-[10px] text-zinc-500 italic">No hay subcategorías asignadas.</p>
-                                    ) : (
-                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
-                                        {children.map((sub) => {
-                                          const subProductsCount = store.products.filter(p => p.subcategoria_id === sub.id).length;
-                                          return (
-                                            <div key={sub.id} className="p-2.5 bg-slate-50 dark:bg-zinc-900/60 rounded-xl border border-slate-100 dark:border-zinc-800/40 flex items-center justify-between">
-                                              <div className="min-w-0">
-                                                <div className="flex items-center gap-1.5 flex-wrap">
-                                                  <p className="text-xs font-semibold truncate text-slate-900 dark:text-zinc-300">{sub.nombre}</p>
-                                                  {sub.active === false ? (
-                                                    <span className="text-[7.5px] bg-amber-500/10 text-amber-500 px-1 py-0.2 rounded font-bold uppercase tracking-wider font-mono">Oculta</span>
-                                                  ) : (
-                                                    <span className="text-[7.5px] bg-emerald-500/10 text-emerald-400 px-1 py-0.2 rounded font-bold uppercase tracking-wider font-mono">Visible</span>
-                                                  )}
-                                                </div>
-                                                <span className="text-[9px] text-zinc-500">
-                                                  {subProductsCount} {subProductsCount === 1 ? "producto" : "productos"}
-                                                </span>
+                                  {/* Accordion content */}
+                                  {isExpanded && (
+                                    <div className="space-y-5 mt-5 pt-5 border-t border-[#D4A55A]/15 animate-fade-in relative z-10">
+                                      {/* Dynamic Visibility Control Panel (Formato Pro Visual) */}
+                                      <div className="bg-[#050B1A] p-4 rounded-2xl border border-[#D4A55A]/15 space-y-3 shadow-inner relative z-10">
+                                        <div className="flex items-center gap-1.5 pb-1 border-b border-[#D4A55A]/10">
+                                          <span className="text-[10px] uppercase font-extrabold tracking-wider text-[#E6BF76]/85">Controles de Visibilidad Avanzada</span>
+                                        </div>
+                                        
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                          {/* Control 1: Botón de Menú Superior */}
+                                          <div className={`flex items-center justify-between p-3.5 bg-[#0B1730]/90 rounded-2xl border transition shadow-xs ${cat.active !== false ? 'border-[#D4A55A]/25' : 'border-[#D4A55A]/10 opacity-60'}`}>
+                                            <div className="flex items-center gap-3">
+                                              <div className={`p-2 rounded-xl transition-colors ${cat.active !== false ? 'bg-[#D4A55A]/10 text-[#E6BF76]' : 'bg-amber-500/10 text-amber-500'}`}>
+                                                {cat.active !== false ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
                                               </div>
-                                              
-                                              <div className="flex items-center gap-1 shrink-0 ml-2">
-                                                <button
-                                                  onClick={() => {
-                                                    const nextActiveStatus = sub.active === false ? true : false;
-                                                    const updatedDbSubcategories = (store.dbSubcategories || []).map(s => {
-                                                      if (s.id === sub.id) return { ...s, active: nextActiveStatus };
-                                                      return s;
-                                                    });
-                                                    saveStateToServer({ ...store, dbSubcategories: updatedDbSubcategories });
-                                                  }}
-                                                  className={`px-1.5 py-0.5 rounded text-[9px] transition cursor-pointer font-bold ${
-                                                    sub.active === false 
-                                                      ? "bg-amber-500/10 hover:bg-amber-500 hover:text-white text-amber-500 border border-amber-500/20" 
-                                                      : "bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white"
-                                                  }`}
-                                                  title={sub.active === false ? "Mostrar en Web" : "Ocultar en Web"}
-                                                >
-                                                  {sub.active === false ? "Mostrar" : "Ocultar"}
-                                                </button>
-                                                <button
-                                                  onClick={() => handleStartEditSubcategory(sub)}
-                                                  className="p-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-all text-[10px] cursor-pointer"
-                                                  title="Renombrar / Mover"
-                                                >
-                                                  <Edit className="h-3 w-3" />
-                                                </button>
-                                                <button
-                                                  onClick={() => handleDeleteSubcategory(sub.id)}
-                                                  className="p-1 rounded bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white transition-all text-[10px] cursor-pointer"
-                                                  title="Eliminar Subcategoría"
-                                                >
-                                                  <Trash2 className="h-3 w-3" />
-                                                </button>
+                                              <div>
+                                                <p className="text-xs font-bold text-[#F4EAD7]">
+                                                  Botón de Acceso en Menú
+                                                </p>
+                                                <p className="text-[10px] text-[#E6BF76] font-semibold leading-tight">
+                                                  {cat.active !== false ? "Visible en barra superior" : "Oculto completamente"}
+                                                </p>
                                               </div>
                                             </div>
-                                          );
-                                        })}
+                                            
+                                            <div className="flex items-center gap-2.5">
+                                              <span className={`text-[10px] font-bold font-mono ${cat.active !== false ? 'text-[#E6BF76]' : 'text-zinc-500'}`}>
+                                                {cat.active !== false ? "ACTIVO" : "OCULTO"}
+                                              </span>
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  const nextActiveStatus = cat.active === false ? true : false;
+                                                  const updatedDbCategories = (store.dbCategories || []).map(c => {
+                                                    if (c.id === cat.id) return { ...c, active: nextActiveStatus };
+                                                    return c;
+                                                  });
+                                                  saveStateToServer({ ...store, dbCategories: updatedDbCategories });
+                                                }}
+                                                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-250 ease-in-out outline-none ${
+                                                  cat.active !== false ? 'bg-[#D4A55A]' : 'bg-[#050B1A] border border-[#D4A55A]/20'
+                                                }`}
+                                              >
+                                                <span
+                                                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-250 ease-in-out ${
+                                                    cat.active !== false ? 'translate-x-5' : 'translate-x-0'
+                                                  }`}
+                                                />
+                                              </button>
+                                            </div>
+                                          </div>
+
+                                          {/* Control 2: Sección en Página de Inicio (Home) */}
+                                          <div className={`flex items-center justify-between p-3.5 bg-[#0B1730]/90 rounded-2xl border transition shadow-xs ${cat.active === false ? 'opacity-40 border-[#D4A55A]/10' : cat.hide_on_home !== true ? 'border-[#D4A55A]/25' : 'border-[#D4A55A]/15 bg-[#0B1730]/50'}`}>
+                                            <div className="flex items-center gap-3">
+                                              <div className={`p-2 rounded-xl transition-colors ${cat.active === false ? 'bg-[#050B1A] text-zinc-600' : cat.hide_on_home !== true ? 'bg-[#D4A55A]/10 text-[#E6BF76]' : 'bg-blue-500/10 text-blue-400'}`}>
+                                                <Layout className="h-4 w-4" />
+                                              </div>
+                                              <div>
+                                                <p className="text-xs font-bold text-[#F4EAD7]">
+                                                  Faja de Productos en Portada (Home)
+                                                </p>
+                                                <p className="text-[10px] text-[#A0AEC0] dark:text-[#E6BF76] font-semibold leading-tight">
+                                                  {cat.active === false ? "Botón inactivo" : cat.hide_on_home !== true ? "Sección activa en Home" : "Oculto en portada"}
+                                                </p>
+                                              </div>
+                                            </div>
+                                            
+                                            <div className="flex items-center gap-2.5">
+                                              <span className={`text-[10px] font-bold font-mono ${(cat.hide_on_home !== true && cat.active !== false) ? 'text-[#E6BF76]' : 'text-zinc-500'}`}>
+                                                {(cat.hide_on_home !== true && cat.active !== false) ? "ACTIVO" : "OCULTO"}
+                                              </span>
+                                              <button
+                                                type="button"
+                                                disabled={cat.active === false}
+                                                onClick={() => {
+                                                  const nextHideOnHomeStatus = !cat.hide_on_home;
+                                                  const updatedDbCategories = (store.dbCategories || []).map(c => {
+                                                    if (c.id === cat.id) return { ...c, hide_on_home: nextHideOnHomeStatus };
+                                                    return c;
+                                                  });
+                                                  saveStateToServer({ ...store, dbCategories: updatedDbCategories });
+                                                }}
+                                                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-250 ease-in-out outline-none disabled:cursor-not-allowed ${
+                                                  (cat.hide_on_home !== true && cat.active !== false) ? 'bg-[#D4A55A]' : 'bg-[#050B1A] border border-[#D4A55A]/20'
+                                                }`}
+                                              >
+                                                <span
+                                                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-250 ease-in-out ${
+                                                    (cat.hide_on_home !== true && cat.active !== false) ? 'translate-x-5' : 'translate-x-0'
+                                                  }`}
+                                                />
+                                              </button>
+                                            </div>
+                                          </div>
+                                        </div>
                                       </div>
-                                    )}
-                                  </div>
+
+                                      {/* Subcategories list box inside parent Category */}
+                                      <div className="pl-6 border-l border-dashed border-[#D4A55A]/20 flex flex-col gap-3 mt-1 relative z-10">
+                                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#E6BF76]/85 flex items-center gap-1.5">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-[#D4A55A]" />
+                                          <span>Subcategorías Relacionadas</span>
+                                        </span>
+                                        
+                                        {children.length === 0 ? (
+                                          <p className="text-[10px] text-[#A0AEC0]/70 italic pl-1">No hay subcategorías asignadas a esta categoría principal aún.</p>
+                                        ) : (
+                                          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                                            {children.map((sub) => {
+                                              const subProductsCount = store.products.filter(p => p.subcategoria_id === sub.id).length;
+                                              return (
+                                                <div 
+                                                  key={sub.id} 
+                                                  className="p-3 bg-[#050B1A] rounded-2xl border border-[#D4A55A]/15 flex items-center justify-between shadow-sm hover:border-[#D4A55A]/35 transition duration-250"
+                                                >
+                                                  <div className="min-w-0">
+                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                      <p className="text-xs font-bold truncate text-[#F4EAD7]">{sub.nombre}</p>
+                                                      {sub.active === false ? (
+                                                        <span className="text-[7.5px] bg-amber-500/15 text-amber-400 border border-amber-500/20 px-1.5 py-0.2 rounded font-bold uppercase tracking-wider font-mono">Oculta</span>
+                                                      ) : (
+                                                        <span className="text-[7.5px] bg-[#D4A55A]/15 text-[#E6BF76] border border-[#D4A55A]/20 px-1.5 py-0.2 rounded font-bold uppercase tracking-wider font-mono">Visible</span>
+                                                      )}
+                                                    </div>
+                                                    <span className="text-[9px] text-[#A0AEC0] font-medium">
+                                                      {subProductsCount} {subProductsCount === 1 ? "producto" : "productos"}
+                                                    </span>
+                                                  </div>
+                                                  
+                                                  <div className="flex items-center gap-1 shrink-0 ml-2">
+                                                    <button
+                                                      onClick={() => {
+                                                        const nextActiveStatus = sub.active === false ? true : false;
+                                                        const updatedDbSubcategories = (store.dbSubcategories || []).map(s => {
+                                                          if (s.id === sub.id) return { ...s, active: nextActiveStatus };
+                                                          return s;
+                                                        });
+                                                        saveStateToServer({ ...store, dbSubcategories: updatedDbSubcategories });
+                                                      }}
+                                                      className={`px-2 py-0.5 rounded-lg text-[9px] transition cursor-pointer font-bold ${
+                                                        sub.active === false 
+                                                          ? "bg-amber-500/15 hover:bg-amber-500 hover:text-[#050B1A] text-amber-400 border border-amber-500/20" 
+                                                          : "bg-[#0B1730] hover:bg-[#D4A55A]/15 text-[#F4EAD7] border border-[#D4A55A]/15"
+                                                      }`}
+                                                      title={sub.active === false ? "Mostrar en Web" : "Ocultar en Web"}
+                                                    >
+                                                      {sub.active === false ? "Mostrar" : "Ocultar"}
+                                                    </button>
+                                                    <button
+                                                      onClick={() => handleStartEditSubcategory(sub)}
+                                                      className="p-1.5 rounded-lg bg-[#0B1730] hover:bg-[#D4A55A]/15 text-[#F4EAD7]/80 hover:text-[#E6BF76] border border-[#D4A55A]/15 transition-all text-[10px] cursor-pointer"
+                                                      title="Renombrar / Mover"
+                                                    >
+                                                      <Edit className="h-3 w-3" />
+                                                    </button>
+                                                    <button
+                                                      onClick={() => handleDeleteSubcategory(sub.id)}
+                                                      className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500 border border-red-500/20 text-red-400 hover:text-white transition-all text-[10px] cursor-pointer"
+                                                      title="Eliminar Subcategoría"
+                                                    >
+                                                      <Trash2 className="h-3 w-3" />
+                                                    </button>
+                                                  </div>
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })
@@ -12040,9 +12789,7 @@ export default function App() {
                       </div>
                     </div>
                   </div>
-                )}
-
-                {/* 6. PROMOTIONS AND DISCOUNTS PAGE */}
+                )}                {/* 6. PROMOTIONS AND DISCOUNTS PAGE */}
                 {adminSection === "promos" && (() => {
                   const activeCoupons = (store.coupons || []).filter(c => {
                     return !c.expiration_date || new Date(c.expiration_date).getTime() >= Date.now();
@@ -17504,7 +18251,9 @@ export default function App() {
           <button
             onClick={() => {
               const cleanPhone = store.settings.whatsappNumber.replace(/[^0-9]/g, "");
-              window.open(`https://wa.me/${cleanPhone}?text=¡Hola!%20Vengo%20desde%20la%20tienda%20online%20de%20Juem%20y%2520quería%2520hacer%2520una%2520consulta.`, "_blank", "noopener,noreferrer");
+              const siteName = store.settings.siteTitle || "Juem";
+              const message = `¡Hola! Vengo desde la tienda online de ${siteName} y quería hacer una consulta.`;
+              window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
             }}
             className="flex flex-col items-center justify-center gap-0.5 text-center transition text-zinc-400 active:text-[#E6BF76] active:scale-95 cursor-pointer flex-grow basis-0"
             title="Soporte WhatsApp"

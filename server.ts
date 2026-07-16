@@ -86,6 +86,9 @@ const DEFAULT_SHOP_STATE: ShopState = {
   settings: {
     siteTitle: "Ventas Juem",
     siteSubtitle: "Moda, tecnología y accesorios con envío a todo el país.",
+    logoType: "image",
+    logoText: "JUEM",
+    logoImageUrl: "https://res.cloudinary.com/dwqzjqjwz/image/upload/v1781632379/ventas_juem_cloudinary/vsjhahrwh1thtwiwzbia.png",
     bannerTitle: "Colección Exclusiva de Primavera",
     bannerSubtitle: "Descubre las últimas tendencias con descuentos de hasta el 40%.",
     bannerImageUrl: "https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=1600&q=80",
@@ -1438,24 +1441,42 @@ async function getDbState(): Promise<ShopState> {
     if (settingsRes.rows.length > 0) {
       settings = settingsRes.rows[0].state;
     }
+    
+    let settingsUpdated = false;
+    // Auto-migrate to the actual JUEM logo if no image logo is configured, or if the current logoImageUrl is empty/placeholder/text type
+    if (!settings.logoImageUrl || 
+        settings.logoImageUrl.trim() === "" || 
+        settings.logoImageUrl.includes("placeholder") || 
+        settings.logoType !== "image") {
+      settings.logoImageUrl = "https://res.cloudinary.com/dwqzjqjwz/image/upload/v1781632379/ventas_juem_cloudinary/vsjhahrwh1thtwiwzbia.png";
+      settings.logoType = "image";
+      settings.logoText = "JUEM";
+      settingsUpdated = true;
+    }
+
     const newTransferDetails = "Numero de cuenta \nMercado Pago : 1004278620163\nRed pagos y abitab\nJoana Baptista : 4.051.645-7";
     if (!settings.transferDetails || 
         settings.transferDetails.trim() === "" || 
         settings.transferDetails.includes("Realiza tu transferencia") || 
         settings.transferDetails.includes("BROU, Itaú, Santander, BBVA")) {
       settings.transferDetails = newTransferDetails;
+      settingsUpdated = true;
+    }
+
+    if (settingsUpdated) {
       pool.query("INSERT INTO shop_state (id, state) VALUES ('settings', $1) ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state;", [JSON.stringify(settings)])
-        .catch(err => console.error("Error migrating transferDetails on getDbState:", err));
+        .catch(err => console.error("Error migrating settings on getDbState:", err));
     }
 
     // 2. Fetch categories
-    const catRes = await pool.query("SELECT id, nombre, icono, orden, active FROM categories ORDER BY orden ASC;");
+    const catRes = await pool.query("SELECT id, nombre, icono, orden, active, hide_on_home FROM categories ORDER BY orden ASC;");
     const dbCategories = catRes.rows.map(row => ({
       id: row.id,
       nombre: row.nombre,
       icono: row.icono || "Shirt",
       orden: row.orden || 1,
-      active: row.active !== false
+      active: row.active !== false,
+      hide_on_home: !!row.hide_on_home
     }));
 
     // 3. Fetch subcategories
@@ -1749,7 +1770,7 @@ async function getDbState(): Promise<ShopState> {
       stockAdjustments = currentStoreState.stockAdjustments || [];
     }
 
-    return {
+    const finalDbState = {
       categories: dbCategories.map(c => c.nombre),
       dbCategories,
       dbSubcategories,
@@ -1763,6 +1784,14 @@ async function getDbState(): Promise<ShopState> {
       shippingOrigins,
       stockAdjustments
     };
+
+    try {
+      lastSavedStoreState = JSON.parse(JSON.stringify(finalDbState));
+    } catch (e) {
+      console.error("Error setting lastSavedStoreState inside getDbState:", e);
+    }
+
+    return finalDbState;
   } catch (err: any) {
     console.error("Error reading relational DB tables:", err);
     const msg = String(err.message || err).toLowerCase();
@@ -1772,6 +1801,57 @@ async function getDbState(): Promise<ShopState> {
     }
     return currentStoreState;
   }
+}
+
+let lastSavedStoreState: ShopState | null = null;
+
+function isProductEqual(p1: any, p2: any): boolean {
+  if (!p1 || !p2) return false;
+  const fieldsToCompare = [
+    'name', 'price', 'stock', 'category', 'featured', 'imageUrl', 'description', 
+    'categoria_id', 'originalPrice', 'subcategoria_id', 'paused', 'is3D', 
+    'hoursPerUnit', 'sizeChartEnabled', 'sizeChartShowSuperior', 'sizeChartShowInferior', 
+    'sizeChartShowCalzado', 'sizeChartShowRecommender', 'consultOnly', 'codigo', 
+    'precioCompra', 'precioCon40', 'comisionML', 'precioVentaML', 'precioWeb', 
+    'descuentoPorcentaje', 'stockPinamar', 'stockMontevideo', 'isCombo', 'calcWebPriceFromML'
+  ];
+  
+  for (const field of fieldsToCompare) {
+    if (p1[field] !== p2[field]) return false;
+  }
+  
+  if (JSON.stringify(p1.sizes || []) !== JSON.stringify(p2.sizes || [])) return false;
+  if (JSON.stringify(p1.colors || []) !== JSON.stringify(p2.colors || [])) return false;
+  if (JSON.stringify(p1.categorias_adicionales || []) !== JSON.stringify(p2.categorias_adicionales || [])) return false;
+  if (JSON.stringify(p1.subcategorias_adicionales || []) !== JSON.stringify(p2.subcategorias_adicionales || [])) return false;
+  if (JSON.stringify(p1.imagenes || []) !== JSON.stringify(p2.imagenes || [])) return false;
+  if (JSON.stringify(p1.sizeChartData || null) !== JSON.stringify(p2.sizeChartData || null)) return false;
+  if (JSON.stringify(p1.comboComponents || []) !== JSON.stringify(p2.comboComponents || [])) return false;
+
+  const v1 = p1.variants || [];
+  const v2 = p2.variants || [];
+  if (v1.length !== v2.length) return false;
+  for (let i = 0; i < v1.length; i++) {
+    const var1 = v1[i];
+    const var2 = v2[i];
+    if (
+      var1.id !== var2.id ||
+      var1.sku !== var2.sku ||
+      var1.size !== var2.size ||
+      var1.color !== var2.color ||
+      var1.colorCode !== var2.colorCode ||
+      Number(var1.priceDelta || 0) !== Number(var2.priceDelta || 0) ||
+      Math.floor(Number(var1.stock || 0)) !== Math.floor(Number(var2.stock || 0)) ||
+      var1.imageUrl !== var2.imageUrl ||
+      var1.price !== var2.price ||
+      Math.floor(Number(var1.stockPinamar || 0)) !== Math.floor(Number(var2.stockPinamar || 0)) ||
+      Math.floor(Number(var1.stockMontevideo || 0)) !== Math.floor(Number(var2.stockMontevideo || 0))
+    ) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 let saveDbStatePromiseChain = Promise.resolve();
@@ -1820,9 +1900,10 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
 
     for (const cat of state.dbCategories || []) {
       const activeVal = cat.active !== false;
+      const hideOnHomeVal = !!cat.hide_on_home;
       await pool.query(
-        "INSERT INTO categories (id, nombre, icono, orden, active) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO UPDATE SET nombre = EXCLUDED.nombre, icono = EXCLUDED.icono, orden = EXCLUDED.orden, active = EXCLUDED.active;",
-        [cat.id, cat.nombre, cat.icono || "Shirt", cat.orden || 1, activeVal]
+        "INSERT INTO categories (id, nombre, icono, orden, active, hide_on_home) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO UPDATE SET nombre = EXCLUDED.nombre, icono = EXCLUDED.icono, orden = EXCLUDED.orden, active = EXCLUDED.active, hide_on_home = EXCLUDED.hide_on_home;",
+        [cat.id, cat.nombre, cat.icono || "Shirt", cat.orden || 1, activeVal, hideOnHomeVal]
       );
     }
 
@@ -1893,6 +1974,15 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
 
     for (const prod of state.products || []) {
       const isNew = !prod.id || isNaN(parseInt(prod.id)) || String(prod.id).startsWith("prod-");
+
+      // OPTIMIZATION: If the product is not new and has not been changed, skip updating it, its images, and its variants
+      if (!isNew && lastSavedStoreState && Array.isArray(lastSavedStoreState.products)) {
+        const existingProd = lastSavedStoreState.products.find(p => String(p.id) === String(prod.id));
+        if (existingProd && isProductEqual(prod, existingProd)) {
+          continue;
+        }
+      }
+
       const priceVal = Number(prod.price);
       const originalPriceVal = prod.originalPrice ? Number(prod.originalPrice) : priceVal;
       let stockVal = Math.floor(Number(prod.stock ?? 10));
@@ -2121,6 +2211,12 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
       );
     }
 
+    try {
+      lastSavedStoreState = JSON.parse(JSON.stringify(state));
+    } catch (e) {
+      console.error("Error backing up lastSavedStoreState inside saveDbStateInternal:", e);
+    }
+
     return true;
   } catch (err: any) {
     console.error("Error saving relational DB elements:", err);
@@ -2275,6 +2371,7 @@ async function initPostgresStore(): Promise<ShopState | null> {
     `);
     await pool.query(`
       ALTER TABLE categories ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+      ALTER TABLE categories ADD COLUMN IF NOT EXISTS hide_on_home BOOLEAN DEFAULT false;
     `);
 
     // 5. Create subcategories

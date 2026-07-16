@@ -192,6 +192,7 @@ export interface SiteSettings {
   seoKeywords?: string;
   facebookUrl?: string;
   instagramUrl?: string;
+  styleSystemNotes?: string;
 }
 
 export interface Category {
@@ -200,6 +201,7 @@ export interface Category {
   icono: string; // icon name e.g. "Shirt", "Smartphone", "Sparkles", "Home"
   orden: number;
   active?: boolean; // toggle visibility on/off
+  hide_on_home?: boolean; // hide from home page sections list
 }
 
 export interface Subcategory {
