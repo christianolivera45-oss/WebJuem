@@ -6018,7 +6018,7 @@ export default function App() {
           <main id="admin-main-scroll" className="flex-1 flex flex-col p-6 gap-6 bg-zinc-950 text-zinc-100 overflow-y-auto z-10">
             
             {/* Header control summary */}
-            {adminSection !== "stock" && adminSection !== "dashboard" && (
+            {adminSection !== "stock" && adminSection !== "dashboard" && adminSection !== "sales" && (
               <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-3 shrink-0 p-5 bg-zinc-900/20 backdrop-blur-md rounded-2xl border border-zinc-850/60 shadow-[0_8px_30px_rgba(0,0,0,0.12)]">
                 <div>
                   <h2 className="text-xl md:text-2xl font-black font-sans text-white tracking-tight flex items-center gap-2">

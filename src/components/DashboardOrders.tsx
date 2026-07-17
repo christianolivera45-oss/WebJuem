@@ -51,6 +51,10 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [branchFilter, setBranchFilter] = useState<string>("all");
   const [channelFilter, setChannelFilter] = useState<string>("all");
+
+  const nowRef = new Date();
+  const [selectedMonth, setSelectedMonth] = useState<number>(nowRef.getMonth());
+  const [selectedYear, setSelectedYear] = useState<number>(nowRef.getFullYear());
   
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -150,6 +154,87 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
       // (Deduct Mercado Libre commission from JUEM's total if sold via Mercado Libre)
       totalFranquicia += 0;
       totalJuem += totalPriceProducts - totalComisionML + (o.shippingCost || 0);
+    }
+  }
+
+  // MONTHLY METRICS CALCULATIONS (Selected Month & Year)
+  const monthNames = [
+    "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+  ];
+  const selectedMonthName = monthNames[selectedMonth];
+
+  // Dynamic selector options based on existing orders
+  const monthYearOptions = React.useMemo(() => {
+    const options: { year: number; month: number; label: string }[] = [];
+    const seen = new Set<string>();
+
+    // Always include current month/year
+    const curY = nowRef.getFullYear();
+    const curM = nowRef.getMonth();
+    const curKey = `${curY}-${curM}`;
+    options.push({
+      year: curY,
+      month: curM,
+      label: `${monthNames[curM]} ${curY}`
+    });
+    seen.add(curKey);
+
+    // Scan approved orders
+    for (const o of approvedOrders) {
+      if (!o.createdAt) continue;
+      const d = new Date(o.createdAt);
+      const y = d.getFullYear();
+      const m = d.getMonth();
+      const key = `${y}-${m}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        options.push({
+          year: y,
+          month: m,
+          label: `${monthNames[m]} ${y}`
+        });
+      }
+    }
+
+    // Sort descending chronologically
+    return options.sort((a, b) => {
+      if (a.year !== b.year) return b.year - a.year;
+      return b.month - a.month;
+    });
+  }, [approvedOrders]);
+
+  const monthlyApprovedOrders = approvedOrders.filter(o => {
+    if (!o.createdAt) return false;
+    const d = new Date(o.createdAt);
+    return d.getFullYear() === selectedYear && d.getMonth() === selectedMonth;
+  });
+
+  const monthlyApprovedCount = monthlyApprovedOrders.length;
+
+  const monthlyFacturado = monthlyApprovedOrders.reduce((acc, o) => {
+    const { totalPriceProducts } = getOrderCostAndProfit(o, productsList);
+    return acc + totalPriceProducts;
+  }, 0);
+
+  const monthlyGananciaNeta = monthlyApprovedOrders.reduce((acc, o) => {
+    const { gananciaNeta } = getOrderCostAndProfit(o, productsList);
+    return acc + gananciaNeta;
+  }, 0);
+
+  let monthlyFranquicia = 0;
+  let monthlyJuem = 0;
+
+  for (const o of monthlyApprovedOrders) {
+    const { totalCost, gananciaNeta, totalPriceProducts, totalComisionML } = getOrderCostAndProfit(o, productsList);
+    const isMontevideo = o.depositoOrigen === "Montevideo";
+    
+    if (isMontevideo) {
+      monthlyFranquicia += (0.4 * gananciaNeta) + (o.shippingCost || 0);
+      monthlyJuem += totalCost + (0.6 * gananciaNeta);
+    } else {
+      monthlyFranquicia += 0;
+      monthlyJuem += totalPriceProducts - totalComisionML + (o.shippingCost || 0);
     }
   }
 
@@ -703,6 +788,70 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
   return (
     <div className="w-full space-y-6 animate-fade-in relative">
       
+      {/* MONTH & YEAR SELECTOR FOR MONTHLY SALES */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-zinc-900/40 backdrop-blur-md border border-zinc-850/80 rounded-2xl shadow-sm">
+        <div className="flex items-center gap-2.5">
+          <div className="p-2 bg-[#D4A55A]/10 text-[#E6BF76] rounded-xl border border-[#D4A55A]/15">
+            <Calendar className="h-4 w-4" />
+          </div>
+          <div>
+            <h4 className="text-xs font-black text-white uppercase tracking-wider">Período de Ventas</h4>
+            <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">Explora las métricas mensuales de la tienda</p>
+          </div>
+        </div>
+        
+        <div className="flex items-center gap-2">
+          {/* Previous Month button */}
+          <button
+            onClick={() => {
+              const currentIndex = monthYearOptions.findIndex(o => o.year === selectedYear && o.month === selectedMonth);
+              if (currentIndex < monthYearOptions.length - 1) {
+                const prevOpt = monthYearOptions[currentIndex + 1];
+                setSelectedYear(prevOpt.year);
+                setSelectedMonth(prevOpt.month);
+              }
+            }}
+            disabled={monthYearOptions.findIndex(o => o.year === selectedYear && o.month === selectedMonth) === monthYearOptions.length - 1}
+            className="px-3 py-1.5 bg-zinc-950/40 hover:bg-zinc-950/80 border border-zinc-800 rounded-xl text-zinc-300 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-all text-[11px] font-bold cursor-pointer flex items-center gap-1"
+          >
+            &larr; Anterior
+          </button>
+
+          {/* Select dropdown */}
+          <select
+            value={`${selectedYear}-${selectedMonth}`}
+            onChange={(e) => {
+              const [y, m] = e.target.value.split("-").map(Number);
+              setSelectedYear(y);
+              setSelectedMonth(m);
+            }}
+            className="bg-zinc-950/80 border border-zinc-800 text-zinc-200 text-[11px] rounded-xl px-3 py-1.5 focus:outline-none focus:border-[#D4A55A]/60 font-semibold cursor-pointer"
+          >
+            {monthYearOptions.map(opt => (
+              <option key={`${opt.year}-${opt.month}`} value={`${opt.year}-${opt.month}`}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+
+          {/* Next Month button */}
+          <button
+            onClick={() => {
+              const currentIndex = monthYearOptions.findIndex(o => o.year === selectedYear && o.month === selectedMonth);
+              if (currentIndex > 0) {
+                const nextOpt = monthYearOptions[currentIndex - 1];
+                setSelectedYear(nextOpt.year);
+                setSelectedMonth(nextOpt.month);
+              }
+            }}
+            disabled={monthYearOptions.findIndex(o => o.year === selectedYear && o.month === selectedMonth) === 0}
+            className="px-3 py-1.5 bg-zinc-950/40 hover:bg-zinc-950/80 border border-zinc-800 rounded-xl text-zinc-300 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-all text-[11px] font-bold cursor-pointer flex items-center gap-1"
+          >
+            Siguiente &rarr;
+          </button>
+        </div>
+      </div>
+
       {/* 5 METRIC KPI HEADER OVERVIEW CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         
@@ -716,10 +865,17 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
             </div>
           </div>
           <div>
-            <h3 className="text-xl sm:text-2xl font-black text-white font-sans">
-              {totalApprovedCount}
-            </h3>
-            <p className="text-[10px] text-zinc-500 font-bold mt-1">Ventas aprobadas registradas</p>
+            <div className="flex items-baseline gap-1.5 flex-wrap">
+              <h3 className="text-xl sm:text-2xl font-black text-white font-sans">
+                {monthlyApprovedCount}
+              </h3>
+              <span className="text-[9px] font-extrabold text-indigo-400 uppercase tracking-wider font-mono bg-indigo-500/10 px-1.5 py-0.5 rounded border border-indigo-500/25">
+                {selectedMonthName}
+              </span>
+            </div>
+            <p className="text-[10px] text-zinc-500 font-bold mt-1.5">
+              Total histórico: <span className="text-zinc-300 font-black">{totalApprovedCount}</span>
+            </p>
           </div>
         </div>
 
@@ -733,10 +889,17 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
             </div>
           </div>
           <div>
-            <h3 className="text-xl sm:text-2xl font-black text-white font-sans">
-              $ {totalFacturado.toLocaleString("es-AR")}
-            </h3>
-            <p className="text-[10px] text-emerald-400 font-bold mt-1">P. VENTA de artículos</p>
+            <div className="flex items-baseline gap-1.5 flex-wrap">
+              <h3 className="text-xl sm:text-2xl font-black text-white font-sans">
+                $ {monthlyFacturado.toLocaleString("es-AR")}
+              </h3>
+              <span className="text-[9px] font-extrabold text-emerald-400 uppercase tracking-wider font-mono bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/25">
+                {selectedMonthName}
+              </span>
+            </div>
+            <p className="text-[10px] text-zinc-500 font-bold mt-1.5">
+              Total histórico: <span className="text-zinc-300 font-black">$ {totalFacturado.toLocaleString("es-AR")}</span>
+            </p>
           </div>
         </div>
 
@@ -750,10 +913,17 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
             </div>
           </div>
           <div>
-            <h3 className="text-xl sm:text-2xl font-black text-white font-sans">
-              $ {totalGananciaNeta.toLocaleString("es-AR")}
-            </h3>
-            <p className="text-[10px] text-sky-400 font-bold mt-1">Excluyendo costo de productos</p>
+            <div className="flex items-baseline gap-1.5 flex-wrap">
+              <h3 className="text-xl sm:text-2xl font-black text-white font-sans">
+                $ {monthlyGananciaNeta.toLocaleString("es-AR")}
+              </h3>
+              <span className="text-[9px] font-extrabold text-sky-400 uppercase tracking-wider font-mono bg-sky-500/10 px-1.5 py-0.5 rounded border border-sky-500/25">
+                {selectedMonthName}
+              </span>
+            </div>
+            <p className="text-[10px] text-zinc-500 font-bold mt-1.5">
+              Total histórico: <span className="text-zinc-300 font-black">$ {totalGananciaNeta.toLocaleString("es-AR")}</span>
+            </p>
           </div>
         </div>
 
@@ -767,27 +937,41 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
             </div>
           </div>
           <div>
-            <h3 className="text-xl sm:text-2xl font-black text-white font-sans">
-              $ {totalFranquicia.toLocaleString("es-AR")}
-            </h3>
-            <p className="text-[10px] text-amber-400 font-bold mt-1">40% Ganancia MVD + Envíos</p>
+            <div className="flex items-baseline gap-1.5 flex-wrap">
+              <h3 className="text-xl sm:text-2xl font-black text-white font-sans">
+                $ {monthlyFranquicia.toLocaleString("es-AR")}
+              </h3>
+              <span className="text-[9px] font-extrabold text-amber-400 uppercase tracking-wider font-mono bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/25">
+                {selectedMonthName}
+              </span>
+            </div>
+            <p className="text-[10px] text-zinc-500 font-bold mt-1.5">
+              Total histórico: <span className="text-zinc-300 font-black">$ {totalFranquicia.toLocaleString("es-AR")}</span>
+            </p>
           </div>
         </div>
 
         {/* Metric 5 - Total Juem */}
-        <div className="bg-zinc-900/50 backdrop-blur-md p-5 rounded-2xl border border-zinc-850/85 hover:border-rose-500/40 shadow-[0_8px_30px_rgba(0,0,0,0.15)] hover:shadow-[0_8px_30px_rgba(244,63,94,0.06)] hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between space-y-3 group relative overflow-hidden">
-          <div className="absolute top-0 left-0 right-0 h-[2px] bg-rose-500/20 group-hover:bg-rose-500/50 transition-colors duration-300" />
+        <div className="bg-zinc-900/50 backdrop-blur-md p-5 rounded-2xl border border-zinc-850/85 hover:border-[#D4A55A]/40 shadow-[0_8px_30px_rgba(0,0,0,0.15)] hover:shadow-[0_8px_30px_rgba(212,165,90,0.06)] hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between space-y-3 group relative overflow-hidden">
+          <div className="absolute top-0 left-0 right-0 h-[2px] bg-[#D4A55A]/20 group-hover:bg-[#D4A55A]/50 transition-colors duration-300" />
           <div className="flex items-center justify-between">
             <span className="text-[10px] sm:text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Total JUEM</span>
-            <div className="p-2 bg-rose-950/40 text-rose-400 rounded-lg border border-rose-900/30 group-hover:scale-110 transition-transform duration-300">
+            <div className="p-2 bg-[#D4A55A]/10 text-[#E6BF76] rounded-lg border border-[#D4A55A]/20 group-hover:scale-110 transition-transform duration-300">
               <Store className="h-4 w-4" />
             </div>
           </div>
           <div>
-            <h3 className="text-xl sm:text-2xl font-black text-white font-sans">
-              $ {totalJuem.toLocaleString("es-AR")}
-            </h3>
-            <p className="text-[10px] text-rose-400 font-bold mt-1">Pinamar 100% + 60% MVD</p>
+            <div className="flex items-baseline gap-1.5 flex-wrap">
+              <h3 className="text-xl sm:text-2xl font-black text-white font-sans">
+                $ {monthlyJuem.toLocaleString("es-AR")}
+              </h3>
+              <span className="text-[9px] font-extrabold text-[#E6BF76] uppercase tracking-wider font-mono bg-[#D4A55A]/10 px-1.5 py-0.5 rounded border border-[#D4A55A]/25">
+                {selectedMonthName}
+              </span>
+            </div>
+            <p className="text-[10px] text-zinc-500 font-bold mt-1.5">
+              Total histórico: <span className="text-zinc-300 font-black">$ {totalJuem.toLocaleString("es-AR")}</span>
+            </p>
           </div>
         </div>
 
