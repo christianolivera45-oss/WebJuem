@@ -5699,19 +5699,7 @@ export default function App() {
                   <span>Ajustes de Accesibilidad</span>
                 </button>
 
-                {!authToken && (
-                  <button
-                    onClick={() => setIsLoginModalOpen(true)}
-                    className={`px-3 py-1.5 text-xs font-bold rounded-lg border flex items-center gap-1.5 cursor-pointer transition-all duration-300 ${
-                      store.settings.themeMode === "dark"
-                        ? "bg-[#0B1730] hover:bg-[#D4A55A]/15 border-[#D4A55A]/20 text-[#E6BF76]"
-                        : "bg-white hover:bg-slate-100 border-slate-200 text-slate-700 hover:text-slate-900"
-                    }`}
-                  >
-                    <Lock className="w-3.5 h-3.5" />
-                    <span>Acceso Administrativo</span>
-                  </button>
-                )}
+                 {/* Acceso Administrativo button removed for enhanced security - administrators access directly via /admin */}
               </div>
             </div>
           </footer>
