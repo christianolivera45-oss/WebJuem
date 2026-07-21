@@ -7473,69 +7473,13 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       }, null, 2);
     }
 
-    // Dynamic pre-rendered HTML catalog to boost Google crawler indexation & completely resolve "Descubierta: actualmente sin indexar"
+    // Clean root element for fast, smooth client-side loading with zero raw text flash
     let preRenderedHtml = `<div id="root"></div>`;
     const isAdminRoute = segments[0] === "admin";
 
     if (isAdminRoute) {
       title = `Acceso Administrativo | ${settings.siteTitle || "Ventas Juem"}`;
       description = "Acceso seguro y protegido al panel de administración de Ventas Juem.";
-    } else {
-      preRenderedHtml = `<div id="root">`;
-      preRenderedHtml += `\n  <!-- Prerendered SEO Catalog for Googlebot & Search Engine Crawlers -->\n`;
-      preRenderedHtml += `  <div id="seo-prerender-catalog" style="font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 2rem 1rem; max-width: 1200px; margin: 0 auto; color: #f8fafc; background-color: #060b19;">\n`;
-      preRenderedHtml += `    <header style="border-bottom: 1px solid rgba(212, 165, 90, 0.25); padding-bottom: 1.5rem; margin-bottom: 2rem; text-align: center;">\n`;
-      preRenderedHtml += `      <h1 style="font-size: 2.25rem; font-weight: 800; letter-spacing: 0.08em; color: #E6BF76; margin: 0 0 0.5rem 0; text-transform: uppercase;">${settings.siteTitle || "JUEM"}</h1>\n`;
-      preRenderedHtml += `      <p style="color: #94a3b8; font-size: 1rem; max-width: 600px; margin: 0 auto;">${description}</p>\n`;
-      preRenderedHtml += `    </header>\n`;
-      
-      // Categories links
-      const categories = state.dbCategories || [];
-      if (categories.length > 0) {
-        preRenderedHtml += `    <nav style="margin-bottom: 2.5rem;">\n`;
-        preRenderedHtml += `      <h2 style="font-size: 1.15rem; font-weight: 700; color: #E6BF76; margin-bottom: 1rem;">Nuestras Categorías</h2>\n`;
-        preRenderedHtml += `      <div style="display: flex; gap: 0.6rem; flex-wrap: wrap;">\n`;
-        categories.forEach(cat => {
-          if (cat.active !== false) {
-            preRenderedHtml += `        <a href="/${cat.id}" style="display: inline-block; padding: 0.4rem 1rem; background: #0b1730; color: #e2e8f0; border: 1px solid rgba(212, 165, 90, 0.25); border-radius: 9999px; text-decoration: none; font-size: 0.85rem; font-weight: 500;">${cat.nombre}</a>\n`;
-          }
-        });
-        preRenderedHtml += `      </div>\n`;
-        preRenderedHtml += `    </nav>\n`;
-      }
-
-      // Products links
-      const products = state.products || [];
-      if (products.length > 0) {
-        preRenderedHtml += `    <main>\n`;
-        preRenderedHtml += `      <h2 style="font-size: 1.15rem; font-weight: 700; color: #E6BF76; margin-bottom: 1.25rem;">Catálogo de Productos Destacados en Uruguay</h2>\n`;
-        preRenderedHtml += `      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1.25rem;">\n`;
-        products.forEach(p => {
-          if (p.active !== false && p.paused !== true) {
-            const slug = generateSlug(p.name);
-            const pUrl = `/producto/${slug}`;
-            const pDesc = p.description ? p.description.substring(0, 90) + "..." : "";
-            preRenderedHtml += `        <article style="background: #0b1730; border: 1px solid rgba(212, 165, 90, 0.2); border-radius: 12px; padding: 1.1rem; display: flex; flex-direction: column; justify-content: space-between;">\n`;
-            preRenderedHtml += `          <div>\n`;
-            preRenderedHtml += `            <h3 style="font-size: 1rem; font-weight: 600; margin: 0 0 0.5rem 0;"><a href="${pUrl}" style="color: #f8fafc; text-decoration: none;">${p.name}</a></h3>\n`;
-            preRenderedHtml += `            <p style="color: #94a3b8; font-size: 0.825rem; margin: 0 0 1rem 0; line-height: 1.4;">${pDesc}</p>\n`;
-            preRenderedHtml += `          </div>\n`;
-            preRenderedHtml += `          <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 0.65rem; margin-top: 0.85rem;">\n`;
-            preRenderedHtml += `            <span style="font-weight: 700; color: #E6BF76; font-size: 1.05rem;">$ ${p.price} UYU</span>\n`;
-            preRenderedHtml += `            <a href="${pUrl}" style="font-size: 0.8rem; color: #D4A55A; text-decoration: none; font-weight: 600;">Ver detalles →</a>\n`;
-            preRenderedHtml += `          </div>\n`;
-            preRenderedHtml += `        </article>\n`;
-          }
-        });
-        preRenderedHtml += `      </div>\n`;
-        preRenderedHtml += `    </main>\n`;
-      }
-
-      preRenderedHtml += `    <footer style="margin-top: 3.5rem; border-top: 1px solid rgba(212, 165, 90, 0.2); padding-top: 1.25rem; text-align: center; color: #64748b; font-size: 0.8rem;">\n`;
-      preRenderedHtml += `      <p>© ${new Date().getFullYear()} ${settings.siteTitle || "Ventas Juem"}. Todos los derechos reservados. Canelones, Uruguay.</p>\n`;
-      preRenderedHtml += `    </footer>\n`;
-      preRenderedHtml += `  </div>`;
-      preRenderedHtml += `</div>`;
     }
 
     let output = htmlContent;
