@@ -1956,7 +1956,7 @@ export default function App() {
           window.location.hostname.includes("127.0.0.1") ||
           window.location.hostname.includes("run.app") ||
           window.location.hostname.includes("google.com") ||
-          window.location.hostname !== "ventas-juem.com";
+          (window.location.hostname !== "ventas-juem.com" && !window.location.hostname.includes("juem.com.uy"));
       }
     } catch (e) {
       isDev = true;
@@ -2010,7 +2010,7 @@ export default function App() {
           window.location.hostname.includes("127.0.0.1") ||
           window.location.hostname.includes("run.app") ||
           window.location.hostname.includes("google.com") ||
-          window.location.hostname !== "ventas-juem.com";
+          (window.location.hostname !== "ventas-juem.com" && !window.location.hostname.includes("juem.com.uy"));
       }
     } catch (e) {
       isDev = true;
@@ -2062,7 +2062,7 @@ export default function App() {
           window.location.hostname.includes("127.0.0.1") ||
           window.location.hostname.includes("run.app") ||
           window.location.hostname.includes("google.com") ||
-          window.location.hostname !== "ventas-juem.com";
+          (window.location.hostname !== "ventas-juem.com" && !window.location.hostname.includes("juem.com.uy"));
       }
     } catch (e) {
       isDev = true;
