@@ -1434,7 +1434,21 @@ function checkAndClearExpiredBannerText(state: ShopState): { state: ShopState, u
   return { state, updated };
 }
 
-async function getDbState(): Promise<ShopState> {
+let cachedDbState: ShopState | null = null;
+let cachedDbStateTime = 0;
+const DB_CACHE_TTL_MS = 15000; // 15 segundos de caché en memoria para reducir cuota de transferencia en Supabase
+
+function invalidateDbCache() {
+  cachedDbState = null;
+  cachedDbStateTime = 0;
+}
+
+async function getDbState(forceRefresh = false): Promise<ShopState> {
+  const now = Date.now();
+  if (!forceRefresh && cachedDbState && (now - cachedDbStateTime < DB_CACHE_TTL_MS)) {
+    return cachedDbState;
+  }
+
   const pool = getDbPool();
   if (!pool) {
     return currentStoreState;
@@ -1796,6 +1810,9 @@ async function getDbState(): Promise<ShopState> {
     } catch (e) {
       console.error("Error setting lastSavedStoreState inside getDbState:", e);
     }
+
+    cachedDbState = finalDbState;
+    cachedDbStateTime = Date.now();
 
     return finalDbState;
   } catch (err: any) {
@@ -2220,6 +2237,7 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
       console.error("Error backing up lastSavedStoreState inside saveDbStateInternal:", e);
     }
 
+    invalidateDbCache();
     return true;
   } catch (err: any) {
     console.error("Error saving relational DB elements:", err?.message || err);
