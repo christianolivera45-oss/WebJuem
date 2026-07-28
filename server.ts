@@ -640,9 +640,15 @@ function getDbPool(force = false) {
     console.log("Configurando conexión PostgreSQL...");
     dbPool = new Pool({
       connectionString: url,
+      connectionTimeoutMillis: 5000,
+      idleTimeoutMillis: 30000,
       ssl: {
         rejectUnauthorized: false
       }
+    });
+    dbPool.on("error", (err: any) => {
+      console.error("⚠️ PostgreSQL pool background error (Supabase cuota/límite de ancho de banda o conexión interrumpida):", err?.message || err);
+      dbUnavailable = true;
     });
   }
   return dbPool;
@@ -1793,12 +1799,9 @@ async function getDbState(): Promise<ShopState> {
 
     return finalDbState;
   } catch (err: any) {
-    console.error("Error reading relational DB tables:", err);
-    const msg = String(err.message || err).toLowerCase();
-    if (msg.includes("auth") || msg.includes("password") || msg.includes("connection") || msg.includes("econ") || msg.includes("timeout")) {
-      console.warn("⚠️ Error crítico de conexión. Desconectando de la base de datos temporalmente y usando almacenamiento local.");
-      dbUnavailable = true;
-    }
+    console.error("Error reading relational DB tables:", err?.message || err);
+    console.warn("⚠️ Error de lectura de base de datos (Supabase fuera de cuota o inalcanzable). Usando almacenamiento local en memoria.");
+    dbUnavailable = true;
     return currentStoreState;
   }
 }
@@ -2219,14 +2222,10 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
 
     return true;
   } catch (err: any) {
-    console.error("Error saving relational DB elements:", err);
-    const msg = String(err.message || err).toLowerCase();
-    if (msg.includes("auth") || msg.includes("password") || msg.includes("connection") || msg.includes("econ") || msg.includes("timeout")) {
-      console.warn("⚠️ Error crítico de conexión detectado al guardar. Usando almacenamiento local.");
-      dbUnavailable = true;
-      return false;
-    }
-    throw err;
+    console.error("Error saving relational DB elements:", err?.message || err);
+    console.warn("⚠️ Error al guardar en base de datos (Supabase fuera de cuota o inalcanzable). Guardando en almacenamiento local.");
+    dbUnavailable = true;
+    return false;
   }
 }
 
