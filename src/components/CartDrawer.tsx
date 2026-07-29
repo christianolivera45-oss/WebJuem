@@ -1,6 +1,6 @@
 import { useState, useEffect, FormEvent } from "react";
 import { X, ShoppingBag, Trash2, Plus, Minus, ArrowRight } from "lucide-react";
-import { CartItem, SiteSettings, Coupon, is3DProduct } from "../types";
+import { CartItem, SiteSettings, Coupon, is3DProduct, isGenericSize, isGenericColor } from "../types";
 import { motion, AnimatePresence } from "motion/react";
 
 interface CartDrawerProps {
@@ -226,14 +226,14 @@ export default function CartDrawer({
                               </h4>
                               
                               {/* Options tags */}
-                              {(item.selectedSize || item.selectedColor) && (
+                              {((item.selectedSize && !isGenericSize(item.selectedSize)) || (item.selectedColor && !isGenericColor(item.selectedColor))) && (
                                 <div className="flex flex-wrap gap-1.5 mt-1 font-mono text-[10px] text-[#E6BF76]">
-                                  {item.selectedSize && (
+                                  {item.selectedSize && !isGenericSize(item.selectedSize) && (
                                     <span className="px-1.5 py-0.5 rounded bg-[#050B1A] border border-[#D4A55A]/25">
                                       {is3DProduct(item.product) ? "Material" : "Talle"}: {item.selectedSize}
                                     </span>
                                   )}
-                                  {item.selectedColor && (
+                                  {item.selectedColor && !isGenericColor(item.selectedColor) && (
                                     <span className="px-1.5 py-0.5 rounded bg-[#050B1A] border border-[#D4A55A]/25 font-bold">Color: {item.selectedColor}</span>
                                   )}
                                 </div>

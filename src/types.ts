@@ -407,3 +407,23 @@ export function is3DProduct(product: Product): boolean {
 
   return matchesText(name) || matchesText(desc) || matchesText(cat) || matchesText(catId);
 }
+
+export function isGenericSize(sz?: string): boolean {
+  if (!sz) return true;
+  const norm = sz.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return [
+    "unico", "estandar", "standard", "n/a", "general", "-", "default", 
+    "ninguno", "no aplica", "sin talle", "único", "estándar", "sin talles",
+    "medida unica", "medida única", "talle unico", "talle único"
+  ].includes(norm);
+}
+
+export function isGenericColor(col?: string): boolean {
+  if (!col) return true;
+  const norm = col.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return [
+    "general", "estandar", "standard", "n/a", "unico", "-", "default", 
+    "ninguno", "no aplica", "sin color", "unico color", "estándar", "único",
+    "sin colores", "varios", "surtido", "color general"
+  ].includes(norm);
+}

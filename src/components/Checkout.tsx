@@ -28,7 +28,7 @@ import {
   Copy,
   MessageSquare
 } from "lucide-react";
-import { CartItem, SiteSettings, Coupon, is3DProduct } from "../types";
+import { CartItem, SiteSettings, Coupon, is3DProduct, isGenericSize, isGenericColor } from "../types";
 import { motion, AnimatePresence } from "motion/react";
 import { InteractiveMap } from "./InteractiveMap";
 
@@ -1853,10 +1853,10 @@ export default function Checkout({
         cartItems.forEach((item, index) => {
           const is3D = is3DProduct(item.product);
           const options = [];
-          if (item.selectedSize) {
+          if (item.selectedSize && !isGenericSize(item.selectedSize)) {
             options.push(is3D ? `Material: ${item.selectedSize}` : `Talle: ${item.selectedSize}`);
           }
-          if (item.selectedColor) {
+          if (item.selectedColor && !isGenericColor(item.selectedColor)) {
             options.push(`Color: ${item.selectedColor}`);
           }
           
@@ -3551,12 +3551,12 @@ export default function Checkout({
                           {item.product.name}
                         </h4>
                         
-                        {(item.selectedSize || item.selectedColor) && (
+                        {((item.selectedSize && !isGenericSize(item.selectedSize)) || (item.selectedColor && !isGenericColor(item.selectedColor))) && (
                           <div className="flex gap-1.5 items-center mt-0.5 text-[9px] font-mono text-zinc-400">
-                            {item.selectedSize && (
+                            {item.selectedSize && !isGenericSize(item.selectedSize) && (
                               <span className="opacity-90">{is3D ? "Material" : "Talle"}: {item.selectedSize}</span>
                             )}
-                            {item.selectedColor && (
+                            {item.selectedColor && !isGenericColor(item.selectedColor) && (
                               <span className="opacity-90">Col: {item.selectedColor}</span>
                             )}
                           </div>

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { X, ShoppingCart, MessageSquare, ShieldCheck, Truck, RefreshCw, ChevronLeft, ChevronRight, AlertCircle, Share2, Maximize2, Cpu, Wrench, Clock, Calendar, Home, Ruler, Palette, Sun, MapPin, Package, CheckCircle2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { Product, SiteSettings, is3DProduct } from "../types";
+import { Product, SiteSettings, is3DProduct, isGenericSize, isGenericColor } from "../types";
 import ProductCard from "./ProductCard";
 
 export const PRINT_MATERIALS = [
@@ -125,21 +125,29 @@ export default function ProductDetails({
     relatedProducts = [...relatedProducts, ...extra].slice(0, 4);
   }
 
-  const sizes = is3D
+  const sizes = (is3D
     ? (product.sizes && product.sizes.length > 0 ? product.sizes : ["PLA", "PETG", "ABS", "TPU"])
     : (product.sizes && product.sizes.length > 0 
       ? product.sizes 
-      : (hasVariants ? Array.from(new Set(variants.map(v => v.size))) : (isClothing ? ["S", "M", "L", "XL"] : [])));
+      : (hasVariants ? Array.from(new Set(variants.map(v => v.size))).filter(Boolean) : (isClothing ? ["S", "M", "L", "XL"] : [])))
+  ).filter(Boolean);
 
-  const colors = product.colors && product.colors.length > 0
+  const colors = (product.colors && product.colors.length > 0
     ? product.colors
     : (is3D 
       ? ["Negro mate", "Blanco tiza", "Gris plata", "Rojo fuego", "Azul cobalto", "Verde bosque", "Naranja", "Amarillo sol"]
-      : (hasVariants ? Array.from(new Set(variants.map(v => v.color))) : (isClothing 
+      : (hasVariants ? Array.from(new Set(variants.map(v => v.color))).filter(Boolean) : (isClothing 
         ? ["Negro", "Gris", "Blanco"] 
         : isElectronics 
         ? ["Negro mate", "Plata espacial", "Azul cobalto"] 
-        : ["Estándar"])));
+        : [])))
+  ).filter(Boolean);
+
+  const shouldShowSizes = is3D 
+    ? true 
+    : (sizes.length > 0 && !(sizes.length === 1 && isGenericSize(sizes[0])) && !sizes.every(isGenericSize));
+
+  const shouldShowColors = colors.length > 0 && !(colors.length === 1 && isGenericColor(colors[0])) && !colors.every(isGenericColor);
 
   // Helper to check if a specific size is in stock (considering selectedColor if active)
   const isSizeInStock = (sz: string): boolean => {
@@ -171,13 +179,15 @@ export default function ProductDetails({
     }
   };
 
-  // Pre-initialize selectors (only auto-select if there is exactly 1 option, otherwise start unselected)
+  // Pre-initialize selectors (only auto-select if there is exactly 1 option or if selector is hidden)
   const [selectedSize, setSelectedSize] = useState(() => {
     if (is3D) return sizes.includes("PLA") ? "PLA" : (sizes[0] || "");
+    if (!shouldShowSizes) return sizes[0] || "";
     return sizes.length === 1 ? sizes[0] : "";
   });
 
   const [selectedColor, setSelectedColor] = useState(() => {
+    if (!shouldShowColors) return colors[0] || "";
     return colors.length === 1 ? colors[0] : "";
   });
 
@@ -571,11 +581,11 @@ export default function ProductDetails({
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
     setActiveImgIndex(0);
-    setSelectedSize(is3D ? (sizes.includes("PLA") ? "PLA" : (sizes[0] || "")) : (sizes.length === 1 ? sizes[0] : ""));
-    setSelectedColor(colors.length === 1 ? colors[0] : "");
+    setSelectedSize(is3D ? (sizes.includes("PLA") ? "PLA" : (sizes[0] || "")) : (!shouldShowSizes ? (sizes[0] || "") : (sizes.length === 1 ? sizes[0] : "")));
+    setSelectedColor(!shouldShowColors ? (colors[0] || "") : (colors.length === 1 ? colors[0] : ""));
     setQuantity(1);
     autoSwitchedColorRef.current = ""; // Reset matched color on product change
-  }, [product.id, is3D, sizes.length, colors.length]);
+  }, [product.id, is3D, sizes.length, colors.length, shouldShowSizes, shouldShowColors]);
 
   // Lock body scrolling while ProductDetails overlay is mounted to prevent double scrollbar issues
   useEffect(() => {
@@ -625,19 +635,21 @@ export default function ProductDetails({
   };
 
   const handleAddToCart = () => {
-    if (sizes.length > 0 && !selectedSize) {
+    if (shouldShowSizes && sizes.length > 0 && !selectedSize) {
       const msg = is3D ? "Por favor selecciona un material." : "Por favor selecciona un talle.";
       setErrorMessage(msg);
       optionsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
-    if (colors.length > 0 && !selectedColor) {
+    if (shouldShowColors && colors.length > 0 && !selectedColor) {
       const msg = "Por favor selecciona un color.";
       setErrorMessage(msg);
       optionsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
-    const colorToPass = colors.length > 0 ? selectedColor : undefined;
+
+    const passedSize = selectedSize || (sizes[0] && !isGenericSize(sizes[0]) ? sizes[0] : undefined);
+    const passedColor = selectedColor || (colors[0] && !isGenericColor(colors[0]) ? colors[0] : undefined);
     
     // Safety check quantity boundaries
     const maxQtyAllowed = is3D ? 99 : currentStock;
@@ -647,7 +659,7 @@ export default function ProductDetails({
       return;
     }
 
-    onAddToCart(product, selectedSize || undefined, colorToPass, finalQty);
+    onAddToCart(product, passedSize, passedColor, finalQty);
     
     setAddedMessage(true);
     setTimeout(() => {
@@ -1134,7 +1146,7 @@ Me gustaría coordinar stock, fabricación y envío.`;
               )}
 
               {/* Sizes selector matching design ovals */}
-              {sizes.length > 0 && (
+              {shouldShowSizes && sizes.length > 0 && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <h4 className={`text-[10px] font-bold tracking-[0.15em] uppercase ${
@@ -1198,7 +1210,7 @@ Me gustaría coordinar stock, fabricación y envío.`;
             )}
 
             {/* Colors selector matching design ovals */}
-            {colors.length > 0 && (
+            {shouldShowColors && colors.length > 0 && (
               <div className="space-y-2">
                 <h4 className={`text-[10px] font-bold tracking-[0.15em] uppercase ${
                   isThemeDark ? "text-zinc-400" : "text-zinc-500"
