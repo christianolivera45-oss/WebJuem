@@ -43,6 +43,8 @@ export interface Product {
   colors?: string[];
   active?: boolean; // Logical soft delete
   paused?: boolean; // Pause in eCommerce store front
+  hideSizes?: boolean; // Hide size selection on product details page
+  hideColors?: boolean; // Hide color selection on product details page
   is3D?: boolean; // Is a 3D printed product with custom logic
   hoursPerUnit?: number; // Hours needed to 3D print one unit
   consultOnly?: boolean; // Show 'Consultar por WhatsApp' instead of 'Comprar'

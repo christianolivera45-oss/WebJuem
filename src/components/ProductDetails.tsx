@@ -143,11 +143,11 @@ export default function ProductDetails({
         : [])))
   ).filter(Boolean);
 
-  const shouldShowSizes = is3D 
+  const shouldShowSizes = !product.hideSizes && (is3D 
     ? true 
-    : (sizes.length > 0 && !(sizes.length === 1 && isGenericSize(sizes[0])) && !sizes.every(isGenericSize));
+    : (sizes.length > 0 && !sizes.every(isGenericSize)));
 
-  const shouldShowColors = colors.length > 0 && !(colors.length === 1 && isGenericColor(colors[0])) && !colors.every(isGenericColor);
+  const shouldShowColors = !product.hideColors && (colors.length > 0 && !colors.every(isGenericColor));
 
   // Helper to check if a specific size is in stock (considering selectedColor if active)
   const isSizeInStock = (sz: string): boolean => {

@@ -9744,8 +9744,51 @@ export default function App() {
                                       })}
                                     </div>
                                   </div>
-                        ) : true ? (
-                          <div className="space-y-4 p-4 bg-[#050B1A] rounded-xl border border-zinc-800">
+                        ) : (
+                          <>
+                            <div className="space-y-4 p-4 bg-[#050B1A] rounded-xl border border-zinc-800">
+                            {/* Visibilidad de Talle y Color */}
+                            <div className="p-4 bg-[#0c1325] rounded-xl border border-[#D4A55A]/30 space-y-3 shadow-md mb-2">
+                              <div className="flex items-center justify-between">
+                                <label className="text-xs font-black text-[#D4A55A] uppercase tracking-wider flex items-center gap-2">
+                                  <Sliders className="w-4 h-4 text-[#D4A55A]" />
+                                  <span>Visibilidad de Talle y Color en la Tienda</span>
+                                </label>
+                                <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">
+                                  Opción para mostrar/ocultar
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-zinc-300 leading-relaxed">
+                                Si este artículo no requiere talle o color (ej. juguetes, herramientas, accesorios), puedes ocultar estas selecciones en la ficha del producto:
+                              </p>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                                <label className="flex items-center gap-3 p-3 rounded-xl bg-[#050B1A] border border-zinc-800 hover:border-[#D4A55A]/40 cursor-pointer transition-all">
+                                  <input 
+                                    type="checkbox"
+                                    checked={!newProduct.hideSizes}
+                                    onChange={(e) => setNewProduct({ ...newProduct, hideSizes: !e.target.checked })}
+                                    className="h-4 w-4 text-[#D4A55A] focus:ring-[#D4A55A] border-zinc-700 bg-[#050B1A] rounded cursor-pointer"
+                                  />
+                                  <div>
+                                    <span className="text-xs font-extrabold text-[#F4EAD7] block">Mostrar Selector de Talle</span>
+                                    <span className="text-[10px] text-zinc-400 block">{newProduct.hideSizes ? "Oculto actualmente" : "Visible en la tienda"}</span>
+                                  </div>
+                                </label>
+
+                                <label className="flex items-center gap-3 p-3 rounded-xl bg-[#050B1A] border border-zinc-800 hover:border-[#D4A55A]/40 cursor-pointer transition-all">
+                                  <input 
+                                    type="checkbox"
+                                    checked={!newProduct.hideColors}
+                                    onChange={(e) => setNewProduct({ ...newProduct, hideColors: !e.target.checked })}
+                                    className="h-4 w-4 text-[#D4A55A] focus:ring-[#D4A55A] border-zinc-700 bg-[#050B1A] rounded cursor-pointer"
+                                  />
+                                  <div>
+                                    <span className="text-xs font-extrabold text-[#F4EAD7] block">Mostrar Selector de Color</span>
+                                    <span className="text-[10px] text-zinc-400 block">{newProduct.hideColors ? "Oculto actualmente" : "Visible en la tienda"}</span>
+                                  </div>
+                                </label>
+                              </div>
+                            </div>
                             <div className="flex items-center justify-between">
                               <label className="block text-[10px] font-black text-[#D4A55A] uppercase tracking-wider flex items-center gap-1.5">
                                 <Ruler className="w-3.5 h-3.5" />
@@ -10066,7 +10109,6 @@ export default function App() {
                               </div>
                             )}
                           </div>
-                        ) : (
                           <div>
                             <label className="block text-[10px] font-black text-[#D4A55A] uppercase tracking-widest mb-1.5">Talles / Tamaños Disponibles</label>
                             <CommaSeparatedInput
@@ -10102,7 +10144,7 @@ export default function App() {
                               })}
                             </div>
                           </div>
-                        )}
+                        </>)}
                       </div>
 
                       <div>
@@ -11500,7 +11542,50 @@ export default function App() {
                             </div>
                           </div>
                         ) : (
-                          <div className="space-y-4 p-4 bg-zinc-900/40 dark:bg-zinc-950/20 rounded-2xl border border-[#D4A55A]/15 shadow-sm">
+                          <>
+                            <div className="space-y-4 p-4 bg-zinc-900/40 dark:bg-zinc-950/20 rounded-2xl border border-[#D4A55A]/15 shadow-sm">
+                            {/* Visibilidad de Talle y Color */}
+                            <div className="p-4 bg-[#0c1325] rounded-xl border border-[#D4A55A]/30 space-y-3 shadow-md mb-2">
+                              <div className="flex items-center justify-between">
+                                <label className="text-xs font-black text-[#D4A55A] uppercase tracking-wider flex items-center gap-2">
+                                  <Sliders className="w-4 h-4 text-[#D4A55A]" />
+                                  <span>Visibilidad de Talle y Color en la Tienda</span>
+                                </label>
+                                <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">
+                                  Opción para mostrar/ocultar
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-zinc-300 leading-relaxed">
+                                Si este artículo no requiere talle o color (ej. juguetes, herramientas, accesorios), puedes ocultar estas selecciones en la ficha del producto:
+                              </p>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                                <label className="flex items-center gap-3 p-3 rounded-xl bg-[#050B1A] border border-zinc-800 hover:border-[#D4A55A]/40 cursor-pointer transition-all">
+                                  <input 
+                                    type="checkbox"
+                                    checked={!editingProduct.hideSizes}
+                                    onChange={(e) => setEditingProduct({ ...editingProduct, hideSizes: !e.target.checked })}
+                                    className="h-4 w-4 text-[#D4A55A] focus:ring-[#D4A55A] border-zinc-700 bg-[#050B1A] rounded cursor-pointer"
+                                  />
+                                  <div>
+                                    <span className="text-xs font-extrabold text-[#F4EAD7] block">Mostrar Selector de Talle</span>
+                                    <span className="text-[10px] text-zinc-400 block">{editingProduct.hideSizes ? "Oculto actualmente" : "Visible en la tienda"}</span>
+                                  </div>
+                                </label>
+
+                                <label className="flex items-center gap-3 p-3 rounded-xl bg-[#050B1A] border border-zinc-800 hover:border-[#D4A55A]/40 cursor-pointer transition-all">
+                                  <input 
+                                    type="checkbox"
+                                    checked={!editingProduct.hideColors}
+                                    onChange={(e) => setEditingProduct({ ...editingProduct, hideColors: !e.target.checked })}
+                                    className="h-4 w-4 text-[#D4A55A] focus:ring-[#D4A55A] border-zinc-700 bg-[#050B1A] rounded cursor-pointer"
+                                  />
+                                  <div>
+                                    <span className="text-xs font-extrabold text-[#F4EAD7] block">Mostrar Selector de Color</span>
+                                    <span className="text-[10px] text-zinc-400 block">{editingProduct.hideColors ? "Oculto actualmente" : "Visible en la tienda"}</span>
+                                  </div>
+                                </label>
+                              </div>
+                            </div>
                             <div className="flex items-center justify-between">
                               <label className="block text-xs font-black text-[#D4A55A] uppercase tracking-wider flex items-center gap-1.5">
                                 <Ruler className="w-4 h-4 text-[#D4A55A]" />
@@ -11821,7 +11906,7 @@ export default function App() {
                               </div>
                             )}
                           </div>
-                        )}
+                        </>)}
                       </div>
 
                       <div className="space-y-3 p-4 bg-zinc-900/40 dark:bg-zinc-950/20 rounded-xl border border-zinc-850">
