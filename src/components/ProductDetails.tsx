@@ -988,6 +988,13 @@ Me gustaría coordinar stock, fabricación y envío.`;
         }`}>
           <div className="space-y-4">
             <div>
+              {(product.paused || product.active === false) && (
+                <div className="p-3 mb-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-500 dark:text-amber-400 text-xs font-bold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>Este artículo está pausado u oculto actualmente y no se muestra en el catálogo público.</span>
+                </div>
+              )}
+
               {/* Title */}
               <h2 className={`text-2xl sm:text-3xl font-extrabold font-sans tracking-tight mb-1.5 leading-tight ${
                 isThemeDark ? "text-white" : "text-zinc-900"

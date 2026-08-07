@@ -4078,20 +4078,23 @@ export default function App() {
     return sortedProducts.slice(startIndex, startIndex + itemsPerPage);
   }, [sortedProducts, currentPage]);
 
-  const featuredProducts = displayProducts.filter((p) => p.featured && !p.paused);
+  const featuredProducts = displayProducts.filter((p) => p.featured && !p.paused && p.active !== false);
 
   const clothingProducts = displayProducts.filter((p) => {
-    const cat = p.category.toLowerCase();
+    if (p.paused || p.active === false) return false;
+    const cat = (p.category || "").toLowerCase();
     return cat === "ropa" || cat.includes("vest") || cat.includes("calza") || cat.includes("prend") || cat.includes("buzo") || cat.includes("abrigo") || cat.includes("jean") || cat.includes("remera") || cat.includes("panta");
   });
 
   const electronicsProducts = displayProducts.filter((p) => {
-    const cat = p.category.toLowerCase();
+    if (p.paused || p.active === false) return false;
+    const cat = (p.category || "").toLowerCase();
     return cat === "artículos electrónicos" || cat === "electrónica" || cat.includes("electron") || cat.includes("tecnol");
   });
 
   const otherProducts = displayProducts.filter((p) => {
-    const cat = p.category.toLowerCase();
+    if (p.paused || p.active === false) return false;
+    const cat = (p.category || "").toLowerCase();
     const isCloth = cat === "ropa" || cat.includes("vest") || cat.includes("calza") || cat.includes("prend") || cat.includes("buzo") || cat.includes("abrigo") || cat.includes("jean") || cat.includes("remera") || cat.includes("panta");
     const isElec = cat === "artículos electrónicos" || cat === "electrónica" || cat.includes("electron") || cat.includes("tecnol");
     return !isCloth && !isElec;
@@ -5442,11 +5445,15 @@ export default function App() {
                   .filter((catObj) => catObj.active !== false && catObj.hide_on_home !== true)
                   .sort((a, b) => (a.orden || 0) - (b.orden || 0))
                   .map((catObj) => {
-                    const catProducts = store.products.filter(
+                    const catProducts = displayProducts.filter(
                       (p) => 
-                        p.categoria_id === catObj.id || 
-                        p.category?.toLowerCase() === catObj.nombre?.toLowerCase() ||
-                        (p.categorias_adicionales && p.categorias_adicionales.includes(catObj.id))
+                        !p.paused &&
+                        p.active !== false &&
+                        (
+                          p.categoria_id === catObj.id || 
+                          p.category?.toLowerCase() === catObj.nombre?.toLowerCase() ||
+                          (p.categorias_adicionales && p.categorias_adicionales.includes(catObj.id))
+                        )
                     );
                     
                     return (
