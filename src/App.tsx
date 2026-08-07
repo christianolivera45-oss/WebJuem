@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, FormEvent } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef, FormEvent } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Search,
@@ -568,6 +568,38 @@ export default function App() {
     }
   };
   const [currentPage, setCurrentPage] = useState<number>(1);
+  const [windowWidth, setWindowWidth] = useState<number>(() => typeof window !== "undefined" ? window.innerWidth : 1200);
+  const [userItemsPerPage, setUserItemsPerPage] = useState<number | 'auto'>('auto');
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  const scrollToCatalogTop = useCallback(() => {
+    setTimeout(() => {
+      const el = document.getElementById("catalog-grid-top") || document.getElementById("catalog-view");
+      if (el) {
+        const headerOffset = 90;
+        const elementPosition = el.getBoundingClientRect().top + window.pageYOffset;
+        const offsetPosition = Math.max(0, elementPosition - headerOffset);
+        window.scrollTo({
+          top: offsetPosition,
+          behavior: "smooth"
+        });
+      }
+    }, 80);
+  }, []);
+
+  const isInitialCatalogPageRef = useRef(true);
+  useEffect(() => {
+    if (isInitialCatalogPageRef.current) {
+      isInitialCatalogPageRef.current = false;
+      return;
+    }
+    scrollToCatalogTop();
+  }, [currentPage, selectedCategory, selectedSubcategory, scrollToCatalogTop]);
 
   // Auto-reset pagination on catalog changes
   useEffect(() => {
@@ -4071,12 +4103,25 @@ export default function App() {
     return 0;
   });
 
-  const itemsPerPage = 10;
-  const totalPages = Math.ceil(sortedProducts.length / itemsPerPage);
+  const getAdaptiveItemsPerPage = useCallback((width: number) => {
+    if (width < 640) return 12; // Mobile: 2 cols -> 6 complete rows
+    if (width < 768) return 12; // Small Tablet: 2 or 3 cols -> complete rows
+    if (width < 1024) return 12; // Tablet: 3 cols -> 4 complete rows
+    if (width < 1280) return 16; // Desktop: 4 cols -> 4 complete rows
+    return 20;                  // XL Desktop: 4/5 cols -> 4-5 complete rows
+  }, []);
+
+  const itemsPerPage = useMemo(() => {
+    if (userItemsPerPage !== 'auto') return userItemsPerPage;
+    return getAdaptiveItemsPerPage(windowWidth);
+  }, [windowWidth, userItemsPerPage, getAdaptiveItemsPerPage]);
+
+  const totalPages = Math.ceil(sortedProducts.length / itemsPerPage) || 1;
   const paginatedProducts = useMemo(() => {
-    const startIndex = (currentPage - 1) * itemsPerPage;
+    const safePage = Math.min(currentPage, totalPages);
+    const startIndex = (safePage - 1) * itemsPerPage;
     return sortedProducts.slice(startIndex, startIndex + itemsPerPage);
-  }, [sortedProducts, currentPage]);
+  }, [sortedProducts, currentPage, itemsPerPage, totalPages]);
 
   const featuredProducts = displayProducts.filter((p) => p.featured && !p.paused && p.active !== false);
 
@@ -5324,6 +5369,7 @@ export default function App() {
                   </div>
                 ) : (
                   <>
+                    <div id="catalog-grid-top" className="scroll-mt-24" />
                     <div className={`grid gap-3 sm:gap-6 ${
                       mobileLayoutMode === "list"
                         ? "grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
@@ -5341,98 +5387,132 @@ export default function App() {
                       ))}
                     </div>
 
-                    {/* Pagination Controls */}
-                    {totalPages > 1 && (
-                      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-8 pt-6 border-t border-zinc-200/50 dark:border-zinc-800/50">
-                        <div className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">
-                          Mostrando <span className="font-bold text-zinc-700 dark:text-zinc-300">{Math.min((currentPage - 1) * itemsPerPage + 1, sortedProducts.length)}</span> al <span className="font-bold text-zinc-700 dark:text-zinc-300">{Math.min(currentPage * itemsPerPage, sortedProducts.length)}</span> de <span className="font-bold text-[#D4A55A]">{sortedProducts.length}</span> productos
+                    {/* Pagination Controls & Items Per Page Selector */}
+                    {sortedProducts.length > 0 && (
+                      <div className="flex flex-col md:flex-row items-center justify-between gap-4 mt-8 pt-6 border-t border-zinc-200/50 dark:border-zinc-800/50">
+                        <div className="flex flex-col sm:flex-row items-center gap-3 text-xs text-zinc-500 dark:text-zinc-400 font-medium">
+                          <span>
+                            Mostrando <span className="font-bold text-zinc-700 dark:text-zinc-300">{sortedProducts.length === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1}</span> al <span className="font-bold text-zinc-700 dark:text-zinc-300">{Math.min(currentPage * itemsPerPage, sortedProducts.length)}</span> de <span className="font-bold text-[#D4A55A]">{sortedProducts.length}</span> productos
+                          </span>
+                          
+                          <span className="hidden sm:inline text-zinc-300 dark:text-zinc-700">|</span>
+
+                          {/* Items per page selector */}
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[11px] font-semibold text-zinc-400">Por página:</span>
+                            <select
+                              value={userItemsPerPage}
+                              onChange={(e) => {
+                                const val = e.target.value === 'auto' ? 'auto' : Number(e.target.value);
+                                setUserItemsPerPage(val);
+                                setCurrentPage(1);
+                                scrollToCatalogTop();
+                              }}
+                              className={`text-xs font-bold rounded-lg px-2 py-1 outline-none cursor-pointer transition border ${
+                                store.settings.themeMode === "dark"
+                                  ? "bg-zinc-900 border-zinc-800 text-zinc-200 hover:border-zinc-700"
+                                  : "bg-white border-slate-200 text-zinc-800 hover:border-slate-300"
+                              }`}
+                              title="Artículos por página"
+                            >
+                              <option value="auto">Auto Adaptativo ({getAdaptiveItemsPerPage(windowWidth)})</option>
+                              <option value={8}>8 por página</option>
+                              <option value={12}>12 por página</option>
+                              <option value={16}>16 por página</option>
+                              <option value={20}>20 por página</option>
+                              <option value={24}>24 por página</option>
+                              <option value={999}>Todos ({sortedProducts.length})</option>
+                            </select>
+                          </div>
                         </div>
                         
-                        <div className="flex items-center gap-1.5">
-                          {/* Prev Page */}
-                          <button
-                            onClick={() => {
-                              if (currentPage > 1) {
-                                setCurrentPage(currentPage - 1);
-                                document.getElementById("catalog-view")?.scrollIntoView({ behavior: "smooth" });
-                              }
-                            }}
-                            disabled={currentPage === 1}
-                            className={`p-2 px-3 rounded-xl border text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1 cursor-pointer disabled:opacity-40 disabled:pointer-events-none ${
-                              store.settings.themeMode === "dark"
-                                ? "bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700 hover:bg-zinc-800"
-                                : "bg-white border-slate-200 text-zinc-700 hover:bg-slate-50"
-                            }`}
-                            title="Página Anterior"
-                          >
-                            <ChevronLeft className="h-4 w-4" />
-                            <span className="hidden sm:inline">Anterior</span>
-                          </button>
+                        {totalPages > 1 && (
+                          <div className="flex items-center gap-1.5">
+                            {/* Prev Page */}
+                            <button
+                              onClick={() => {
+                                if (currentPage > 1) {
+                                  setCurrentPage(currentPage - 1);
+                                  scrollToCatalogTop();
+                                }
+                              }}
+                              disabled={currentPage === 1}
+                              className={`p-2 px-3 rounded-xl border text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1 cursor-pointer disabled:opacity-40 disabled:pointer-events-none ${
+                                store.settings.themeMode === "dark"
+                                  ? "bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700 hover:bg-zinc-800"
+                                  : "bg-white border-slate-200 text-zinc-700 hover:bg-slate-50"
+                              }`}
+                              title="Página Anterior"
+                            >
+                              <ChevronLeft className="h-4 w-4" />
+                              <span className="hidden sm:inline">Anterior</span>
+                            </button>
 
-                          {/* Numbers */}
-                          <div className="flex items-center gap-1">
-                            {Array.from({ length: totalPages }).map((_, index) => {
-                              const pageNum = index + 1;
-                              if (
-                                pageNum === 1 ||
-                                pageNum === totalPages ||
-                                Math.abs(pageNum - currentPage) <= 1
-                              ) {
-                                return (
-                                  <button
-                                    key={pageNum}
-                                    onClick={() => {
-                                      setCurrentPage(pageNum);
-                                      document.getElementById("catalog-view")?.scrollIntoView({ behavior: "smooth" });
-                                    }}
-                                    className={`w-9 h-9 rounded-xl text-xs font-black transition-all duration-200 cursor-pointer flex items-center justify-center ${
-                                      currentPage === pageNum
-                                        ? "bg-gradient-to-r from-[#D4A55A] to-[#E6BF76] text-zinc-950 shadow-sm outline-none"
-                                        : store.settings.themeMode === "dark"
-                                        ? "bg-zinc-900 border border-zinc-805 text-zinc-300 hover:border-zinc-700 hover:bg-zinc-800"
-                                        : "bg-white border border-slate-200 text-zinc-700 hover:bg-slate-100"
-                                    }`}
-                                  >
-                                    {pageNum}
-                                  </button>
-                                );
-                              }
-                              
-                              if (
-                                pageNum === 2 ||
-                                pageNum === totalPages - 1
-                              ) {
-                                return (
-                                  <span key={pageNum} className="px-1 text-xs text-zinc-400 font-bold">
-                                    ...
-                                  </span>
-                                );
-                              }
+                            {/* Numbers */}
+                            <div className="flex items-center gap-1">
+                              {Array.from({ length: totalPages }).map((_, index) => {
+                                const pageNum = index + 1;
+                                if (
+                                  pageNum === 1 ||
+                                  pageNum === totalPages ||
+                                  Math.abs(pageNum - currentPage) <= 1
+                                ) {
+                                  return (
+                                    <button
+                                      key={pageNum}
+                                      onClick={() => {
+                                        setCurrentPage(pageNum);
+                                        scrollToCatalogTop();
+                                      }}
+                                      className={`w-9 h-9 rounded-xl text-xs font-black transition-all duration-200 cursor-pointer flex items-center justify-center ${
+                                        currentPage === pageNum
+                                          ? "bg-gradient-to-r from-[#D4A55A] to-[#E6BF76] text-zinc-950 shadow-sm outline-none"
+                                          : store.settings.themeMode === "dark"
+                                          ? "bg-zinc-900 border border-zinc-805 text-zinc-300 hover:border-zinc-700 hover:bg-zinc-800"
+                                          : "bg-white border border-slate-200 text-zinc-700 hover:bg-slate-100"
+                                      }`}
+                                    >
+                                      {pageNum}
+                                    </button>
+                                  );
+                                }
+                                
+                                if (
+                                  pageNum === 2 ||
+                                  pageNum === totalPages - 1
+                                ) {
+                                  return (
+                                    <span key={pageNum} className="px-1 text-xs text-zinc-400 font-bold">
+                                      ...
+                                    </span>
+                                  );
+                                }
 
-                              return null;
-                            })}
+                                return null;
+                              })}
+                            </div>
+
+                            {/* Next Page */}
+                            <button
+                              onClick={() => {
+                                if (currentPage < totalPages) {
+                                  setCurrentPage(currentPage + 1);
+                                  scrollToCatalogTop();
+                                }
+                              }}
+                              disabled={currentPage === totalPages}
+                              className={`p-2 px-3 rounded-xl border text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1 cursor-pointer disabled:opacity-40 disabled:pointer-events-none ${
+                                store.settings.themeMode === "dark"
+                                  ? "bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700 hover:bg-zinc-800"
+                                  : "bg-white border-slate-200 text-zinc-700 hover:bg-slate-50"
+                              }`}
+                              title="Siguiente Página"
+                            >
+                              <span className="hidden sm:inline">Siguiente</span>
+                              <ChevronRight className="h-4 w-4" />
+                            </button>
                           </div>
-
-                          {/* Next Page */}
-                          <button
-                            onClick={() => {
-                              if (currentPage < totalPages) {
-                                setCurrentPage(currentPage + 1);
-                                document.getElementById("catalog-view")?.scrollIntoView({ behavior: "smooth" });
-                              }
-                            }}
-                            disabled={currentPage === totalPages}
-                            className={`p-2 px-3 rounded-xl border text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1 cursor-pointer disabled:opacity-40 disabled:pointer-events-none ${
-                              store.settings.themeMode === "dark"
-                                ? "bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700 hover:bg-zinc-800"
-                                : "bg-white border-slate-200 text-zinc-700 hover:bg-slate-50"
-                            }`}
-                            title="Siguiente Página"
-                          >
-                            <span className="hidden sm:inline">Siguiente</span>
-                            <ChevronRight className="h-4 w-4" />
-                          </button>
-                        </div>
+                        )}
                       </div>
                     )}
                   </>
