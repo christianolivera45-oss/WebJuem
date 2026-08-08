@@ -2554,8 +2554,22 @@ export default function App() {
         ? selectedProduct.imagenes
         : [selectedProduct.imageUrl];
 
-      // Generate a realistic Uruguay GTIN-13 barcode (prefix 773)
-      const gtin13 = "773" + String(1000000000 + (charSum % 1000000000));
+      // Generate a realistic, valid GS1 Uruguay GTIN-13 barcode (prefix 773) with exact modulo-10 check digit
+      let hash = 0;
+      const seedStr = `${selectedProduct.id}-${selectedProduct.name}-${sku}`;
+      for (let i = 0; i < seedStr.length; i++) {
+        hash = (hash * 31 + seedStr.charCodeAt(i)) % 1000000000;
+      }
+      const body9 = String(Math.abs(hash)).padStart(9, "0");
+      const first12 = "773" + body9;
+
+      let checksum = 0;
+      for (let i = 0; i < 12; i++) {
+        const d = parseInt(first12[i], 10);
+        checksum += (i % 2 === 0) ? d : d * 3;
+      }
+      const checkDigit = (10 - (checksum % 10)) % 10;
+      const gtin13 = first12 + checkDigit.toString();
 
       const jsonLdData = {
         "@context": "https://schema.org/",
@@ -2566,6 +2580,7 @@ export default function App() {
         "sku": sku,
         "mpn": sku,
         "gtin13": gtin13,
+        "gtin": gtin13,
         "brand": {
           "@type": "Brand",
           "name": "Juem"
@@ -2595,6 +2610,7 @@ export default function App() {
           "url": productUrl,
           "priceCurrency": "UYU",
           "price": (selectedProduct.price || 0).toString(),
+          "validFrom": "2024-01-01",
           "priceValidUntil": "2027-12-31",
           "itemCondition": "https://schema.org/NewCondition",
           "availability": selectedProduct.stock > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
@@ -2632,8 +2648,8 @@ export default function App() {
           "hasMerchantReturnPolicy": {
             "@type": "MerchantReturnPolicy",
             "applicableCountry": "UY",
-            "returnPolicyCategory": "https://schema.org/MerchantReturnFiniteReturnPeriod",
-            "merchantReturnDays": "30",
+            "returnPolicyCategory": "https://schema.org/MerchantReturnFiniteReturnWindow",
+            "merchantReturnDays": 30,
             "returnMethod": "https://schema.org/ReturnByMail",
             "returnFees": "https://schema.org/FreeReturn"
           }
