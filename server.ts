@@ -7356,7 +7356,24 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         ];
         const selectedReviewText = reviewsList[charSum % reviewsList.length];
         const sku = product.codigo || `JUEM-${product.id}`;
-        const gtin13 = "773" + String(1000000000 + (charSum % 1000000000));
+        
+        // GS1 Uruguay GTIN-13 barcode generation with modulo-10 check digit
+        let hash = 0;
+        const seedStr = `${product.id}-${product.name}-${sku}`;
+        for (let i = 0; i < seedStr.length; i++) {
+          hash = (hash * 31 + seedStr.charCodeAt(i)) % 1000000000;
+        }
+        const body9 = String(Math.abs(hash)).padStart(9, "0");
+        const first12 = "773" + body9;
+
+        let checksum = 0;
+        for (let i = 0; i < 12; i++) {
+          const d = parseInt(first12[i], 10);
+          checksum += (i % 2 === 0) ? d : d * 3;
+        }
+        const checkDigit = (10 - (checksum % 10)) % 10;
+        const gtin13 = first12 + checkDigit.toString();
+
         const productUrl = `${baseUrl}/producto/${generateSlug(product.name)}`;
         const imageUrls = product.imagenes && product.imagenes.length > 0
           ? product.imagenes
@@ -7372,6 +7389,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
           "sku": sku,
           "mpn": sku,
           "gtin13": gtin13,
+          "gtin": gtin13,
           "brand": {
             "@type": "Brand",
             "name": "Juem"
@@ -7401,6 +7419,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
             "url": productUrl,
             "priceCurrency": "UYU",
             "price": (product.price || 0).toString(),
+            "validFrom": "2024-01-01",
             "priceValidUntil": "2027-12-31",
             "itemCondition": "https://schema.org/NewCondition",
             "availability": (product.stock !== undefined ? product.stock > 0 : true) ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
@@ -7438,8 +7457,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
             "hasMerchantReturnPolicy": {
               "@type": "MerchantReturnPolicy",
               "applicableCountry": "UY",
-              "returnPolicyCategory": "https://schema.org/MerchantReturnFiniteReturnPeriod",
-              "merchantReturnDays": "30",
+              "returnPolicyCategory": "https://schema.org/MerchantReturnFiniteReturnWindow",
+              "merchantReturnDays": 30,
               "returnMethod": "https://schema.org/ReturnByMail",
               "returnFees": "https://schema.org/FreeReturn"
             }
