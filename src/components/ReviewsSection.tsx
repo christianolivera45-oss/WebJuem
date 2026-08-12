@@ -59,6 +59,10 @@ export default function ReviewsSection({ themeMode }: ReviewsSectionProps) {
     fetch("/api/google-reviews")
       .then((res) => {
         if (!res.ok) throw new Error("Failed to fetch reviews");
+        const contentType = res.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          throw new Error("Respuesta no es JSON válida");
+        }
         return res.json();
       })
       .then((reviewsData) => {

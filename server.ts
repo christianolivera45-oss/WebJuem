@@ -1509,14 +1509,16 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
     }));
 
     // 4. Fetch coupons
-    const coupRes = await pool.query("SELECT code, discount_percent, expiration_date, active, max_uses, uses_count FROM coupons;");
+    const coupRes = await pool.query("SELECT code, discount_percent, expiration_date, active, max_uses, uses_count, discount_type, discount_amount FROM coupons;");
     const coupons = coupRes.rows.map(row => ({
       code: row.code,
-      discount_percent: Number(row.discount_percent),
+      discount_percent: Number(row.discount_percent || 0),
       expiration_date: row.expiration_date ? new Date(row.expiration_date).toISOString() : undefined,
       active: row.active !== false,
       max_uses: row.max_uses !== null && row.max_uses !== undefined ? Number(row.max_uses) : undefined,
-      uses_count: row.uses_count !== null && row.uses_count !== undefined ? Number(row.uses_count) : 0
+      uses_count: row.uses_count !== null && row.uses_count !== undefined ? Number(row.uses_count) : 0,
+      discount_type: (row.discount_type || 'percentage') as 'percentage' | 'fixed' | 'free_shipping',
+      discount_amount: row.discount_amount !== null && row.discount_amount !== undefined ? Number(row.discount_amount) : 0
     }));
 
     // 5. Fetch admin credentials
@@ -1960,9 +1962,11 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
       const expDate = coupon.expiration_date ? new Date(coupon.expiration_date) : null;
       const maxUses = coupon.max_uses !== undefined && coupon.max_uses !== null ? Number(coupon.max_uses) : null;
       const usesCount = coupon.uses_count !== undefined && coupon.uses_count !== null ? Number(coupon.uses_count) : 0;
+      const discountType = coupon.discount_type || 'percentage';
+      const discountAmount = coupon.discount_amount !== undefined && coupon.discount_amount !== null ? Number(coupon.discount_amount) : 0;
       await pool.query(
-        "INSERT INTO coupons (code, discount_percent, expiration_date, active, max_uses, uses_count) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (code) DO UPDATE SET discount_percent = EXCLUDED.discount_percent, expiration_date = EXCLUDED.expiration_date, active = EXCLUDED.active, max_uses = EXCLUDED.max_uses, uses_count = EXCLUDED.uses_count;",
-        [coupon.code, coupon.discount_percent, expDate, activeVal, maxUses, usesCount]
+        "INSERT INTO coupons (code, discount_percent, expiration_date, active, max_uses, uses_count, discount_type, discount_amount) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (code) DO UPDATE SET discount_percent = EXCLUDED.discount_percent, expiration_date = EXCLUDED.expiration_date, active = EXCLUDED.active, max_uses = EXCLUDED.max_uses, uses_count = EXCLUDED.uses_count, discount_type = EXCLUDED.discount_type, discount_amount = EXCLUDED.discount_amount;",
+        [coupon.code, coupon.discount_percent || 0, expDate, activeVal, maxUses, usesCount, discountType, discountAmount]
       );
     }
 
@@ -2420,6 +2424,12 @@ async function initPostgresStore(): Promise<ShopState | null> {
     `);
     await pool.query(`
       ALTER TABLE coupons ADD COLUMN IF NOT EXISTS uses_count INTEGER DEFAULT 0;
+    `);
+    await pool.query(`
+      ALTER TABLE coupons ADD COLUMN IF NOT EXISTS discount_type VARCHAR(50) DEFAULT 'percentage';
+    `);
+    await pool.query(`
+      ALTER TABLE coupons ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(10,2) DEFAULT 0;
     `);
 
     // 7. Create admin credentials
@@ -5621,7 +5631,14 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
                                  dbCoupon.uses_count !== undefined && dbCoupon.uses_count !== null && 
                                  dbCoupon.uses_count >= dbCoupon.max_uses;
           if (!isExpiredDate && !isExceededUses) {
-            serverDiscountAmount = Math.round((serverSubtotal * Number(dbCoupon.discount_percent)) / 100);
+            const cType = dbCoupon.discount_type || 'percentage';
+            if (cType === 'fixed') {
+              serverDiscountAmount = Math.min(serverSubtotal, Number(dbCoupon.discount_amount || 0));
+            } else if (cType === 'free_shipping') {
+              serverDiscountAmount = Number(shippingCost || 0);
+            } else {
+              serverDiscountAmount = Math.round((serverSubtotal * Number(dbCoupon.discount_percent || 0)) / 100);
+            }
             validCouponCodeToSave = dbCoupon.code; // Use matching case-sensitive code from the coupons table
           }
         }

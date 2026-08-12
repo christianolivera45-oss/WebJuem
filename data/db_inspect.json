@@ -1,0 +1,12 @@
+{
+  "timestamp": "2026-07-03T22:37:29.163Z",
+  "databaseUrlExists": true,
+  "databaseUrlLength": 109,
+  "maskedUrl": "postgresql:****@aws-1-us-east-2.pooler.supabase.com:6543/postgres",
+  "parsedHost": "aws-1-us-east-2.pooler.supabase.com",
+  "errorMsg": "No error - Loaded successfully via direct SQL",
+  "envKeys": [
+    "DATABASE_URL",
+    "APP_URL"
+  ]
+}

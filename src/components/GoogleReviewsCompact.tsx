@@ -34,6 +34,10 @@ export default function GoogleReviewsCompact({ themeMode, googlePlaceId }: Googl
     fetch("/api/google-reviews")
       .then((res) => {
         if (!res.ok) throw new Error("No se pudo cargar");
+        const contentType = res.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          throw new Error("Respuesta no es JSON válida");
+        }
         return res.json();
       })
       .then((reviewsData) => {

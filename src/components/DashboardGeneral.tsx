@@ -21,7 +21,10 @@ import {
   Clock,
   CreditCard,
   Scale,
-  Sparkles
+  Sparkles,
+  Award,
+  ArrowDownRight,
+  Filter
 } from "lucide-react";
 import { ShopState, Product, AdminTask } from "../types";
 import { DashboardResumenGeneral } from "./DashboardResumenGeneral";
@@ -72,8 +75,10 @@ export function DashboardGeneral({
   adminTasks
 }: DashboardGeneralProps) {
 
-  const [activeTab, setActiveTab] = useState<"sales" | "finances">("sales");
+  const [activeTab, setActiveTab] = useState<"sales" | "monthly" | "finances">("sales");
   const [timeRange, setTimeRange] = useState<"last30" | "current_month" | "prev_month">("current_month");
+  const [selectedYear, setSelectedYear] = useState<number>(2026);
+  const [selectedMonthlyMonth, setSelectedMonthlyMonth] = useState<number | null>(null);
 
   const activeProducts = store.products.filter(p => p.active !== false);
   const pausedProducts = activeProducts.filter(p => p.paused === true);
@@ -411,7 +416,143 @@ export function DashboardGeneral({
     };
   }).sort((a, b) => b.count - a.count);
 
-  const maxProductsCategory = Math.max(...distribution.map(d => d.count), 1);  // Render main business indicators (5 seconds direct scan setup)
+  const maxProductsCategory = Math.max(...distribution.map(d => d.count), 1);
+
+  // Month Names in Spanish
+  const monthNames = [
+    "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+  ];
+  const monthShortNames = [
+    "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"
+  ];
+
+  // Computation of month-by-month sales performance
+  const monthlyData = useMemo(() => {
+    const approvedOrders = (store.orders || []).filter(o => o.status === "pago_aprobado");
+
+    return monthNames.map((monthName, idx) => {
+      let sales = 0;
+      let ordersCount = 0;
+      let totalCost = 0;
+      let profit = 0;
+
+      if (usingRealData) {
+        const monthOrders = approvedOrders.filter(o => {
+          if (!o.createdAt) return false;
+          const d = new Date(o.createdAt);
+          return d.getFullYear() === selectedYear && d.getMonth() === idx;
+        });
+
+        ordersCount = monthOrders.length;
+        monthOrders.forEach(o => {
+          const netTotal = o.total - (o.discountAmount || 0);
+          sales += netTotal;
+
+          let orderCost = 0;
+          (o.items || []).forEach(item => {
+            const p = store.products.find(prod => prod.id === item.productId);
+            const is3D = p?.is3D || (item.productName || "").toLowerCase().includes("3d") || (item.productName || "").toLowerCase().includes("impres");
+            const costPct = is3D ? 0.30 : 0.45;
+            const calculatedCost = item.costPrice || (item.unitPrice * costPct);
+            orderCost += calculatedCost * item.quantity;
+          });
+          totalCost += orderCost;
+        });
+
+        profit = sales - totalCost;
+      } else {
+        // Deterministic simulation engine for annual comparative analysis
+        const seedRnd = getSeedRandom(`MonthlySeed_${selectedYear}_${idx}`);
+        // Monthly seasonal weight factors
+        const seasonalMultipliers = [0.85, 0.90, 1.05, 0.95, 1.10, 1.25, 1.15, 1.20, 1.00, 1.10, 1.35, 1.50];
+        const mult = seasonalMultipliers[idx] || 1.0;
+        
+        const baseOrders = Math.floor(22 * mult + (seedRnd() * 10));
+        ordersCount = baseOrders;
+
+        let monthTotalSales = 0;
+        let monthTotalCost = 0;
+
+        for (let i = 0; i < baseOrders; i++) {
+          const pIdx = Math.floor(seedRnd() * (activeProducts.length || 1));
+          const p = activeProducts[pIdx];
+          const price = p?.price || 1250;
+          const qty = Math.floor(seedRnd() * 2) + 1;
+          const orderVal = price * qty;
+          const is3D = p ? (p.is3D || (p.name || "").toLowerCase().includes("3d")) : false;
+          const costVal = orderVal * (is3D ? 0.30 : 0.45);
+
+          monthTotalSales += orderVal;
+          monthTotalCost += costVal;
+        }
+
+        sales = Math.round(monthTotalSales);
+        totalCost = Math.round(monthTotalCost);
+        profit = sales - totalCost;
+      }
+
+      const avgTicket = ordersCount > 0 ? Math.round(sales / ordersCount) : 0;
+
+      return {
+        monthIndex: idx,
+        monthName,
+        shortName: monthShortNames[idx],
+        sales,
+        ordersCount,
+        avgTicket,
+        profit,
+        totalCost
+      };
+    });
+  }, [usingRealData, store.orders, store.products, selectedYear, activeProducts]);
+
+  // Compute Month-over-Month (MoM) Growth percentage
+  const monthlyDataWithGrowth = useMemo(() => {
+    return monthlyData.map((item, idx) => {
+      let growthPercent = 0;
+      if (idx > 0) {
+        const prevSales = monthlyData[idx - 1].sales;
+        if (prevSales > 0) {
+          growthPercent = Math.round(((item.sales - prevSales) / prevSales) * 100);
+        } else if (item.sales > 0) {
+          growthPercent = 100;
+        }
+      }
+      return {
+        ...item,
+        growthPercent
+      };
+    });
+  }, [monthlyData]);
+
+  // Compute Annual Aggregates
+  const annualTotals = useMemo(() => {
+    const totalSales = monthlyDataWithGrowth.reduce((acc, m) => acc + m.sales, 0);
+    const totalOrders = monthlyDataWithGrowth.reduce((acc, m) => acc + m.ordersCount, 0);
+    const totalProfit = monthlyDataWithGrowth.reduce((acc, m) => acc + m.profit, 0);
+    const avgMonthlySales = Math.round(totalSales / 12);
+    const avgTicketAnnual = totalOrders > 0 ? Math.round(totalSales / totalOrders) : 0;
+    const maxMonthSales = Math.max(...monthlyDataWithGrowth.map(m => m.sales), 1);
+
+    let bestMonth = monthlyDataWithGrowth[0];
+    monthlyDataWithGrowth.forEach(m => {
+      if (m.sales > (bestMonth?.sales || 0)) {
+        bestMonth = m;
+      }
+    });
+
+    return {
+      totalSales,
+      totalOrders,
+      totalProfit,
+      avgMonthlySales,
+      avgTicketAnnual,
+      maxMonthSales,
+      bestMonth
+    };
+  }, [monthlyDataWithGrowth]);
+
   return (
     <div className="w-full space-y-6 animate-fade-in relative">
       
@@ -483,7 +624,7 @@ export function DashboardGeneral({
         <div className="flex bg-zinc-900/60 p-1 rounded-xl border border-zinc-800/60 self-start">
           <button
             onClick={() => setActiveTab("sales")}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all duration-300 flex items-center gap-2 cursor-pointer ${
+            className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all duration-300 flex items-center gap-2 cursor-pointer ${
               activeTab === "sales"
                 ? "bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 font-black shadow-[0_2px_12px_rgba(99,102,241,0.15)]"
                 : "text-zinc-400 hover:text-zinc-200"
@@ -492,9 +633,22 @@ export function DashboardGeneral({
             <TrendingUp className="h-4 w-4" />
             <span>Rendimiento Web y Ventas</span>
           </button>
+
+          <button
+            onClick={() => setActiveTab("monthly")}
+            className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all duration-300 flex items-center gap-2 cursor-pointer ${
+              activeTab === "monthly"
+                ? "bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 font-black shadow-[0_2px_12px_rgba(99,102,241,0.15)]"
+                : "text-zinc-400 hover:text-zinc-200"
+            }`}
+          >
+            <BarChart3 className="h-4 w-4 text-indigo-400" />
+            <span>Comparativa Mensual</span>
+          </button>
+
           <button
             onClick={() => setActiveTab("finances")}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all duration-300 flex items-center gap-2 cursor-pointer ${
+            className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all duration-300 flex items-center gap-2 cursor-pointer ${
               activeTab === "finances"
                 ? "bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 font-black shadow-[0_2px_12px_rgba(99,102,241,0.15)]"
                 : "text-zinc-400 hover:text-zinc-200"
@@ -1019,6 +1173,353 @@ export function DashboardGeneral({
         </div>
       </div>
       </>
+      ) : activeTab === "monthly" ? (
+        <div className="space-y-6 animate-fade-in">
+          {/* Header Panel for Monthly Comparison */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-zinc-900/40 backdrop-blur-md p-5 rounded-2xl border border-zinc-850/85 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-indigo-500/10 text-indigo-400 rounded-xl border border-indigo-500/20">
+                <BarChart3 className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-white tracking-wide uppercase flex items-center gap-2">
+                  <span>Comparativa Mensual de Ventas</span>
+                  <span className="text-xs font-mono font-bold text-indigo-400 px-2.5 py-0.5 bg-indigo-500/10 rounded-full border border-indigo-500/20">
+                    Año {selectedYear}
+                  </span>
+                </h3>
+                <p className="text-xs text-zinc-400 font-medium">
+                  Rendimiento comparativo mes a mes de ingresos, volumen de pedidos, ticket promedio y crecimiento MoM.
+                </p>
+              </div>
+            </div>
+
+            {/* Year selector buttons */}
+            <div className="flex items-center gap-2 bg-zinc-950/60 p-1.5 rounded-xl border border-zinc-800">
+              <span className="text-[10px] uppercase font-bold text-zinc-400 px-2 flex items-center gap-1">
+                <Calendar className="h-3.5 w-3.5" /> Año:
+              </span>
+              {[2026, 2025, 2024].map((year) => (
+                <button
+                  key={year}
+                  onClick={() => setSelectedYear(year)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-extrabold font-mono transition-all cursor-pointer ${
+                    selectedYear === year
+                      ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
+                      : "text-zinc-400 hover:text-white"
+                  }`}
+                >
+                  {year}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 4 Annual KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-zinc-900/40 backdrop-blur-md p-5 rounded-2xl border border-zinc-850/85 shadow-sm space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Ventas Totales del Año</span>
+                <DollarSign className="h-4 w-4 text-emerald-400" />
+              </div>
+              <div className="text-2xl font-black text-white font-mono">
+                ${(annualTotals.totalSales || 0).toLocaleString("es-AR")} <span className="text-xs text-zinc-500 font-sans font-bold">UYU</span>
+              </div>
+              <p className="text-[10px] text-zinc-400 font-bold flex items-center gap-1">
+                <TrendingUp className="h-3 w-3 text-emerald-400" />
+                Promedio: ${(annualTotals.avgMonthlySales || 0).toLocaleString("es-AR")} / mes
+              </p>
+            </div>
+
+            <div className="bg-zinc-900/40 backdrop-blur-md p-5 rounded-2xl border border-zinc-850/85 shadow-sm space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Pedidos Totales ({selectedYear})</span>
+                <ShoppingBag className="h-4 w-4 text-indigo-400" />
+              </div>
+              <div className="text-2xl font-black text-white font-mono">
+                {annualTotals.totalOrders || 0} <span className="text-xs text-zinc-500 font-sans font-bold">pedidos</span>
+              </div>
+              <p className="text-[10px] text-zinc-400 font-bold">
+                Ticket prom. anual: ${(annualTotals.avgTicketAnnual || 0).toLocaleString("es-AR")}
+              </p>
+            </div>
+
+            <div className="bg-zinc-900/40 backdrop-blur-md p-5 rounded-2xl border border-zinc-850/85 shadow-sm space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Ganancia / Margen Est.</span>
+                <TrendingUp className="h-4 w-4 text-[#D4A55A]" />
+              </div>
+              <div className="text-2xl font-black text-[#E6BF76] font-mono">
+                ${(annualTotals.totalProfit || 0).toLocaleString("es-AR")} <span className="text-xs text-zinc-500 font-sans font-bold">UYU</span>
+              </div>
+              <p className="text-[10px] text-emerald-400 font-bold">
+                Margen est. ~{annualTotals.totalSales > 0 ? Math.round((annualTotals.totalProfit / annualTotals.totalSales) * 100) : 0}% neto
+              </p>
+            </div>
+
+            <div className="bg-zinc-900/40 backdrop-blur-md p-5 rounded-2xl border border-zinc-850/85 shadow-sm space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Mes Récord del Año</span>
+                <Award className="h-4 w-4 text-amber-400" />
+              </div>
+              <div className="text-xl font-black text-amber-300 truncate">
+                {annualTotals.bestMonth?.monthName || "-"}
+              </div>
+              <p className="text-[10px] text-zinc-400 font-bold font-mono">
+                ${(annualTotals.bestMonth?.sales || 0).toLocaleString("es-AR")} UYU ({annualTotals.bestMonth?.ordersCount || 0} ped.)
+              </p>
+            </div>
+          </div>
+
+          {/* Monthly Comparison Bar Chart */}
+          <div className="bg-zinc-900/40 backdrop-blur-md p-6 rounded-2xl border border-zinc-850/85 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-800/80 pb-3">
+              <div>
+                <h4 className="text-xs font-black uppercase text-zinc-200 tracking-wider flex items-center gap-2">
+                  <BarChart3 className="h-4 w-4 text-indigo-400" />
+                  <span>Evolución Mensual de Ventas ({selectedYear})</span>
+                </h4>
+                <p className="text-[11px] text-zinc-400">Haz clic en cualquier barra o mes para inspeccionar sus métricas clave.</p>
+              </div>
+              <div className="flex items-center gap-3 text-[10px] font-bold text-zinc-400">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-sm bg-indigo-500"></span>
+                  <span>Ventas del Mes</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-sm bg-amber-400"></span>
+                  <span>Mes Récord</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Bars container */}
+            <div className="h-56 pt-6 pb-2 flex items-end justify-between gap-2 md:gap-3 px-2">
+              {monthlyDataWithGrowth.map((m) => {
+                const isBest = m.monthIndex === annualTotals.bestMonth?.monthIndex;
+                const isSelected = selectedMonthlyMonth === m.monthIndex;
+                const barHeightPercent = Math.max((m.sales / annualTotals.maxMonthSales) * 100, 6);
+
+                return (
+                  <div
+                    key={m.monthIndex}
+                    onClick={() => setSelectedMonthlyMonth(isSelected ? null : m.monthIndex)}
+                    className="flex-1 flex flex-col items-center h-full justify-end group cursor-pointer"
+                  >
+                    {/* Amount label on hover or if selected */}
+                    <div className={`text-[9px] font-mono font-bold transition-all mb-1 truncate max-w-full ${
+                      isSelected || isBest ? "text-amber-300 scale-105 font-black" : "text-zinc-500 group-hover:text-zinc-200"
+                    }`}>
+                      ${m.sales >= 1000 ? `${Math.round(m.sales / 1000)}k` : m.sales}
+                    </div>
+
+                    {/* Bar visual */}
+                    <div className="w-full bg-zinc-950/80 rounded-t-xl h-full flex items-end p-0.5 border border-zinc-800/40 group-hover:border-indigo-500/40 transition-all">
+                      <div
+                        style={{ height: `${barHeightPercent}%` }}
+                        className={`w-full rounded-t-lg transition-all duration-300 ${
+                          isBest
+                            ? "bg-gradient-to-t from-amber-600 to-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.4)]"
+                            : isSelected
+                            ? "bg-gradient-to-t from-indigo-700 to-indigo-400 shadow-[0_0_12px_rgba(99,102,241,0.4)]"
+                            : "bg-gradient-to-t from-indigo-950 to-indigo-600 group-hover:from-indigo-900 group-hover:to-indigo-500"
+                        }`}
+                      />
+                    </div>
+
+                    {/* Month short name label */}
+                    <span className={`text-[10px] font-mono font-extrabold mt-2 uppercase transition-colors ${
+                      isSelected ? "text-indigo-400" : isBest ? "text-amber-400" : "text-zinc-400 group-hover:text-white"
+                    }`}>
+                      {m.shortName}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Detailed Month Breakdown Table */}
+          <div className="bg-zinc-900/40 backdrop-blur-md rounded-2xl border border-zinc-850/85 shadow-sm overflow-hidden">
+            <div className="p-5 border-b border-zinc-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h4 className="text-xs font-black uppercase text-zinc-200 tracking-wider flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-indigo-400" />
+                  <span>Tabla Comparativa Mensual de Ventas ({selectedYear})</span>
+                </h4>
+                <p className="text-[11px] text-zinc-400 font-medium mt-0.5">
+                  Desglose detallado mes a mes con comparación de volumen, pedidos y porcentaje de variación MoM.
+                </p>
+              </div>
+              <div className="text-xs text-zinc-400 font-mono font-bold bg-zinc-950/60 px-3 py-1.5 rounded-xl border border-zinc-800">
+                12 Meses Analizados
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-zinc-800/80 bg-zinc-950/50 text-[10px] uppercase font-black tracking-widest text-zinc-400">
+                    <th className="py-3 px-4">Mes</th>
+                    <th className="py-3 px-4">Ventas Totales</th>
+                    <th className="py-3 px-4">Pedidos</th>
+                    <th className="py-3 px-4">Ticket Prom.</th>
+                    <th className="py-3 px-4">Var. MoM (%)</th>
+                    <th className="py-3 px-4">Ganancia Est.</th>
+                    <th className="py-3 px-4 text-right">Estado</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-800/40 text-xs font-medium">
+                  {monthlyDataWithGrowth.map((m) => {
+                    const isBest = m.monthIndex === annualTotals.bestMonth?.monthIndex;
+                    const isSelected = selectedMonthlyMonth === m.monthIndex;
+
+                    return (
+                      <tr
+                        key={m.monthIndex}
+                        onClick={() => setSelectedMonthlyMonth(isSelected ? null : m.monthIndex)}
+                        className={`transition-colors cursor-pointer ${
+                          isSelected 
+                            ? "bg-indigo-950/40 border-l-4 border-l-indigo-500" 
+                            : isBest
+                            ? "bg-amber-950/20 hover:bg-amber-950/30"
+                            : "hover:bg-zinc-800/30"
+                        }`}
+                      >
+                        {/* Mes */}
+                        <td className="py-3.5 px-4 font-bold text-white flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-indigo-400"></span>
+                          <span>{m.monthName}</span>
+                          {isBest && (
+                            <span className="text-[9px] bg-amber-500/20 text-amber-300 font-black px-1.5 py-0.5 rounded border border-amber-500/30 uppercase">
+                              🏆 Récord
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Ventas */}
+                        <td className="py-3.5 px-4 font-mono font-black text-emerald-400">
+                          ${m.sales.toLocaleString("es-AR")} <span className="text-[10px] text-zinc-500 font-normal">UYU</span>
+                        </td>
+
+                        {/* Pedidos */}
+                        <td className="py-3.5 px-4 font-mono font-bold text-zinc-200">
+                          {m.ordersCount} <span className="text-[10px] text-zinc-500">ped.</span>
+                        </td>
+
+                        {/* Ticket Promedio */}
+                        <td className="py-3.5 px-4 font-mono text-zinc-300">
+                          ${m.avgTicket.toLocaleString("es-AR")}
+                        </td>
+
+                        {/* MoM Growth */}
+                        <td className="py-3.5 px-4">
+                          {m.monthIndex === 0 ? (
+                            <span className="text-zinc-500 font-mono text-[11px]">-</span>
+                          ) : m.growthPercent > 0 ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-black font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-500/20">
+                              <ArrowUpRight className="h-3 w-3" />
+                              +{m.growthPercent}%
+                            </span>
+                          ) : m.growthPercent < 0 ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-black font-mono text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-lg border border-rose-500/20">
+                              <ArrowDownRight className="h-3 w-3" />
+                              {m.growthPercent}%
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-mono text-zinc-400">
+                              0%
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Ganancia Estimada */}
+                        <td className="py-3.5 px-4 font-mono text-[#E6BF76] font-bold">
+                          ${m.profit.toLocaleString("es-AR")}
+                        </td>
+
+                        {/* Estado */}
+                        <td className="py-3.5 px-4 text-right font-mono text-[11px]">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedMonthlyMonth(isSelected ? null : m.monthIndex);
+                            }}
+                            className="px-2.5 py-1 bg-zinc-800 hover:bg-indigo-600 text-zinc-300 hover:text-white rounded-lg transition-all text-[10px] font-bold cursor-pointer"
+                          >
+                            {isSelected ? "Ocultar" : "Inspeccionar"}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Selected Month Deep Dive Inspection Panel */}
+          {selectedMonthlyMonth !== null && (() => {
+            const m = monthlyDataWithGrowth[selectedMonthlyMonth];
+            if (!m) return null;
+            const daysInMonth = new Date(selectedYear, m.monthIndex + 1, 0).getDate();
+            const dailyAvg = Math.round(m.sales / daysInMonth);
+
+            return (
+              <div className="bg-gradient-to-r from-indigo-950/40 via-zinc-900/60 to-zinc-900/40 border border-indigo-500/30 rounded-2xl p-6 shadow-xl space-y-4 animate-scale-in">
+                <div className="flex items-center justify-between border-b border-indigo-500/20 pb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-indigo-500/20 text-indigo-300 rounded-xl border border-indigo-500/30">
+                      <Sparkles className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black text-white uppercase tracking-wider">
+                        Inspección Detallada: <span className="text-indigo-400">{m.monthName} {selectedYear}</span>
+                      </h4>
+                      <p className="text-xs text-zinc-400 font-medium">Análisis operativo y métricas calculadas del período seleccionado</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setSelectedMonthlyMonth(null)}
+                    className="text-xs font-bold text-zinc-400 hover:text-white px-3 py-1.5 bg-zinc-900 rounded-xl border border-zinc-800 transition-all cursor-pointer"
+                  >
+                    Cerrar Detalle
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="bg-zinc-950/60 p-4 rounded-xl border border-zinc-800 space-y-1">
+                    <span className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Venta Promedio Diaria</span>
+                    <p className="text-lg font-black font-mono text-emerald-400">${dailyAvg.toLocaleString("es-AR")} UYU / día</p>
+                    <span className="text-[10px] text-zinc-400 font-bold">Calculado sobre {daysInMonth} días</span>
+                  </div>
+
+                  <div className="bg-zinc-950/60 p-4 rounded-xl border border-zinc-800 space-y-1">
+                    <span className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Costo Operativo Estimado</span>
+                    <p className="text-lg font-black font-mono text-zinc-300">${m.totalCost.toLocaleString("es-AR")} UYU</p>
+                    <span className="text-[10px] text-zinc-400 font-bold">Costo de mercadería e insumos</span>
+                  </div>
+
+                  <div className="bg-zinc-950/60 p-4 rounded-xl border border-zinc-800 space-y-1">
+                    <span className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Ganancia Neta Calculada</span>
+                    <p className="text-lg font-black font-mono text-[#E6BF76]">${m.profit.toLocaleString("es-AR")} UYU</p>
+                    <span className="text-[10px] text-emerald-400 font-bold">
+                      Margen: {m.sales > 0 ? Math.round((m.profit / m.sales) * 100) : 0}% sobre ventas
+                    </span>
+                  </div>
+
+                  <div className="bg-zinc-950/60 p-4 rounded-xl border border-zinc-800 space-y-1">
+                    <span className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Desempeño MoM</span>
+                    <p className="text-lg font-black font-mono text-indigo-300">
+                      {m.growthPercent > 0 ? `+${m.growthPercent}%` : `${m.growthPercent}%`}
+                    </p>
+                    <span className="text-[10px] text-zinc-400 font-bold">Respecto al mes anterior</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
       ) : (
         <DashboardResumenGeneral store={store} />
       )}

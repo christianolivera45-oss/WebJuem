@@ -13,6 +13,8 @@ import {
   RefreshCw,
   Plus,
   Edit,
+  Edit3,
+  DollarSign,
   Trash2,
   Cpu,
   Save,
@@ -98,7 +100,7 @@ import {
   Accessibility,
   GripVertical
 } from "lucide-react";
-import { Product, SiteSettings, ShopState, CartItem, Category, Subcategory, ProductVariant, is3DProduct, isGenericSize, isGenericColor, Shipping, ShippingOrigin, StockTransfer, StockAdjustment, AdminTask } from "./types";
+import { Product, SiteSettings, ShopState, CartItem, Category, Subcategory, ProductVariant, is3DProduct, isGenericSize, isGenericColor, Shipping, ShippingOrigin, StockTransfer, StockAdjustment, AdminTask, Coupon } from "./types";
 import ThemeStyles from "./components/ThemeStyles";
 import ProductCard from "./components/ProductCard";
 import ProductSlider from "./components/ProductSlider";
@@ -525,6 +527,7 @@ export default function App() {
   const [stockMlFilter, setStockMlFilter] = useState<string>("all");
   const [stockMvdFilter, setStockMvdFilter] = useState<string>("all");
   const [stockPinFilter, setStockPinFilter] = useState<string>("all");
+  const [stockMarginFilter, setStockMarginFilter] = useState<string>("all");
   const [sortField, setSortField] = useState<string>("");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
@@ -642,6 +645,7 @@ export default function App() {
     setIsNewProductMode(false);
     setMobileAdminMenuOpen(false);
     window.history.pushState(null, "", `/admin/${section}`);
+    scrollAdminToTop();
     if (section === "emails") {
       fetchEmailLogs();
     }
@@ -1008,18 +1012,26 @@ export default function App() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isNewProductMode, setIsNewProductMode] = useState(false);
 
-  useEffect(() => {
-    const scrollTimer = setTimeout(() => {
+  const scrollAdminToTop = useCallback(() => {
+    const doScroll = () => {
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      if (document.documentElement) document.documentElement.scrollTop = 0;
+      if (document.body) document.body.scrollTop = 0;
       const mainEl = document.getElementById("admin-main-scroll");
       if (mainEl) {
-        mainEl.scrollTo({ top: 0, behavior: "smooth" });
-      } else {
-        window.scrollTo({ top: 0, behavior: "smooth" });
+        mainEl.scrollTop = 0;
+        mainEl.scrollTo({ top: 0, left: 0, behavior: "auto" });
       }
-    }, 80);
+    };
+    doScroll();
+    requestAnimationFrame(doScroll);
+    setTimeout(doScroll, 30);
+    setTimeout(doScroll, 100);
+  }, []);
 
-    return () => clearTimeout(scrollTimer);
-  }, [newProductStep, editingProductStep, isNewProductMode, editingProduct?.id]);
+  useEffect(() => {
+    scrollAdminToTop();
+  }, [adminSection, newProductStep, editingProductStep, isNewProductMode, editingProduct?.id, scrollAdminToTop]);
   const [newProduct, setNewProduct] = useState<Partial<Product>>({
     name: "",
     description: "",
@@ -1063,9 +1075,20 @@ export default function App() {
   const [dragOverCategoryId, setDragOverCategoryId] = useState<string | null>(null);
 
   const [newCouponCode, setNewCouponCode] = useState("");
+  const [newCouponType, setNewCouponType] = useState<'percentage' | 'fixed' | 'free_shipping'>("percentage");
   const [newCouponDiscount, setNewCouponDiscount] = useState<number>(10);
+  const [newCouponAmount, setNewCouponAmount] = useState<number>(200);
   const [newCouponExpiration, setNewCouponExpiration] = useState("");
   const [newCouponMaxUses, setNewCouponMaxUses] = useState("");
+
+  const [editingCoupon, setEditingCoupon] = useState<Coupon | null>(null);
+  const [editCouponCode, setEditCouponCode] = useState("");
+  const [editCouponType, setEditCouponType] = useState<'percentage' | 'fixed' | 'free_shipping'>("percentage");
+  const [editCouponDiscount, setEditCouponDiscount] = useState<number>(10);
+  const [editCouponAmount, setEditCouponAmount] = useState<number>(200);
+  const [editCouponExpiration, setEditCouponExpiration] = useState("");
+  const [editCouponMaxUses, setEditCouponMaxUses] = useState("");
+  const [editCouponActive, setEditCouponActive] = useState(true);
 
   const [newSubcategoryName, setNewSubcategoryName] = useState("");
   const [newSubcategoryParent, setNewSubcategoryParent] = useState("");
@@ -2414,7 +2437,6 @@ export default function App() {
       if (container && !container.contains(event.target as Node)) {
         setIsHeaderSearchOpen(false);
         setShowSuggestions(false);
-        setSearchQuery("");
       }
     }
 
@@ -2422,7 +2444,6 @@ export default function App() {
       if (event.key === "Escape") {
         setIsHeaderSearchOpen(false);
         setShowSuggestions(false);
-        setSearchQuery("");
       }
     }
     
@@ -2709,6 +2730,10 @@ export default function App() {
       if (!isSilent) setLoading(true);
       const res = await fetch("/api/store");
       if (!res.ok) throw new Error("No se pudo obtener la configuración de la tienda");
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        throw new Error("Respuesta del servidor no es JSON válida");
+      }
       const data = (await res.json()) as ShopState;
       if (data && data.products) {
         data.products = recalculateComboStocks(data.products);
@@ -3596,6 +3621,74 @@ export default function App() {
     showAdminToast(`Código generado: ${code}`, "success");
   };
 
+  const handleStartEditCoupon = (coupon: Coupon) => {
+    setEditingCoupon(coupon);
+    setEditCouponCode(coupon.code);
+    setEditCouponType(coupon.discount_type || 'percentage');
+    setEditCouponDiscount(coupon.discount_percent || 10);
+    setEditCouponAmount(coupon.discount_amount || 200);
+    if (coupon.expiration_date) {
+      const d = new Date(coupon.expiration_date);
+      setEditCouponExpiration(d.toISOString().split("T")[0]);
+    } else {
+      setEditCouponExpiration("");
+    }
+    setEditCouponMaxUses(coupon.max_uses ? String(coupon.max_uses) : "");
+    setEditCouponActive(coupon.active !== false);
+  };
+
+  const handleSaveEditCoupon = (e: FormEvent) => {
+    e.preventDefault();
+    if (!editingCoupon) return;
+    const newCode = editCouponCode.trim().toUpperCase();
+    if (!newCode) {
+      showAdminToast("El código del cupón es obligatorio", "error");
+      return;
+    }
+
+    if (newCode !== editingCoupon.code.toUpperCase()) {
+      const exists = (store.coupons || []).some(c => c.code.toUpperCase() === newCode);
+      if (exists) {
+        showAdminToast(`El código ${newCode} ya pertenece a otro cupón`, "error");
+        return;
+      }
+    }
+
+    if (editCouponType === 'percentage') {
+      if (editCouponDiscount <= 0 || editCouponDiscount > 100) {
+        showAdminToast("El porcentaje debe estar entre 1 y 100", "error");
+        return;
+      }
+    } else if (editCouponType === 'fixed') {
+      if (editCouponAmount <= 0) {
+        showAdminToast("El monto fijo debe ser mayor a $0", "error");
+        return;
+      }
+    }
+
+    const maxUsesInt = editCouponMaxUses ? parseInt(editCouponMaxUses, 10) : undefined;
+
+    const updatedCoupon: Coupon = {
+      ...editingCoupon,
+      code: newCode,
+      discount_type: editCouponType,
+      discount_percent: editCouponType === 'percentage' ? Number(editCouponDiscount) : 0,
+      discount_amount: editCouponType === 'fixed' ? Number(editCouponAmount) : 0,
+      expiration_date: editCouponExpiration ? new Date(`${editCouponExpiration}T23:59:59`).toISOString() : undefined,
+      active: editCouponActive,
+      max_uses: maxUsesInt && !isNaN(maxUsesInt) ? maxUsesInt : undefined,
+    };
+
+    const updatedCoupons = (store.coupons || []).map(c => 
+      c.code === editingCoupon.code ? updatedCoupon : c
+    );
+
+    const updatedState = { ...store, coupons: updatedCoupons };
+    saveStateToServer(updatedState);
+    setEditingCoupon(null);
+    showAdminToast("¡Cupón modificado con éxito!", "success");
+  };
+
   const handleAddCoupon = (e: FormEvent) => {
     e.preventDefault();
     const code = newCouponCode.trim().toUpperCase();
@@ -3603,8 +3696,13 @@ export default function App() {
       showAdminToast("El código del cupón es obligatorio", "error");
       return;
     }
-    if (newCouponDiscount <= 0 || newCouponDiscount > 100) {
+
+    if (newCouponType === 'percentage' && (newCouponDiscount <= 0 || newCouponDiscount > 100)) {
       showAdminToast("El porcentaje de descuento debe estar entre 1 y 100", "error");
+      return;
+    }
+    if (newCouponType === 'fixed' && newCouponAmount <= 0) {
+      showAdminToast("El monto fijo debe ser mayor a $0", "error");
       return;
     }
 
@@ -3616,10 +3714,12 @@ export default function App() {
 
     const maxUsesInt = newCouponMaxUses ? parseInt(newCouponMaxUses, 10) : undefined;
 
-    const newC = {
+    const newC: Coupon = {
       code,
-      discount_percent: Number(newCouponDiscount),
-      expiration_date: newCouponExpiration ? new Date(newCouponExpiration).toISOString() : undefined,
+      discount_type: newCouponType,
+      discount_percent: newCouponType === 'percentage' ? Number(newCouponDiscount) : 0,
+      discount_amount: newCouponType === 'fixed' ? Number(newCouponAmount) : 0,
+      expiration_date: newCouponExpiration ? new Date(`${newCouponExpiration}T23:59:59`).toISOString() : undefined,
       active: true,
       max_uses: maxUsesInt && !isNaN(maxUsesInt) ? maxUsesInt : undefined,
       uses_count: 0
@@ -3629,7 +3729,9 @@ export default function App() {
     const updatedState = { ...store, coupons: updatedCoupons };
     saveStateToServer(updatedState);
     setNewCouponCode("");
+    setNewCouponType("percentage");
     setNewCouponDiscount(10);
+    setNewCouponAmount(200);
     setNewCouponExpiration("");
     setNewCouponMaxUses("");
     showAdminToast("¡Cupón agregado con éxito!", "success");
@@ -4525,6 +4627,7 @@ export default function App() {
                               setSelectedCategory("todos");
                               setSelectedSubcategory("all");
                               setShowSuggestions(false);
+                              setIsHeaderSearchOpen(false);
                             }
                           }}
                           onFocus={() => {
@@ -4694,6 +4797,7 @@ export default function App() {
                                   setSelectedCategory("todos");
                                   setSelectedSubcategory("all");
                                   setShowSuggestions(false);
+                                  setIsHeaderSearchOpen(false);
                                 }}
                                 className="hover:underline font-bold bg-transparent border-0 cursor-pointer text-[#E6BF76]"
                               >
@@ -10708,7 +10812,10 @@ export default function App() {
                     {newProductStep > 1 && (
                       <button
                         type="button"
-                        onClick={() => setNewProductStep(newProductStep - 1)}
+                        onClick={() => {
+                          setNewProductStep(newProductStep - 1);
+                          scrollAdminToTop();
+                        }}
                         className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-850 text-zinc-300 hover:text-white rounded-xl text-xs font-black cursor-pointer uppercase tracking-wider transition-all duration-300"
                       >
                         Anterior
@@ -10737,6 +10844,7 @@ export default function App() {
                           }
                           setNewProductErrors({});
                           setNewProductStep(newProductStep + 1);
+                          scrollAdminToTop();
                         }}
                         className="px-5 py-2 bg-[#D4A55A] hover:bg-[#c39449] text-black font-black rounded-xl text-xs uppercase tracking-wider transition-all duration-300 cursor-pointer shadow-md shadow-[#D4A55A]/10"
                       >
@@ -12484,6 +12592,7 @@ export default function App() {
                             onClick={() => {
                               setEditProductErrors({});
                               setEditingProductStep((prev) => prev - 1);
+                              scrollAdminToTop();
                             }}
                             className="px-4 py-2 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 rounded-lg text-xs font-semibold shadow-xs transition cursor-pointer"
                           >
@@ -12520,6 +12629,7 @@ export default function App() {
                               }
                               setEditProductErrors({});
                               setEditingProductStep((prev) => prev + 1);
+                              scrollAdminToTop();
                             }}
                             className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-lg text-xs transition shadow-xs flex items-center gap-1 cursor-pointer"
                           >
@@ -13503,26 +13613,97 @@ export default function App() {
                                 </div>
 
                                 <div className="space-y-1.5">
-                                  <label className="block text-[9.5px] font-black text-zinc-400 uppercase tracking-widest">Porcentaje de Descuento</label>
-                                  <div className="relative">
-                                    <input
-                                      type="number"
-                                      required
-                                      min="1"
-                                      max="100"
-                                      placeholder="Ej. 15"
-                                      value={newCouponDiscount}
-                                      onChange={(e) => setNewCouponDiscount(Number(e.target.value))}
-                                      className="w-full pl-3 pr-8 py-2 bg-[#050B1A]/80 border border-zinc-800 focus:border-[#D4A55A] rounded-xl text-xs outline-none text-white font-black font-mono"
-                                    />
-                                    <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-black text-[#D4A55A]">%</span>
+                                  <label className="block text-[9.5px] font-black text-zinc-400 uppercase tracking-widest">Tipo de Cupón</label>
+                                  <div className="grid grid-cols-3 gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => setNewCouponType('percentage')}
+                                      className={`py-2 px-2 rounded-xl text-[10px] font-bold border flex flex-col items-center justify-center gap-0.5 transition-all cursor-pointer ${
+                                        newCouponType === 'percentage'
+                                          ? 'bg-[#D4A55A]/20 border-[#D4A55A] text-[#E6BF76]'
+                                          : 'bg-[#050B1A]/80 border-zinc-800 text-zinc-400 hover:text-white'
+                                      }`}
+                                    >
+                                      <Percent className="h-3.5 w-3.5" />
+                                      <span>% Porcentaje</span>
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => setNewCouponType('fixed')}
+                                      className={`py-2 px-2 rounded-xl text-[10px] font-bold border flex flex-col items-center justify-center gap-0.5 transition-all cursor-pointer ${
+                                        newCouponType === 'fixed'
+                                          ? 'bg-[#D4A55A]/20 border-[#D4A55A] text-[#E6BF76]'
+                                          : 'bg-[#050B1A]/80 border-zinc-800 text-zinc-400 hover:text-white'
+                                      }`}
+                                    >
+                                      <DollarSign className="h-3.5 w-3.5" />
+                                      <span>$ Fijo</span>
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => setNewCouponType('free_shipping')}
+                                      className={`py-2 px-2 rounded-xl text-[10px] font-bold border flex flex-col items-center justify-center gap-0.5 transition-all cursor-pointer ${
+                                        newCouponType === 'free_shipping'
+                                          ? 'bg-[#D4A55A]/20 border-[#D4A55A] text-[#E6BF76]'
+                                          : 'bg-[#050B1A]/80 border-zinc-800 text-zinc-400 hover:text-white'
+                                      }`}
+                                    >
+                                      <Truck className="h-3.5 w-3.5" />
+                                      <span>Envío Gratis</span>
+                                    </button>
                                   </div>
                                 </div>
                               </div>
 
                               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                                {newCouponType === 'percentage' && (
+                                  <div className="space-y-1.5">
+                                    <label className="block text-[9.5px] font-black text-zinc-400 uppercase tracking-widest">Porcentaje de Descuento</label>
+                                    <div className="relative">
+                                      <input
+                                        type="number"
+                                        required
+                                        min="1"
+                                        max="100"
+                                        placeholder="Ej. 15"
+                                        value={newCouponDiscount}
+                                        onChange={(e) => setNewCouponDiscount(Number(e.target.value))}
+                                        className="w-full pl-3 pr-8 py-2 bg-[#050B1A]/80 border border-zinc-800 focus:border-[#D4A55A] rounded-xl text-xs outline-none text-white font-black font-mono"
+                                      />
+                                      <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-black text-[#D4A55A]">%</span>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {newCouponType === 'fixed' && (
+                                  <div className="space-y-1.5">
+                                    <label className="block text-[9.5px] font-black text-zinc-400 uppercase tracking-widest">Monto Descontado ($ UYU)</label>
+                                    <div className="relative">
+                                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-[#D4A55A]">$</span>
+                                      <input
+                                        type="number"
+                                        required
+                                        min="1"
+                                        placeholder="Ej. 200"
+                                        value={newCouponAmount}
+                                        onChange={(e) => setNewCouponAmount(Number(e.target.value))}
+                                        className="w-full pl-8 pr-3 py-2 bg-[#050B1A]/80 border border-zinc-800 focus:border-[#D4A55A] rounded-xl text-xs outline-none text-white font-black font-mono"
+                                      />
+                                    </div>
+                                  </div>
+                                )}
+
+                                {newCouponType === 'free_shipping' && (
+                                  <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-[10px] text-emerald-300 font-medium flex items-center gap-1.5">
+                                    <Truck className="h-4 w-4 text-emerald-400 shrink-0" />
+                                    <span>Bonifica costo de envío</span>
+                                  </div>
+                                )}
+
                                 <div className="space-y-1.5">
-                                  <label className="block text-[9.5px] font-black text-zinc-400 uppercase tracking-widest">Fecha de Vencimiento (Opcional)</label>
+                                  <label className="block text-[9.5px] font-black text-zinc-400 uppercase tracking-widest">Vencimiento (Opcional)</label>
                                   <input
                                     type="date"
                                     value={newCouponExpiration}
@@ -13532,7 +13713,7 @@ export default function App() {
                                 </div>
 
                                 <div className="space-y-1.5">
-                                  <label className="block text-[9.5px] font-black text-zinc-400 uppercase tracking-widest">Límite de usos (Ej: 10) (Opcional)</label>
+                                  <label className="block text-[9.5px] font-black text-zinc-400 uppercase tracking-widest">Límite Usos (Opcional)</label>
                                   <input
                                     type="number"
                                     min="1"
@@ -13542,15 +13723,15 @@ export default function App() {
                                     className="w-full px-3 py-2 bg-[#050B1A]/80 border border-zinc-800 focus:border-[#D4A55A] rounded-xl text-xs outline-none text-white font-mono font-bold"
                                   />
                                 </div>
-
-                                <button
-                                  type="submit"
-                                  className="w-full py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer flex items-center justify-center gap-1.5 shadow-md shadow-emerald-950/20"
-                                >
-                                  <Plus className="h-4 w-4 shrink-0 text-white" />
-                                  <span>Crear Cupón Activo</span>
-                                </button>
                               </div>
+
+                              <button
+                                type="submit"
+                                className="w-full py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer flex items-center justify-center gap-1.5 shadow-md shadow-emerald-950/20"
+                              >
+                                <Plus className="h-4 w-4 shrink-0 text-white" />
+                                <span>Crear Cupón Activo</span>
+                              </button>
                             </form>
                           </div>
 
@@ -13578,13 +13759,14 @@ export default function App() {
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 {store.coupons.map((c) => {
                                   const isExceededUses = c.max_uses !== undefined && c.max_uses !== null && c.uses_count !== undefined && c.uses_count !== null && c.uses_count >= c.max_uses;
-                                  const isExpired = (c.expiration_date ? new Date(c.expiration_date).getTime() < Date.now() : false) || isExceededUses;
+                                  const isExpired = (c.expiration_date ? new Date(c.expiration_date).getTime() < Date.now() : false) || isExceededUses || c.active === false;
+                                  const type = c.discount_type || 'percentage';
                                   return (
                                     <div 
                                       key={c.code} 
                                       className={`relative overflow-hidden p-4 rounded-xl border flex items-stretch transition-all hover:scale-[1.02] duration-200 shadow-lg ${
                                         isExpired 
-                                          ? "bg-zinc-950/20 border-zinc-900 opacity-50" 
+                                          ? "bg-zinc-950/20 border-zinc-900 opacity-60" 
                                           : "bg-gradient-to-r from-[#D4A55A]/5 to-[#D4A55A]/15 border-[#D4A55A]/25"
                                       }`}
                                     >
@@ -13598,7 +13780,11 @@ export default function App() {
                                             <span className="text-xs font-mono font-black text-[#D4A55A] uppercase tracking-wider truncate">
                                               {c.code}
                                             </span>
-                                            {isExpired ? (
+                                            {c.active === false ? (
+                                              <span className="text-[8px] bg-amber-500/10 text-amber-400 font-extrabold uppercase px-1.5 py-0.5 rounded border border-amber-500/20 shrink-0">
+                                                Inactivo
+                                              </span>
+                                            ) : isExpired ? (
                                               <span className="text-[8px] bg-red-500/10 text-red-400 font-extrabold uppercase px-1.5 py-0.5 rounded border border-red-500/10 shrink-0">
                                                 {isExceededUses ? "Agotado" : "Expirado"}
                                               </span>
@@ -13632,26 +13818,58 @@ export default function App() {
                                           </div>
                                         </div>
 
-                                        <div className="mt-2 text-[8px] text-zinc-500 font-extrabold tracking-widest uppercase">
-                                          Cupón Oficial
+                                        <div className="mt-2 text-[8px] text-zinc-500 font-extrabold tracking-widest uppercase flex items-center justify-between">
+                                          <span>Cupón Oficial</span>
+                                          {type === 'free_shipping' && <span className="text-emerald-400 font-bold">Envío Gratis</span>}
+                                          {type === 'fixed' && <span className="text-[#E6BF76] font-bold">Monto Fijo</span>}
+                                          {type === 'percentage' && <span className="text-sky-400 font-bold">Porcentaje</span>}
                                         </div>
                                       </div>
 
-                                      <div className="w-20 pl-3.5 flex flex-col items-center justify-center text-center shrink-0">
-                                        <span className={`text-xl font-black font-mono leading-none ${isExpired ? 'text-zinc-600' : 'text-emerald-400'}`}>
-                                          {c.discount_percent}%
-                                        </span>
-                                        <span className={`text-[8px] font-extrabold tracking-wider uppercase mt-1 ${isExpired ? 'text-zinc-650' : 'text-emerald-500'}`}>
-                                          OFF
-                                        </span>
+                                      <div className="w-24 pl-2 flex flex-col items-center justify-center text-center shrink-0">
+                                        {type === 'fixed' ? (
+                                          <>
+                                            <span className={`text-base font-black font-mono leading-none ${isExpired ? 'text-zinc-600' : 'text-emerald-400'}`}>
+                                              ${c.discount_amount || 0}
+                                            </span>
+                                            <span className={`text-[8px] font-extrabold tracking-wider uppercase mt-1 ${isExpired ? 'text-zinc-650' : 'text-emerald-500'}`}>
+                                              UYU OFF
+                                            </span>
+                                          </>
+                                        ) : type === 'free_shipping' ? (
+                                          <>
+                                            <Truck className={`h-5 w-5 ${isExpired ? 'text-zinc-600' : 'text-emerald-400'}`} />
+                                            <span className={`text-[8px] font-extrabold tracking-wider uppercase mt-1 ${isExpired ? 'text-zinc-650' : 'text-emerald-500'}`}>
+                                              ENVÍO GRATIS
+                                            </span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <span className={`text-xl font-black font-mono leading-none ${isExpired ? 'text-zinc-600' : 'text-emerald-400'}`}>
+                                              {c.discount_percent}%
+                                            </span>
+                                            <span className={`text-[8px] font-extrabold tracking-wider uppercase mt-1 ${isExpired ? 'text-zinc-650' : 'text-emerald-500'}`}>
+                                              OFF
+                                            </span>
+                                          </>
+                                        )}
                                         
-                                        <button
-                                          onClick={() => handleDeleteCoupon(c.code)}
-                                          className="mt-3 p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500 hover:text-white text-red-400 transition-all cursor-pointer active:scale-90"
-                                          title="Eliminar Cupón"
-                                        >
-                                          <Trash2 className="h-3.5 w-3.5" />
-                                        </button>
+                                        <div className="flex items-center gap-1.5 mt-3">
+                                          <button
+                                            onClick={() => handleStartEditCoupon(c)}
+                                            className="p-1.5 rounded-lg bg-[#D4A55A]/15 hover:bg-[#D4A55A] hover:text-[#050B1A] text-[#E6BF76] transition-all cursor-pointer active:scale-90"
+                                            title="Editar Cupón"
+                                          >
+                                            <Edit3 className="h-3.5 w-3.5" />
+                                          </button>
+                                          <button
+                                            onClick={() => handleDeleteCoupon(c.code)}
+                                            className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500 hover:text-white text-red-400 transition-all cursor-pointer active:scale-90"
+                                            title="Eliminar Cupón"
+                                          >
+                                            <Trash2 className="h-3.5 w-3.5" />
+                                          </button>
+                                        </div>
                                       </div>
                                     </div>
                                   );
@@ -13662,6 +13880,202 @@ export default function App() {
                         </div>
 
                       </div>
+
+                      {/* EDIT COUPON MODAL OVERLAY */}
+                      {editingCoupon && (
+                        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                          <div className="bg-[#0B1730] border border-[#D4A55A]/40 rounded-2xl w-full max-w-lg shadow-2xl p-6 space-y-5 animate-scale-in text-white relative">
+                            {/* Modal Header */}
+                            <div className="flex items-center justify-between border-b border-zinc-800 pb-3.5">
+                              <div className="flex items-center gap-2">
+                                <Edit3 className="h-5 w-5 text-[#D4A55A]" />
+                                <h3 className="font-bold text-sm md:text-base text-white">
+                                  Modificar Cupón: <span className="font-mono text-[#E6BF76] uppercase">{editingCoupon.code}</span>
+                                </h3>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setEditingCoupon(null)}
+                                className="p-1.5 text-zinc-400 hover:text-white rounded-lg bg-zinc-900/80 hover:bg-zinc-800 transition-all cursor-pointer"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            </div>
+
+                            <form onSubmit={handleSaveEditCoupon} className="space-y-4">
+                              {/* Código del Cupón */}
+                              <div className="space-y-1.5">
+                                <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest">Código del Cupón</label>
+                                <input
+                                  type="text"
+                                  required
+                                  value={editCouponCode}
+                                  onChange={(e) => setEditCouponCode(e.target.value)}
+                                  className="w-full px-3 py-2 bg-[#050B1A] border border-zinc-800 focus:border-[#D4A55A] rounded-xl text-xs outline-none text-white uppercase font-mono font-bold"
+                                />
+                              </div>
+
+                              {/* Tipo de Cupón */}
+                              <div className="space-y-1.5">
+                                <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest">Tipo de Cupón</label>
+                                <div className="grid grid-cols-3 gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditCouponType('percentage')}
+                                    className={`px-3 py-2.5 rounded-xl text-xs font-bold border flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+                                      editCouponType === 'percentage'
+                                        ? 'bg-[#D4A55A]/20 border-[#D4A55A] text-[#E6BF76]'
+                                        : 'bg-[#050B1A] border-zinc-800 text-zinc-400 hover:text-white'
+                                    }`}
+                                  >
+                                    <Percent className="h-4 w-4" />
+                                    <span>Porcentaje</span>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditCouponType('fixed')}
+                                    className={`px-3 py-2.5 rounded-xl text-xs font-bold border flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+                                      editCouponType === 'fixed'
+                                        ? 'bg-[#D4A55A]/20 border-[#D4A55A] text-[#E6BF76]'
+                                        : 'bg-[#050B1A] border-zinc-800 text-zinc-400 hover:text-white'
+                                    }`}
+                                  >
+                                    <DollarSign className="h-4 w-4" />
+                                    <span>Monto Fijo</span>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditCouponType('free_shipping')}
+                                    className={`px-3 py-2.5 rounded-xl text-xs font-bold border flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+                                      editCouponType === 'free_shipping'
+                                        ? 'bg-[#D4A55A]/20 border-[#D4A55A] text-[#E6BF76]'
+                                        : 'bg-[#050B1A] border-zinc-800 text-zinc-400 hover:text-white'
+                                    }`}
+                                  >
+                                    <Truck className="h-4 w-4" />
+                                    <span>Envío Gratis</span>
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Valor de Descuento */}
+                              {editCouponType === 'percentage' && (
+                                <div className="space-y-1.5">
+                                  <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest">Porcentaje de Descuento (%)</label>
+                                  <div className="relative">
+                                    <input
+                                      type="number"
+                                      required
+                                      min="1"
+                                      max="100"
+                                      value={editCouponDiscount}
+                                      onChange={(e) => setEditCouponDiscount(Number(e.target.value))}
+                                      className="w-full pl-3 pr-8 py-2 bg-[#050B1A] border border-zinc-800 focus:border-[#D4A55A] rounded-xl text-xs outline-none text-white font-mono font-bold"
+                                    />
+                                    <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-[#D4A55A]">%</span>
+                                  </div>
+                                </div>
+                              )}
+
+                              {editCouponType === 'fixed' && (
+                                <div className="space-y-1.5">
+                                  <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest">Monto Descontado ($ UYU)</label>
+                                  <div className="relative">
+                                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-[#D4A55A]">$</span>
+                                    <input
+                                      type="number"
+                                      required
+                                      min="1"
+                                      value={editCouponAmount}
+                                      onChange={(e) => setEditCouponAmount(Number(e.target.value))}
+                                      className="w-full pl-8 pr-3 py-2 bg-[#050B1A] border border-zinc-800 focus:border-[#D4A55A] rounded-xl text-xs outline-none text-white font-mono font-bold"
+                                    />
+                                  </div>
+                                </div>
+                              )}
+
+                              {editCouponType === 'free_shipping' && (
+                                <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-xs text-emerald-300 font-medium flex items-center gap-2">
+                                  <Truck className="h-4 w-4 text-emerald-400 shrink-0" />
+                                  <span>Este cupón bonificará el 100% del costo de envío al cliente.</span>
+                                </div>
+                              )}
+
+                              {/* Fecha de Vencimiento */}
+                              <div className="space-y-1.5">
+                                <div className="flex items-center justify-between">
+                                  <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest">Fecha de Vencimiento</label>
+                                  {editCouponExpiration && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditCouponExpiration("")}
+                                      className="text-[9px] text-red-400 hover:text-red-300 font-bold underline cursor-pointer"
+                                    >
+                                      Quitar vencimiento
+                                    </button>
+                                  )}
+                                </div>
+                                <input
+                                  type="date"
+                                  value={editCouponExpiration}
+                                  onChange={(e) => setEditCouponExpiration(e.target.value)}
+                                  className="w-full px-3 py-2 bg-[#050B1A] border border-zinc-800 focus:border-[#D4A55A] rounded-xl text-xs outline-none text-white font-bold cursor-pointer"
+                                />
+                              </div>
+
+                              {/* Límite de Usos y Estado */}
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1.5">
+                                  <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest">Límite de Usos</label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    placeholder="Ilimitado"
+                                    value={editCouponMaxUses}
+                                    onChange={(e) => setEditCouponMaxUses(e.target.value)}
+                                    className="w-full px-3 py-2 bg-[#050B1A] border border-zinc-800 focus:border-[#D4A55A] rounded-xl text-xs outline-none text-white font-mono font-bold"
+                                  />
+                                </div>
+
+                                <div className="space-y-1.5">
+                                  <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest">Estado</label>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditCouponActive(!editCouponActive)}
+                                    className={`w-full py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                                      editCouponActive
+                                        ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
+                                        : 'bg-red-500/15 border-red-500/30 text-red-400'
+                                    }`}
+                                  >
+                                    <span className={`w-2 h-2 rounded-full ${editCouponActive ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`} />
+                                    <span>{editCouponActive ? 'Activo' : 'Inactivo'}</span>
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Action buttons */}
+                              <div className="flex items-center gap-3 pt-3 border-t border-zinc-800">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingCoupon(null)}
+                                  className="flex-1 py-2.5 px-4 rounded-xl border border-zinc-800 bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 font-bold text-xs uppercase tracking-wider transition-all cursor-pointer"
+                                >
+                                  Cancelar
+                                </button>
+                                <button
+                                  type="submit"
+                                  className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#D4A55A] to-[#B8860B] hover:from-[#E6BF76] hover:to-[#D4A55A] text-[#050B1A] font-extrabold text-xs uppercase tracking-wider transition-all cursor-pointer shadow-lg shadow-[#D4A55A]/20"
+                                >
+                                  Guardar Cambios
+                                </button>
+                              </div>
+                            </form>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })()}
@@ -13716,6 +14130,72 @@ export default function App() {
                     });
                     return list;
                   })();
+
+                  const getItemMarginInfo = (item: any) => {
+                    const cost = Number(item.precioCompra) || 0;
+                    const price = Number(item.price) || 0;
+                    const profit = price - cost;
+                    const marginPct = price > 0 ? (profit / price) * 100 : 0;
+                    const markupPct = cost > 0 ? (profit / cost) * 100 : 0;
+
+                    const priceML = Number(item.precioVentaML) || 0;
+                    const commML = Number(item.comisionML) || 0;
+                    const profitML = priceML - cost - commML;
+                    const marginMLPct = priceML > 0 ? (profitML / priceML) * 100 : 0;
+
+                    let status: 'noCost' | 'loss' | 'low' | 'optimal' | 'high' | 'flexible' = 'optimal';
+                    let label = '🟢 Margen Óptimo';
+                    let badgeClass = 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30';
+                    let recommendation = 'Estructura de precio equilibrada y ganancia saludable.';
+
+                    if (cost <= 0) {
+                      status = 'noCost';
+                      label = '❓ Sin Costo';
+                      badgeClass = 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 border-slate-300 dark:border-zinc-700';
+                      recommendation = 'Ingresa el costo de compra para calcular la ganancia y margen real.';
+                    } else if (profit < 0) {
+                      status = 'loss';
+                      label = '🚨 A Pérdida';
+                      badgeClass = 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30 font-extrabold';
+                      recommendation = '¡Alerta! Estás vendiendo por debajo del costo. Subir precio de venta urgentemente.';
+                    } else if (marginPct < 20) {
+                      status = 'low';
+                      label = '⚠️ Margen Ajustado';
+                      badgeClass = 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30';
+                      recommendation = 'Ganancia muy ajustada (<20%). Se sugiere subir el precio o renegociar el costo.';
+                    } else if (marginPct >= 20 && marginPct < 50) {
+                      status = 'optimal';
+                      label = '🟢 Margen Óptimo';
+                      badgeClass = 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30';
+                      recommendation = 'Margen equilibrado y ganancia muy adecuada (20%-50%).';
+                    } else if (marginPct >= 50 && marginPct < 65) {
+                      status = 'high';
+                      label = '💎 Excelente Margen';
+                      badgeClass = 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/30';
+                      recommendation = 'Alta rentabilidad (>50%). Gran margen de ganancia.';
+                    } else {
+                      status = 'flexible';
+                      label = '💡 Margen Holgado (Se puede bajar)';
+                      badgeClass = 'bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/30';
+                      recommendation = 'Margen muy alto (>65%). Si sientes que está caro para vender rápido, tienes amplio margen para bajar el precio o dar ofertas sin perder rentabilidad.';
+                    }
+
+                    return {
+                      cost,
+                      price,
+                      profit,
+                      marginPct,
+                      markupPct,
+                      priceML,
+                      commML,
+                      profitML,
+                      marginMLPct,
+                      status,
+                      label,
+                      badgeClass,
+                      recommendation
+                    };
+                  };
 
                   const filteredStockItems = stockItems.filter(item => {
                     // Global search query
@@ -13798,6 +14278,17 @@ export default function App() {
                       if (stockPinFilter === "ok" && item.stockPinamar <= pinLow) return false;
                     }
 
+                    // Column Margin & Price Diagnosis Filter
+                    if (stockMarginFilter !== "all") {
+                      const mInfo = getItemMarginInfo(item);
+                      if (stockMarginFilter === "loss" && mInfo.status !== "loss") return false;
+                      if (stockMarginFilter === "low" && mInfo.status !== "low") return false;
+                      if (stockMarginFilter === "optimal" && mInfo.status !== "optimal") return false;
+                      if (stockMarginFilter === "high" && mInfo.status !== "high") return false;
+                      if (stockMarginFilter === "flexible" && mInfo.status !== "flexible") return false;
+                      if (stockMarginFilter === "noCost" && mInfo.status !== "noCost") return false;
+                    }
+
                     return true;
                   });
 
@@ -13825,6 +14316,21 @@ export default function App() {
                           valA = a.price || 0;
                           valB = b.price || 0;
                           break;
+                        case "ganancia": {
+                          valA = getItemMarginInfo(a).profit;
+                          valB = getItemMarginInfo(b).profit;
+                          break;
+                        }
+                        case "margen": {
+                          valA = getItemMarginInfo(a).marginPct;
+                          valB = getItemMarginInfo(b).marginPct;
+                          break;
+                        }
+                        case "diagnostico": {
+                          valA = getItemMarginInfo(a).status;
+                          valB = getItemMarginInfo(b).status;
+                          break;
+                        }
                         case "precio_venta_ml":
                           valA = a.precioVentaML || 0;
                           valB = b.precioVentaML || 0;
@@ -13863,6 +14369,45 @@ export default function App() {
                   const safePage = Math.min(stockPage, totalPages);
                   const startIndex = (safePage - 1) * itemsPerPage;
                   const paginatedItems = sortedStockItems.slice(startIndex, startIndex + itemsPerPage);
+
+                  const marginMetrics = (() => {
+                    let totalProfitValue = 0;
+                    let totalCostValue = 0;
+                    let totalRetailValue = 0;
+                    let countLoss = 0;
+                    let countLow = 0;
+                    let countOptimal = 0;
+                    let countFlexible = 0;
+                    let countNoCost = 0;
+
+                    stockItems.forEach(item => {
+                      const info = getItemMarginInfo(item);
+                      const qty = (item.stockMontevideo || 0) + (item.stockPinamar || 0);
+                      totalRetailValue += info.price * qty;
+                      totalCostValue += info.cost * qty;
+                      totalProfitValue += info.profit * qty;
+
+                      if (info.status === 'loss') countLoss++;
+                      else if (info.status === 'low') countLow++;
+                      else if (info.status === 'optimal' || info.status === 'high') countOptimal++;
+                      else if (info.status === 'flexible') countFlexible++;
+                      else if (info.status === 'noCost') countNoCost++;
+                    });
+
+                    const avgMargin = totalRetailValue > 0 ? (totalProfitValue / totalRetailValue) * 100 : 0;
+
+                    return {
+                      totalProfitValue,
+                      totalCostValue,
+                      totalRetailValue,
+                      avgMargin,
+                      countLoss,
+                      countLow,
+                      countOptimal,
+                      countFlexible,
+                      countNoCost
+                    };
+                  })();
 
                   return (
                     <div className="space-y-6">
@@ -13977,256 +14522,477 @@ export default function App() {
                       </div>
 
                       {stockSubSection === "list" && (
-                        <div className="bg-white dark:bg-zinc-950 rounded-2xl border border-slate-200 dark:border-zinc-800 shadow-sm overflow-hidden">
-                        <div className="p-4 border-b border-slate-200 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-slate-50/50 dark:bg-zinc-950/50">
-                          <div className="flex items-center gap-2.5">
-                            <span className="h-2 w-2 rounded-full bg-indigo-500 animate-pulse"></span>
-                            <h3 className="font-extrabold text-xs uppercase text-slate-900 dark:text-zinc-200 tracking-wider">
-                              INVENTARIO CENTRAL RESUMIDO
-                            </h3>
-                            <span className="px-2 py-0.5 text-[10px] font-bold bg-slate-200 dark:bg-zinc-850 text-slate-700 dark:text-zinc-300 rounded-full font-mono">
-                              {filteredStockItems.length} items listados
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Spreadsheet Table Container */}
-                        <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)] custom-scrollbar">
-                          <table className="w-full text-left border-separate border-spacing-0">
-                            <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-zinc-900 shadow-[0_2px_10px_rgba(0,0,0,0.05)]">
-                              <tr className="bg-slate-50 dark:bg-zinc-900 text-slate-500 dark:text-zinc-400 font-bold uppercase text-[10px] tracking-wider select-none">
-                                
-                                {/* Columna 1: SKU / Imagen (Ancho fijo de 36, alineación izquierda) */}
-                                <th 
-                                  onClick={() => toggleSort('codigo')}
-                                  className="py-3 px-5 text-left w-36 bg-slate-50 dark:bg-zinc-900 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all group"
-                                  title="Ordenar por SKU"
-                                >
-                                  <div className="flex items-center gap-1">
-                                    <span>SKU / Imagen</span>
-                                    <span className="text-[9px] text-indigo-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 font-bold transition-transform">
-                                      {sortField === 'codigo' ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
-                                    </span>
+                        <div className="space-y-4">
+                            {/* PANEL INTELIGENTE DE RENTABILIDAD Y ANÁLISIS DE PRECIOS */}
+                            <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-4 border border-indigo-500/20 shadow-lg">
+                              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 pb-3 border-b border-white/10">
+                                <div className="flex items-center gap-2.5">
+                                  <div className="p-2 bg-indigo-500/20 rounded-xl border border-indigo-400/30 text-indigo-300">
+                                    <TrendingUp className="h-5 w-5" />
                                   </div>
-                                </th>
-
-                                {/* Columna 2: Producto (Nombre, ocupa el espacio restante) */}
-                                <th 
-                                  onClick={() => toggleSort('nombre')}
-                                  className="py-3 px-4 bg-slate-50 dark:bg-zinc-900 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all group"
-                                  title="Ordenar por Nombre"
-                                >
-                                  <div className="flex items-center gap-1">
-                                    <span>Producto</span>
-                                    <span className="text-[9px] text-indigo-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 font-bold transition-transform">
-                                      {sortField === 'nombre' ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
-                                    </span>
+                                  <div>
+                                    <h3 className="font-extrabold text-sm uppercase tracking-wider text-white">
+                                      Análisis Inteligente de Rentabilidad y Precios
+                                    </h3>
+                                    <p className="text-xs text-indigo-200/80 font-medium">
+                                      Diagnóstico en tiempo real para optimizar o bajar precios según margen
+                                    </p>
                                   </div>
-                                </th>
+                                </div>
 
-                                {/* Columna 3: Compra / Costo (Alineado a la derecha) */}
-                                <th 
-                                  onClick={() => toggleSort('costo')}
-                                  className="py-3 px-4 text-right bg-slate-50 dark:bg-zinc-900 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all group"
-                                  title="Ordenar por Costo de Compra"
-                                >
-                                  <div className="inline-flex items-center justify-end gap-1 w-full">
-                                    <span>Compra (Costo)</span>
-                                    <span className="text-[9px] text-indigo-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 font-bold transition-transform">
-                                      {sortField === 'costo' ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
-                                    </span>
+                                <div className="flex items-center gap-4 flex-wrap">
+                                  <div className="bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 flex items-center gap-3">
+                                    <div>
+                                      <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">Ganancia Potencial Stock</span>
+                                      <span className="text-sm font-black font-mono text-emerald-400">
+                                        +${Math.round(marginMetrics.totalProfitValue).toLocaleString("es-UY")}
+                                      </span>
+                                    </div>
+                                    <span className="text-xs text-zinc-500 font-mono">|</span>
+                                    <div>
+                                      <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">Margen Promedio Global</span>
+                                      <span className="text-sm font-black font-mono text-indigo-300">
+                                        {marginMetrics.avgMargin.toFixed(1)}%
+                                      </span>
+                                    </div>
                                   </div>
-                                </th>
+                                </div>
+                              </div>
 
-                                {/* Columna 4: Venta Local (Alineado a la derecha) */}
-                                <th 
-                                  onClick={() => toggleSort('precio_venta')}
-                                  className="py-3 px-4 text-right bg-slate-50 dark:bg-zinc-900 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all group"
-                                  title="Ordenar por Venta Local"
+                              {/* FILTROS RÁPIDOS POR ESTADO DE PRECIO */}
+                              <div className="pt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setStockMarginFilter(stockMarginFilter === "flexible" ? "all" : "flexible")}
+                                  className={`p-2.5 rounded-xl border transition text-left cursor-pointer ${
+                                    stockMarginFilter === "flexible"
+                                      ? "bg-sky-500/20 border-sky-400 text-sky-200 ring-2 ring-sky-400/50"
+                                      : "bg-white/5 hover:bg-white/10 border-white/10 text-zinc-300"
+                                  }`}
                                 >
-                                  <div className="inline-flex items-center justify-end gap-1 w-full">
-                                    <span>Venta Local</span>
-                                    <span className="text-[9px] text-indigo-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 font-bold transition-transform">
-                                      {sortField === 'precio_venta' ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
-                                    </span>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-sky-300">💡 Holgado</span>
+                                    <span className="px-1.5 py-0.2 bg-sky-500/30 text-sky-200 text-[10px] font-mono font-bold rounded-full">{marginMetrics.countFlexible}</span>
                                   </div>
-                                </th>
+                                  <p className="text-[11px] font-bold mt-1 text-white leading-tight">Pueden Bajar Precio</p>
+                                  <p className="text-[9px] text-sky-200/70 mt-0.5 line-clamp-1">Margen &gt; 65% (Estrategia Oferta)</p>
+                                </button>
 
-                                {/* Columna 5: Venta MercadoLibre (Alineado a la derecha) */}
-                                <th 
-                                  onClick={() => toggleSort('precio_venta_ml')}
-                                  className="py-3 px-4 text-right bg-slate-50 dark:bg-zinc-900 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all group"
-                                  title="Ordenar por Venta ML"
+                                <button
+                                  type="button"
+                                  onClick={() => setStockMarginFilter(stockMarginFilter === "optimal" ? "all" : "optimal")}
+                                  className={`p-2.5 rounded-xl border transition text-left cursor-pointer ${
+                                    stockMarginFilter === "optimal"
+                                      ? "bg-emerald-500/20 border-emerald-400 text-emerald-200 ring-2 ring-emerald-400/50"
+                                      : "bg-white/5 hover:bg-white/10 border-white/10 text-zinc-300"
+                                  }`}
                                 >
-                                  <div className="inline-flex items-center justify-end gap-1 w-full">
-                                    <span>Venta ML</span>
-                                    <span className="text-[9px] text-indigo-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 font-bold transition-transform">
-                                      {sortField === 'precio_venta_ml' ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
-                                    </span>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-300">🟢 Saludable</span>
+                                    <span className="px-1.5 py-0.2 bg-emerald-500/30 text-emerald-200 text-[10px] font-mono font-bold rounded-full">{marginMetrics.countOptimal}</span>
                                   </div>
-                                </th>
+                                  <p className="text-[11px] font-bold mt-1 text-white leading-tight">Margen Óptimo</p>
+                                  <p className="text-[9px] text-emerald-200/70 mt-0.5 line-clamp-1">Margen 20% - 65%</p>
+                                </button>
 
-                                {/* Columna 6: Comisión MercadoLibre (Alineado a la derecha) */}
-                                <th 
-                                  onClick={() => toggleSort('comision_ml')}
-                                  className="py-3 px-4 text-right bg-slate-50 dark:bg-zinc-900 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all group"
-                                  title="Ordenar por Comisión ML"
+                                <button
+                                  type="button"
+                                  onClick={() => setStockMarginFilter(stockMarginFilter === "low" ? "all" : "low")}
+                                  className={`p-2.5 rounded-xl border transition text-left cursor-pointer ${
+                                    stockMarginFilter === "low"
+                                      ? "bg-amber-500/20 border-amber-400 text-amber-200 ring-2 ring-amber-400/50"
+                                      : "bg-white/5 hover:bg-white/10 border-white/10 text-zinc-300"
+                                  }`}
                                 >
-                                  <div className="inline-flex items-center justify-end gap-1 w-full">
-                                    <span>Comisión ML</span>
-                                    <span className="text-[9px] text-indigo-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 font-bold transition-transform">
-                                      {sortField === 'comision_ml' ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
-                                    </span>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-300">⚠️ Ajustado</span>
+                                    <span className="px-1.5 py-0.2 bg-amber-500/30 text-amber-200 text-[10px] font-mono font-bold rounded-full">{marginMetrics.countLow}</span>
                                   </div>
-                                </th>
+                                  <p className="text-[11px] font-bold mt-1 text-white leading-tight">Recom. Subir Precio</p>
+                                  <p className="text-[9px] text-amber-200/70 mt-0.5 line-clamp-1">Margen &lt; 20%</p>
+                                </button>
 
-                                {/* Columna 7: Stock Montevideo (Centrado) */}
-                                <th 
-                                  onClick={() => toggleSort('mvd_stock')}
-                                  className="py-3 px-4 text-center text-slate-550 dark:text-zinc-400 bg-slate-50 dark:bg-zinc-900 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all group"
-                                  title="Ordenar por Stock Montevideo"
+                                <button
+                                  type="button"
+                                  onClick={() => setStockMarginFilter(stockMarginFilter === "loss" ? "all" : "loss")}
+                                  className={`p-2.5 rounded-xl border transition text-left cursor-pointer ${
+                                    stockMarginFilter === "loss"
+                                      ? "bg-rose-500/20 border-rose-400 text-rose-200 ring-2 ring-rose-400/50"
+                                      : "bg-white/5 hover:bg-white/10 border-white/10 text-zinc-300"
+                                  }`}
                                 >
-                                  <div className="inline-flex items-center justify-center gap-1 w-full">
-                                    <span>Stock Mvd</span>
-                                    <span className="text-[9px] text-indigo-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 font-bold transition-transform">
-                                      {sortField === 'mvd_stock' ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
-                                    </span>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-rose-300">🚨 Crítico</span>
+                                    <span className="px-1.5 py-0.2 bg-rose-500/30 text-rose-200 text-[10px] font-mono font-bold rounded-full">{marginMetrics.countLoss}</span>
                                   </div>
-                                </th>
+                                  <p className="text-[11px] font-bold mt-1 text-white leading-tight">Venta a Pérdida</p>
+                                  <p className="text-[9px] text-rose-200/70 mt-0.5 line-clamp-1">Venta &lt; Costo</p>
+                                </button>
 
-                                {/* Columna 8: Stock Pinamar (Centrado) */}
-                                <th 
-                                  onClick={() => toggleSort('pin_stock')}
-                                  className="py-3 px-4 text-center text-slate-550 dark:text-zinc-400 bg-slate-50 dark:bg-zinc-900 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all group"
-                                  title="Ordenar por Stock Pinar"
+                                <button
+                                  type="button"
+                                  onClick={() => setStockMarginFilter(stockMarginFilter === "noCost" ? "all" : "noCost")}
+                                  className={`p-2.5 rounded-xl border transition text-left cursor-pointer col-span-2 sm:col-span-1 ${
+                                    stockMarginFilter === "noCost"
+                                      ? "bg-zinc-700/50 border-zinc-400 text-zinc-200 ring-2 ring-zinc-400/50"
+                                      : "bg-white/5 hover:bg-white/10 border-white/10 text-zinc-300"
+                                  }`}
                                 >
-                                  <div className="inline-flex items-center justify-center gap-1 w-full">
-                                    <span>Stock Pin</span>
-                                    <span className="text-[9px] text-indigo-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 font-bold transition-transform">
-                                      {sortField === 'pin_stock' ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
-                                    </span>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-400">❓ Sin Costo</span>
+                                    <span className="px-1.5 py-0.2 bg-zinc-800 text-zinc-300 text-[10px] font-mono font-bold rounded-full">{marginMetrics.countNoCost}</span>
                                   </div>
-                                </th>
+                                  <p className="text-[11px] font-bold mt-1 text-white leading-tight">Falta Costo</p>
+                                  <p className="text-[9px] text-zinc-400 mt-0.5 line-clamp-1">Ingresar precio compra</p>
+                                </button>
+                              </div>
+                            </div>
 
-                                <th className="py-3 px-4 text-center bg-slate-50 dark:bg-zinc-900 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 uppercase text-[10px] tracking-wider select-none">
-                                  Acciones
-                                </th>
+                            <div className="bg-white dark:bg-zinc-950 rounded-2xl border border-slate-200 dark:border-zinc-800 shadow-sm overflow-hidden">
+                              <div className="p-4 border-b border-slate-200 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-slate-50/50 dark:bg-zinc-950/50">
+                                <div className="flex items-center gap-2.5">
+                                  <span className="h-2 w-2 rounded-full bg-indigo-500 animate-pulse"></span>
+                                  <h3 className="font-extrabold text-xs uppercase text-slate-900 dark:text-zinc-200 tracking-wider">
+                                    INVENTARIO CENTRAL RESUMIDO
+                                  </h3>
+                                  <span className="px-2 py-0.5 text-[10px] font-bold bg-slate-200 dark:bg-zinc-850 text-slate-700 dark:text-zinc-300 rounded-full font-mono">
+                                    {filteredStockItems.length} items listados
+                                  </span>
 
-                              </tr>
-
-
-                            </thead>
-                            <tbody className="divide-y divide-slate-150 dark:divide-zinc-850">
-                              {paginatedItems.length === 0 ? (
-                                <tr>
-                                  <td colSpan={9} className="p-8 text-center text-zinc-500 text-xs">
-                                    Ningún artículo coincide con tu búsqueda actual o filtros.
-                                  </td>
-                                </tr>
-                              ) : (
-                                paginatedItems.map((item) => {
-                                  return (
-                                    <tr
-                                      key={item.id}
-                                      className="hover:bg-slate-50/80 dark:hover:bg-zinc-900/30 transition text-xs group"
+                                  {stockMarginFilter !== "all" && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setStockMarginFilter("all")}
+                                      className="px-2 py-0.5 text-[10px] font-extrabold bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 rounded-full border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-200 transition cursor-pointer"
                                     >
-                                      {/* SKU / IMAGEN */}
-                                      <td className="py-3 px-4">
-                                        <div className="flex items-center gap-2.5">
-                                          <div className="relative group/img shrink-0">
-                                            <img
-                                              src={item.imageUrl || "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=100&q=80"}
-                                              alt={item.sku}
-                                              onClick={() => setLightboxImage({
-                                                src: item.imageUrl || "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=600&q=80",
-                                                name: item.name,
-                                                sku: item.sku,
-                                                extraInfo: item.isVariant ? `Variante: ${item.variantName}` : undefined
-                                              })}
-                                              className="h-10 w-10 rounded-lg object-cover bg-zinc-800 border border-slate-250 dark:border-zinc-800 transition-all duration-200 cursor-zoom-in hover:scale-105 hover:ring-2 hover:ring-indigo-500/50"
-                                            />
-                                            
-                                            {/* Hover Mini Card */}
-                                            <div className="absolute left-12 top-1/2 -translate-y-1/2 opacity-0 pointer-events-none scale-95 group-hover/img:opacity-100 group-hover/img:scale-100 transition-all duration-200 z-50 w-48 shadow-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-1 rounded-lg">
-                                              <img
-                                                src={item.imageUrl || "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=400&q=80"}
-                                                alt={item.sku}
-                                                className="h-36 w-full rounded-md object-cover bg-zinc-900"
-                                              />
-                                              <div className="p-1.5">
-                                                <p className="text-[10px] font-bold text-slate-850 dark:text-zinc-200 truncate leading-tight">
-                                                  {item.name}
-                                                </p>
-                                                <p className="text-[9px] text-zinc-500 font-mono mt-0.5">
-                                                  {item.sku || "Sin SKU"}
-                                                </p>
-                                                {item.isVariant && (
-                                                  <p className="text-[9px] text-indigo-500 font-bold mt-0.5 truncate">
-                                                    {item.variantName}
-                                                  </p>
-                                                )}
-                                              </div>
-                                            </div>
-                                          </div>
-                                          <span className="font-mono text-[11px] font-bold tracking-tight text-indigo-600 dark:text-indigo-400 truncate max-w-[100px]" title={item.sku}>
-                                            {item.sku}
+                                      Filtro activo: {stockMarginFilter} (Quitar ✕)
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Spreadsheet Table Container */}
+                              <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)] custom-scrollbar">
+                                <table className="w-full text-left border-separate border-spacing-0">
+                                  <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-zinc-900 shadow-[0_2px_10px_rgba(0,0,0,0.05)]">
+                                    <tr className="bg-slate-50 dark:bg-zinc-900 text-slate-500 dark:text-zinc-400 font-bold uppercase text-[10px] tracking-wider select-none">
+                                      
+                                      {/* Columna 1: SKU / Imagen */}
+                                      <th 
+                                        onClick={() => toggleSort('codigo')}
+                                        className="py-3 px-5 text-left w-36 bg-slate-50 dark:bg-zinc-900 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all group"
+                                        title="Ordenar por SKU"
+                                      >
+                                        <div className="flex items-center gap-1">
+                                          <span>SKU / Imagen</span>
+                                          <span className="text-[9px] text-indigo-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 font-bold transition-transform">
+                                            {sortField === 'codigo' ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
                                           </span>
                                         </div>
-                                      </td>
+                                      </th>
 
-                                      {/* PRODUCTO */}
-                                      <td className="py-3 px-4 min-w-[200px]">
-                                        <div className="flex flex-col">
-                                          <div className="flex items-center gap-1.5 flex-wrap">
-                                            <span className="font-bold text-slate-800 dark:text-zinc-200 line-clamp-1 leading-snug">
-                                              {item.name}
-                                            </span>
-                                            {item.productObj?.isCombo && (
-                                              <span className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase tracking-wide bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 py-0.5 px-1.5 rounded" title="Artículo Compuesto (Combo)">
-                                                📦 Compuesto
-                                              </span>
-                                            )}
-                                          </div>
-                                          {item.isVariant && (
-                                            <span className="text-[10px] font-extrabold font-mono mt-0.5 tracking-wide bg-indigo-550/5 dark:bg-indigo-450/5 text-indigo-500 py-0.5 px-1.5 rounded-sm self-start">
-                                              Variante: {item.variantName}
-                                            </span>
-                                          )}
+                                      {/* Columna 2: Producto */}
+                                      <th 
+                                        onClick={() => toggleSort('nombre')}
+                                        className="py-3 px-4 bg-slate-50 dark:bg-zinc-900 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all group"
+                                        title="Ordenar por Nombre"
+                                      >
+                                        <div className="flex items-center gap-1">
+                                          <span>Producto</span>
+                                          <span className="text-[9px] text-indigo-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 font-bold transition-transform">
+                                            {sortField === 'nombre' ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
+                                          </span>
                                         </div>
-                                      </td>
+                                      </th>
 
-                                      {/* COMPRA (COSTO) */}
-                                      <td className="py-3 px-4 text-right">
-                                        <div className="flex items-center justify-end gap-0.5 font-mono">
-                                          <span className="text-zinc-400 font-bold">$</span>
-                                          <input
-                                            type="number"
-                                            defaultValue={Math.round(item.precioCompra || 0)}
-                                            onBlur={(e) => {
-                                              const val = Math.round(parseFloat(e.target.value) || 0);
-                                              if (val !== Math.round(item.precioCompra || 0)) {
-                                                handleUpdateStockItem(item, "precioCompra", val);
-                                                showToast(`Costo de ${item.sku} actualizado a $${val}`, "success");
-                                              }
-                                            }}
-                                            onKeyDown={(e) => {
-                                              if (e.key === "Enter") {
-                                                (e.target as HTMLInputElement).blur();
-                                              }
-                                            }}
-                                            className="w-16 text-right bg-transparent hover:bg-slate-100 dark:hover:bg-zinc-900 focus:bg-white dark:focus:bg-zinc-950 px-1 py-0.5 rounded-md border-0 focus:ring-1 focus:ring-indigo-500 font-bold text-slate-700 dark:text-zinc-200 outline-hidden transition"
-                                          />
+                                      {/* Columna 3: Compra (Costo) */}
+                                      <th 
+                                        onClick={() => toggleSort('costo')}
+                                        className="py-3 px-4 text-right bg-slate-50 dark:bg-zinc-900 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all group"
+                                        title="Ordenar por Costo de Compra"
+                                      >
+                                        <div className="inline-flex items-center justify-end gap-1 w-full">
+                                          <span>Compra (Costo)</span>
+                                          <span className="text-[9px] text-indigo-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 font-bold transition-transform">
+                                            {sortField === 'costo' ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
+                                          </span>
                                         </div>
-                                      </td>
+                                      </th>
 
-                                      {/* VENTA LOCAL */}
-                                      <td className="py-3 px-4 text-right select-none">
-                                        <div className="flex items-center justify-end gap-1 font-mono text-indigo-600 dark:text-indigo-400 font-extrabold pr-2">
-                                          <span className="opacity-80">$</span>
-                                          <span>{Math.round(item.price || 0).toLocaleString("es-UY")}</span>
-                                          <Lock className="h-3 w-3 text-zinc-400 dark:text-zinc-500 shrink-0 opacity-50 ml-1.5" title="La columna Venta Local no puede ser cambiada por el usuario" />
+                                      {/* Columna 4: Venta Local */}
+                                      <th 
+                                        onClick={() => toggleSort('precio_venta')}
+                                        className="py-3 px-4 text-right bg-slate-50 dark:bg-zinc-900 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all group"
+                                        title="Ordenar por Venta Local"
+                                      >
+                                        <div className="inline-flex items-center justify-end gap-1 w-full">
+                                          <span>Venta Local</span>
+                                          <span className="text-[9px] text-indigo-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 font-bold transition-transform">
+                                            {sortField === 'precio_venta' ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
+                                          </span>
                                         </div>
-                                      </td>
+                                      </th>
+
+                                      {/* NUEVA Columna 5: Ganancia Neta ($) */}
+                                      <th 
+                                        onClick={() => toggleSort('ganancia')}
+                                        className="py-3 px-4 text-right bg-emerald-500/5 dark:bg-emerald-500/10 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-emerald-500/20 transition-all group"
+                                        title="Ordenar por Ganancia Neta ($)"
+                                      >
+                                        <div className="inline-flex items-center justify-end gap-1 w-full text-emerald-700 dark:text-emerald-400">
+                                          <span>Ganancia ($)</span>
+                                          <span className="text-[9px] font-bold">
+                                            {sortField === 'ganancia' ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
+                                          </span>
+                                        </div>
+                                      </th>
+
+                                      {/* NUEVA Columna 6: Margen % */}
+                                      <th 
+                                        onClick={() => toggleSort('margen')}
+                                        className="py-3 px-4 text-right bg-indigo-500/5 dark:bg-indigo-500/10 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-indigo-500/20 transition-all group"
+                                        title="Ordenar por Margen %"
+                                      >
+                                        <div className="inline-flex items-center justify-end gap-1 w-full text-indigo-700 dark:text-indigo-300">
+                                          <span>Margen %</span>
+                                          <span className="text-[9px] font-bold">
+                                            {sortField === 'margen' ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
+                                          </span>
+                                        </div>
+                                      </th>
+
+                                      {/* NUEVA Columna 7: Diagnóstico & Estrategia de Precio */}
+                                      <th 
+                                        onClick={() => toggleSort('diagnostico')}
+                                        className="py-3 px-4 text-center bg-slate-50 dark:bg-zinc-900 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all group min-w-[150px]"
+                                        title="Ordenar por Estado / Diagnóstico de Precio"
+                                      >
+                                        <div className="inline-flex items-center justify-center gap-1 w-full">
+                                          <span>Diagnóstico de Precio</span>
+                                          <span className="text-[9px] text-indigo-400 font-bold">
+                                            {sortField === 'diagnostico' ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
+                                          </span>
+                                        </div>
+                                      </th>
+
+                                      {/* Columna 8: Venta ML */}
+                                      <th 
+                                        onClick={() => toggleSort('precio_venta_ml')}
+                                        className="py-3 px-4 text-right bg-slate-50 dark:bg-zinc-900 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all group"
+                                        title="Ordenar por Venta ML"
+                                      >
+                                        <div className="inline-flex items-center justify-end gap-1 w-full">
+                                          <span>Venta ML</span>
+                                          <span className="text-[9px] text-indigo-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 font-bold transition-transform">
+                                            {sortField === 'precio_venta_ml' ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
+                                          </span>
+                                        </div>
+                                      </th>
+
+                                      {/* Columna 9: Comisión ML */}
+                                      <th 
+                                        onClick={() => toggleSort('comision_ml')}
+                                        className="py-3 px-4 text-right bg-slate-50 dark:bg-zinc-900 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all group"
+                                        title="Ordenar por Comisión ML"
+                                      >
+                                        <div className="inline-flex items-center justify-end gap-1 w-full">
+                                          <span>Comisión ML</span>
+                                          <span className="text-[9px] text-indigo-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 font-bold transition-transform">
+                                            {sortField === 'comision_ml' ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
+                                          </span>
+                                        </div>
+                                      </th>
+
+                                      {/* Columna 10: Stock Mvd */}
+                                      <th 
+                                        onClick={() => toggleSort('mvd_stock')}
+                                        className="py-3 px-4 text-center text-slate-550 dark:text-zinc-400 bg-slate-50 dark:bg-zinc-900 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all group"
+                                        title="Ordenar por Stock Montevideo"
+                                      >
+                                        <div className="inline-flex items-center justify-center gap-1 w-full">
+                                          <span>Stock Mvd</span>
+                                          <span className="text-[9px] text-indigo-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 font-bold transition-transform">
+                                            {sortField === 'mvd_stock' ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
+                                          </span>
+                                        </div>
+                                      </th>
+
+                                      {/* Columna 11: Stock Pin */}
+                                      <th 
+                                        onClick={() => toggleSort('pin_stock')}
+                                        className="py-3 px-4 text-center text-slate-550 dark:text-zinc-400 bg-slate-50 dark:bg-zinc-900 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all group"
+                                        title="Ordenar por Stock Pinar"
+                                      >
+                                        <div className="inline-flex items-center justify-center gap-1 w-full">
+                                          <span>Stock Pin</span>
+                                          <span className="text-[9px] text-indigo-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 font-bold transition-transform">
+                                            {sortField === 'pin_stock' ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
+                                          </span>
+                                        </div>
+                                      </th>
+
+                                      <th className="py-3 px-4 text-center bg-slate-50 dark:bg-zinc-900 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 uppercase text-[10px] tracking-wider select-none">
+                                        Acciones
+                                      </th>
+
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-150 dark:divide-zinc-850">
+                                    {paginatedItems.length === 0 ? (
+                                      <tr>
+                                        <td colSpan={12} className="p-8 text-center text-zinc-500 text-xs">
+                                          Ningún artículo coincide con tu búsqueda actual o filtros.
+                                        </td>
+                                      </tr>
+                                    ) : (
+                                      paginatedItems.map((item) => {
+                                        const marginInfo = getItemMarginInfo(item);
+                                        return (
+                                          <tr
+                                            key={item.id}
+                                            className="hover:bg-slate-50/80 dark:hover:bg-zinc-900/30 transition text-xs group"
+                                          >
+                                            {/* SKU / IMAGEN */}
+                                            <td className="py-3 px-4">
+                                              <div className="flex items-center gap-2.5">
+                                                <div className="relative group/img shrink-0">
+                                                  <img
+                                                    src={item.imageUrl || "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=100&q=80"}
+                                                    alt={item.sku}
+                                                    onClick={() => setLightboxImage({
+                                                      src: item.imageUrl || "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=600&q=80",
+                                                      name: item.name,
+                                                      sku: item.sku,
+                                                      extraInfo: item.isVariant ? `Variante: ${item.variantName}` : undefined
+                                                    })}
+                                                    className="h-10 w-10 rounded-lg object-cover bg-zinc-800 border border-slate-250 dark:border-zinc-800 transition-all duration-200 cursor-zoom-in hover:scale-105 hover:ring-2 hover:ring-indigo-500/50"
+                                                  />
+                                                  
+                                                  {/* Hover Mini Card */}
+                                                  <div className="absolute left-12 top-1/2 -translate-y-1/2 opacity-0 pointer-events-none scale-95 group-hover/img:opacity-100 group-hover/img:scale-100 transition-all duration-200 z-50 w-48 shadow-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-1 rounded-lg">
+                                                    <img
+                                                      src={item.imageUrl || "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=400&q=80"}
+                                                      alt={item.sku}
+                                                      className="h-36 w-full rounded-md object-cover bg-zinc-900"
+                                                    />
+                                                    <div className="p-1.5">
+                                                      <p className="text-[10px] font-bold text-slate-850 dark:text-zinc-200 truncate leading-tight">
+                                                        {item.name}
+                                                      </p>
+                                                      <p className="text-[9px] text-zinc-500 font-mono mt-0.5">
+                                                        {item.sku || "Sin SKU"}
+                                                      </p>
+                                                      {item.isVariant && (
+                                                        <p className="text-[9px] text-indigo-500 font-bold mt-0.5 truncate">
+                                                          {item.variantName}
+                                                        </p>
+                                                      )}
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                                <span className="font-mono text-[11px] font-bold tracking-tight text-indigo-600 dark:text-indigo-400 truncate max-w-[100px]" title={item.sku}>
+                                                  {item.sku}
+                                                </span>
+                                              </div>
+                                            </td>
+
+                                            {/* PRODUCTO */}
+                                            <td className="py-3 px-4 min-w-[200px]">
+                                              <div className="flex flex-col">
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                  <span className="font-bold text-slate-800 dark:text-zinc-200 line-clamp-1 leading-snug">
+                                                    {item.name}
+                                                  </span>
+                                                  {item.productObj?.isCombo && (
+                                                    <span className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase tracking-wide bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 py-0.5 px-1.5 rounded" title="Artículo Compuesto (Combo)">
+                                                      📦 Compuesto
+                                                    </span>
+                                                  )}
+                                                </div>
+                                                {item.isVariant && (
+                                                  <span className="text-[10px] font-extrabold font-mono mt-0.5 tracking-wide bg-indigo-550/5 dark:bg-indigo-450/5 text-indigo-500 py-0.5 px-1.5 rounded-sm self-start">
+                                                    Variante: {item.variantName}
+                                                  </span>
+                                                )}
+                                              </div>
+                                            </td>
+
+                                            {/* COMPRA (COSTO) */}
+                                            <td className="py-3 px-4 text-right">
+                                              <div className="flex items-center justify-end gap-0.5 font-mono">
+                                                <span className="text-zinc-400 font-bold">$</span>
+                                                <input
+                                                  type="number"
+                                                  defaultValue={Math.round(item.precioCompra || 0)}
+                                                  onBlur={(e) => {
+                                                    const val = Math.round(parseFloat(e.target.value) || 0);
+                                                    if (val !== Math.round(item.precioCompra || 0)) {
+                                                      handleUpdateStockItem(item, "precioCompra", val);
+                                                      showToast(`Costo de ${item.sku} actualizado a $${val}`, "success");
+                                                    }
+                                                  }}
+                                                  onKeyDown={(e) => {
+                                                    if (e.key === "Enter") {
+                                                      (e.target as HTMLInputElement).blur();
+                                                    }
+                                                  }}
+                                                  className="w-16 text-right bg-transparent hover:bg-slate-100 dark:hover:bg-zinc-900 focus:bg-white dark:focus:bg-zinc-950 px-1 py-0.5 rounded-md border-0 focus:ring-1 focus:ring-indigo-500 font-bold text-slate-700 dark:text-zinc-200 outline-hidden transition"
+                                                />
+                                              </div>
+                                            </td>
+
+                                            {/* VENTA LOCAL */}
+                                            <td className="py-3 px-4 text-right select-none">
+                                              <div className="flex items-center justify-end gap-1 font-mono text-indigo-600 dark:text-indigo-400 font-extrabold pr-2">
+                                                <span className="opacity-80">$</span>
+                                                <span>{Math.round(item.price || 0).toLocaleString("es-UY")}</span>
+                                                <Lock className="h-3 w-3 text-zinc-400 dark:text-zinc-500 shrink-0 opacity-50 ml-1.5" title="La columna Venta Local no puede ser cambiada por el usuario" />
+                                              </div>
+                                            </td>
+
+                                            {/* GANANCIA ($) */}
+                                            <td className="py-3 px-4 text-right font-mono bg-emerald-500/5 dark:bg-emerald-500/10">
+                                              {marginInfo.cost <= 0 ? (
+                                                <span className="text-zinc-400 text-[10px] font-bold">—</span>
+                                              ) : (
+                                                <span className={`font-black ${marginInfo.profit < 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400"}`}>
+                                                  {marginInfo.profit >= 0 ? "+" : ""}${Math.round(marginInfo.profit).toLocaleString("es-UY")}
+                                                </span>
+                                              )}
+                                            </td>
+
+                                            {/* MARGEN % */}
+                                            <td className="py-3 px-4 text-right font-mono bg-indigo-500/5 dark:bg-indigo-500/10">
+                                              {marginInfo.cost <= 0 ? (
+                                                <span className="text-zinc-400 text-[10px] font-bold">N/A</span>
+                                              ) : (
+                                                <div className="flex flex-col items-end">
+                                                  <span className={`font-black ${marginInfo.marginPct < 20 ? "text-amber-600 dark:text-amber-400" : "text-indigo-600 dark:text-indigo-300"}`}>
+                                                    {marginInfo.marginPct.toFixed(1)}%
+                                                  </span>
+                                                  <span className="text-[9px] text-zinc-400 font-normal">
+                                                    (Markup: {marginInfo.markupPct.toFixed(0)}%)
+                                                  </span>
+                                                </div>
+                                              )}
+                                            </td>
+
+                                            {/* DIAGNÓSTICO DE PRECIO */}
+                                            <td className="py-3 px-4 text-center">
+                                              <div className="relative group/diag inline-block">
+                                                <span className={`px-2 py-0.5 text-[10px] font-extrabold rounded-md border inline-flex items-center gap-1 cursor-help ${marginInfo.badgeClass}`}>
+                                                  {marginInfo.label}
+                                                </span>
+
+                                                {/* Tooltip explicativo de estrategia de precio */}
+                                                <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 opacity-0 pointer-events-none group-hover/diag:opacity-100 transition-all duration-200 z-50 w-56 p-2 bg-slate-900 text-white dark:bg-zinc-900 dark:border dark:border-zinc-700 text-[10px] rounded-lg shadow-xl text-left leading-snug">
+                                                  <p className="font-bold border-b border-white/10 pb-1 mb-1 text-indigo-300">
+                                                    💡 Recomendación de Precio
+                                                  </p>
+                                                  <p className="text-zinc-200">{marginInfo.recommendation}</p>
+                                                </div>
+                                              </div>
+                                            </td>
 
                                       {/* VENTA ML */}
                                       <td className="py-3 px-4 text-right">
@@ -14476,9 +15242,9 @@ export default function App() {
                             </button>
                           </div>
                         </div>
-
                       </div>
-                    )}
+                    </div>
+                  )}
 
                     {stockSubSection === "transfer" && (
                       <div className="max-w-3xl mx-auto animate-fade-in space-y-6">

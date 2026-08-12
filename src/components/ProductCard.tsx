@@ -174,6 +174,12 @@ Precio: $${Math.round(product.price)}
     return url;
   };
 
+  const hasVariants = Boolean(
+    (product.variants && product.variants.length > 0) ||
+    (product.sizes && product.sizes.length > 0) ||
+    (product.colors && product.colors.length > 0)
+  );
+
   return (
     <div
       onMouseEnter={() => setIsHovered(true)}
@@ -247,13 +253,20 @@ Precio: $${Math.round(product.price)}
       </div>
 
       {/* Product Content Details */}
-      <div className={`flex flex-col flex-1 p-3 sm:p-4 bg-[#0B1730] min-w-0 ${layoutMode === "list" ? "justify-between" : ""}`}>
+      <div 
+        onClick={() => onViewProduct(product)}
+        className={`flex flex-col flex-1 p-3 sm:p-4 bg-[#0B1730] min-w-0 cursor-pointer ${layoutMode === "list" ? "justify-between" : ""}`}
+      >
         <div>
           {/* Product Title */}
           <div 
             className="relative mt-0.5 sm:mt-1 flex flex-col justify-start w-full min-w-0"
           >
             <h3 
+              onClick={(e) => {
+                e.stopPropagation();
+                onViewProduct(product);
+              }}
               className="text-[11px] sm:text-sm font-semibold text-[#F4EAD7] tracking-wide leading-snug group-hover:text-[#E6BF76] transition-colors cursor-pointer select-none block w-full line-clamp-2"
               title={product.name}
             >
@@ -290,7 +303,6 @@ Precio: $${Math.round(product.price)}
                   </span>
                 )}
               </div>
-              {/* Entrega Inmediata / Bajo Pedido label removed as per user request */}
             </div>
 
              {product.consultOnly ? (
@@ -308,7 +320,7 @@ Precio: $${Math.round(product.price)}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (product.stock > 0) {
+                  if (product.stock > 0 && !hasVariants) {
                     onAddToCart(product);
                   } else {
                     onViewProduct(product);
@@ -321,7 +333,7 @@ Precio: $${Math.round(product.price)}
                 }`}
               >
                 <ShoppingCart className="h-2.5 w-2.5" />
-                <span>{product.stock > 0 ? "Comprar" : "Detalles"}</span>
+                <span>{product.stock > 0 ? (hasVariants ? "Ver opciones" : "Comprar") : "Detalles"}</span>
               </button>
             )}
           </div>
@@ -342,7 +354,7 @@ Precio: $${Math.round(product.price)}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (product.stock > 0) {
+                  if (product.stock > 0 && !hasVariants) {
                     onAddToCart(product);
                   } else {
                     onViewProduct(product);
@@ -355,7 +367,7 @@ Precio: $${Math.round(product.price)}
                 }`}
               >
                 <ShoppingCart className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
-                <span>{product.stock > 0 ? "Comprar" : "Sin Stock"}</span>
+                <span>{product.stock > 0 ? (hasVariants ? "Ver opciones" : "Comprar") : "Sin Stock"}</span>
               </button>
             )}
           </div>

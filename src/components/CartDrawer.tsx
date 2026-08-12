@@ -1,4 +1,4 @@
-import { useState, useEffect, FormEvent } from "react";
+import { useState, useEffect, useMemo, FormEvent } from "react";
 import { X, ShoppingBag, Trash2, Plus, Minus, ArrowRight } from "lucide-react";
 import { CartItem, SiteSettings, Coupon, is3DProduct, isGenericSize, isGenericColor } from "../types";
 import { motion, AnimatePresence } from "motion/react";
@@ -70,19 +70,33 @@ export default function CartDrawer({
     return p.price;
   };
 
+  const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
+
   // Calculate prices
   const subtotal = cartItems.reduce(
     (sum, item) => sum + getItemPrice(item) * item.quantity,
     0
   );
 
-  const discountAmount = (subtotal * appliedDiscount) / 100;
+  const discountAmount = useMemo(() => {
+    if (!appliedCoupon) return 0;
+    const type = appliedCoupon.discount_type || 'percentage';
+    if (type === 'fixed') {
+      return Math.min(subtotal, appliedCoupon.discount_amount || 0);
+    }
+    if (type === 'free_shipping') {
+      return 0; // Bonified on shipping step
+    }
+    return (subtotal * (appliedCoupon.discount_percent || 0)) / 100;
+  }, [appliedCoupon, subtotal]);
+
   const total = Math.max(0, subtotal - discountAmount);
 
   const handleApplyPromo = () => {
     if (!promoCode) {
       setPromoStatus("none");
       setAppliedDiscount(0);
+      setAppliedCoupon(null);
       return;
     }
     const cleanPromo = promoCode.trim().toUpperCase();
@@ -102,13 +116,23 @@ export default function CartDrawer({
         }
       }
 
-      if (!isExpired) {
-        setAppliedDiscount(matchedCoupon.discount_percent);
+      let isExceededUses = false;
+      if (matchedCoupon.max_uses !== undefined && matchedCoupon.max_uses !== null &&
+          matchedCoupon.uses_count !== undefined && matchedCoupon.uses_count !== null) {
+        if (matchedCoupon.uses_count >= matchedCoupon.max_uses) {
+          isExceededUses = true;
+        }
+      }
+
+      if (!isExpired && !isExceededUses) {
+        setAppliedCoupon(matchedCoupon);
+        setAppliedDiscount(matchedCoupon.discount_percent || 0);
         setPromoStatus("success");
         return;
       }
     }
 
+    setAppliedCoupon(null);
     setAppliedDiscount(0);
     setPromoStatus("invalid");
   };

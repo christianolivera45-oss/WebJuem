@@ -215,11 +215,14 @@ export interface Subcategory {
 
 export interface Coupon {
   code: string;
+  discount_type?: 'percentage' | 'fixed' | 'free_shipping';
   discount_percent: number;
+  discount_amount?: number;
   expiration_date?: string; // ISO string on client side
   active?: boolean;
   max_uses?: number;
   uses_count?: number;
+  min_purchase?: number;
 }
 
 export interface AdminCredentials {

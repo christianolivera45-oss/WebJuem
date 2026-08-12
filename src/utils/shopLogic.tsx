@@ -89,14 +89,23 @@ export function calculateSubtotal(cartItems: CartItem[]): number {
 export function validateCoupon(
   couponCode: string, 
   coupons?: Coupon[], 
-  referenceDate: Date = new Date()
-): { success: boolean; discountPercent: number; message: string } {
+  referenceDate: Date = new Date(),
+  subtotal: number = 0,
+  shippingCost: number = 0
+): {
+  success: boolean;
+  discountPercent: number;
+  discountAmount: number;
+  discountType: 'percentage' | 'fixed' | 'free_shipping';
+  message: string;
+  coupon?: Coupon;
+} {
   if (!couponCode || !couponCode.trim()) {
-    return { success: false, discountPercent: 0, message: "Código de cupón vacío." };
+    return { success: false, discountPercent: 0, discountAmount: 0, discountType: 'percentage', message: "Código de cupón vacío." };
   }
   
   if (!coupons || coupons.length === 0) {
-    return { success: false, discountPercent: 0, message: "No hay cupones promocionales configurados en el sistema." };
+    return { success: false, discountPercent: 0, discountAmount: 0, discountType: 'percentage', message: "No hay cupones promocionales configurados en el sistema." };
   }
   
   const cleanPromo = couponCode.trim().toUpperCase();
@@ -105,20 +114,45 @@ export function validateCoupon(
   );
 
   if (!matchedCoupon) {
-    return { success: false, discountPercent: 0, message: "El código ingresado no existe o no es válido actualmente." };
+    return { success: false, discountPercent: 0, discountAmount: 0, discountType: 'percentage', message: "El código ingresado no existe o no es válido actualmente." };
   }
 
   if (matchedCoupon.expiration_date) {
     const expDate = new Date(matchedCoupon.expiration_date);
     if (expDate <= referenceDate) {
-      return { success: false, discountPercent: 0, message: "Este cupón ha expirado." };
+      return { success: false, discountPercent: 0, discountAmount: 0, discountType: 'percentage', message: "Este cupón ha expirado." };
     }
+  }
+
+  if (matchedCoupon.max_uses !== undefined && matchedCoupon.max_uses !== null &&
+      matchedCoupon.uses_count !== undefined && matchedCoupon.uses_count !== null) {
+    if (matchedCoupon.uses_count >= matchedCoupon.max_uses) {
+      return { success: false, discountPercent: 0, discountAmount: 0, discountType: 'percentage', message: "Este cupón ha alcanzado su límite de usos permitido." };
+    }
+  }
+
+  const discountType = matchedCoupon.discount_type || 'percentage';
+  let calcDiscount = 0;
+  let msg = '';
+
+  if (discountType === 'fixed') {
+    calcDiscount = Math.min(subtotal, matchedCoupon.discount_amount || 0);
+    msg = `¡Cupón verificado! Descuento de $${matchedCoupon.discount_amount || 0} UYU`;
+  } else if (discountType === 'free_shipping') {
+    calcDiscount = shippingCost;
+    msg = `¡Cupón verificado! Envío Gratis bonificado.`;
+  } else {
+    calcDiscount = Math.round((subtotal * (matchedCoupon.discount_percent || 0)) / 100);
+    msg = `¡Cupón verificado! Descuento de ${matchedCoupon.discount_percent}%`;
   }
 
   return { 
     success: true, 
     discountPercent: Number(matchedCoupon.discount_percent || 0), 
-    message: `¡Cupón verificado! Descuento de ${matchedCoupon.discount_percent}%` 
+    discountAmount: calcDiscount,
+    discountType,
+    message: msg,
+    coupon: matchedCoupon
   };
 }
 

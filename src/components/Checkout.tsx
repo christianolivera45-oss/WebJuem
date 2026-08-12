@@ -1203,6 +1203,7 @@ export default function Checkout({
 
   const [promoCode, setPromoCode] = useState("");
   const [appliedDiscount, setAppliedDiscount] = useState(0); // in percentage
+  const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
   const [promoStatus, setPromoStatus] = useState<"none" | "success" | "invalid">("none");
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -1268,10 +1269,21 @@ export default function Checkout({
   };
 
   const subtotalUYU = cartItems.reduce((acc, item) => acc + getItemPrice(item) * item.quantity, 0);
-  const discountAmountUYU = Math.round((subtotalUYU * appliedDiscount) / 100);
+  const discountAmountUYU = useMemo(() => {
+    if (!appliedCoupon) return Math.round((subtotalUYU * appliedDiscount) / 100);
+    const type = appliedCoupon.discount_type || 'percentage';
+    if (type === 'fixed') {
+      return Math.min(subtotalUYU, appliedCoupon.discount_amount || 0);
+    }
+    if (type === 'free_shipping') {
+      return 0;
+    }
+    return Math.round((subtotalUYU * (appliedCoupon.discount_percent || 0)) / 100);
+  }, [appliedCoupon, subtotalUYU, appliedDiscount]);
 
   // Check if current delivery matches free shipping guidelines
   const checkIfFreeShipping = (): boolean => {
+    if (appliedCoupon?.discount_type === 'free_shipping') return true;
     if (settings.freeShippingActive === false) return false;
     if (shippingType !== "delivery") return false;
 
@@ -1453,6 +1465,7 @@ export default function Checkout({
 
       if (isExceededUses) {
         setAppliedDiscount(0);
+        setAppliedCoupon(null);
         setPromoStatus("invalid");
         setErrorMessage("Este cupón ha alcanzado su límite de usos permitido.");
         return;
@@ -1460,17 +1473,20 @@ export default function Checkout({
 
       if (isExpired) {
         setAppliedDiscount(0);
+        setAppliedCoupon(null);
         setPromoStatus("invalid");
         setErrorMessage("Este cupón ha expirado/vencido.");
         return;
       }
 
-      setAppliedDiscount(matchedCoupon.discount_percent);
+      setAppliedCoupon(matchedCoupon);
+      setAppliedDiscount(matchedCoupon.discount_percent || 0);
       setPromoStatus("success");
       setErrorMessage("");
       return;
     }
 
+    setAppliedCoupon(null);
     setAppliedDiscount(0);
     setPromoStatus("invalid");
   };
