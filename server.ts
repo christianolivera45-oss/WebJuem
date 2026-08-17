@@ -2821,77 +2821,6 @@ async function startServer() {
     res.send("google-site-verification: googlef39a9e33a8b2671e.html");
   });
 
-  // Dynamic sitemap.xml generator for SEO optimization in Uruguay (Montevideo & Pinamar)
-  app.get("/sitemap.xml", (req, res) => {
-    res.setHeader("Content-Type", "application/xml");
-    
-    // Base URL of the store in production
-    const baseUrl = "https://juem.com.uy";
-    
-    // Generate slug helper
-    const getSlug = (text: string): string => {
-      if (!text) return "";
-      return text
-        .toLowerCase()
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "") // remove accents
-        .replace(/[^a-z0-9\s-]/g, "")    // remove special characters
-        .trim()
-        .replace(/\s+/g, "-")            // space to dash
-        .replace(/-+/g, "-");            // collapse multiple dashes
-    };
-
-    let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
-    xml += `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`;
-    
-    // 1. Add home page
-    xml += `  <url>\n`;
-    xml += `    <loc>${baseUrl}/</loc>\n`;
-    xml += `    <lastmod>${new Date().toISOString().split('T')[0]}</lastmod>\n`;
-    xml += `    <changefreq>daily</changefreq>\n`;
-    xml += `    <priority>1.0</priority>\n`;
-    xml += `  </url>\n`;
-
-    // 2. Add category pages
-    if (currentStoreState && currentStoreState.dbCategories) {
-      currentStoreState.dbCategories.forEach(cat => {
-        if (cat.active !== false) {
-          const catSlug = encodeURIComponent(cat.nombre);
-          xml += `  <url>\n`;
-          xml += `    <loc>${baseUrl}/?category=${catSlug}</loc>\n`;
-          xml += `    <changefreq>weekly</changefreq>\n`;
-          xml += `    <priority>0.8</priority>\n`;
-          xml += `  </url>\n`;
-        }
-      });
-    }
-
-    // 3. Add individual active product detail pages
-    if (currentStoreState && currentStoreState.products) {
-      currentStoreState.products.forEach(p => {
-        if (p.active !== false && p.paused !== true) {
-          const prodSlug = getSlug(p.name);
-          if (prodSlug) {
-            xml += `  <url>\n`;
-            xml += `    <loc>${baseUrl}/producto/${prodSlug}</loc>\n`;
-            xml += `    <changefreq>weekly</changefreq>\n`;
-            xml += `    <priority>0.7</priority>\n`;
-            xml += `  </url>\n`;
-          }
-        }
-      });
-    }
-
-    xml += `</urlset>`;
-    res.send(xml);
-  });
-
-  // Serve robots.txt explicitly to guide crawlers to our dynamic sitemap
-  app.get("/robots.txt", (req, res) => {
-    res.setHeader("Content-Type", "text/plain");
-    res.send(`User-agent: *\nAllow: /\n\nSitemap: https://juem.com.uy/sitemap.xml\n`);
-  });
-
   // Cargar estado de Postgres si DATABASE_URL está definido
   if (process.env.DATABASE_URL) {
     try {
@@ -7311,7 +7240,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
 
   // Helper to dynamically inject meta tags into index.html for high-tier search engine crawling
   async function injectSEO(htmlContent: string, req: express.Request): Promise<string> {
-    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    const baseUrl = req.get("host")?.includes("juem.com.uy") ? "https://juem.com.uy" : `${req.protocol}://${req.get("host")}`;
     const pathUrl = req.path;
     const segments = pathUrl.split("/").filter(Boolean);
     
@@ -7328,7 +7257,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     let title = settings.siteTitle || "Ventas Juem";
     let description = settings.siteSubtitle || "Moda, tecnología y accesorios con envío express a todo Uruguay.";
     let imgUrl = settings.bannerImageUrl || "https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=1200&q=80";
-    let canonicalUrl = `${baseUrl}${pathUrl}`;
+    let canonicalUrl = `${baseUrl}${pathUrl === "/" ? "" : pathUrl}`;
     let schemaJson = "";
 
     // Local-focused default description improvements
@@ -7359,6 +7288,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         if (product.imageUrl) {
           imgUrl = product.imageUrl;
         }
+        canonicalUrl = `${baseUrl}/producto/${generateSlug(product.name)}`;
         
         // Generate deterministic, realistic values based on the product's name for structured rich snippets
         const charSum = product.name.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
@@ -7482,6 +7412,25 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
           }
         }, null, 2);
       }
+    } else if (segments.length > 0 && segments[0] !== "admin") {
+      // Category and subcategory routes
+      const categories = state.dbCategories || [];
+      const matchedCat = categories.find(c => c.id.toLowerCase() === segments[0].toLowerCase() || generateSlug(c.nombre) === segments[0].toLowerCase());
+      if (matchedCat) {
+        title = `${matchedCat.nombre} | ${settings.siteTitle || "Ventas Juem"} Uruguay`;
+        description = `Explorá las mejores opciones de ${matchedCat.nombre.toLowerCase()} en Ventas Juem. Comprá online con envíos rápidos a todo Uruguay.`;
+        canonicalUrl = `${baseUrl}/${matchedCat.id}`;
+        
+        if (segments[1]) {
+          const subcategories = state.dbSubcategories || [];
+          const matchedSub = subcategories.find(s => s.categoria_id === matchedCat.id && (s.id.toLowerCase() === segments[1].toLowerCase() || generateSlug(s.nombre) === segments[1].toLowerCase()));
+          if (matchedSub) {
+            title = `${matchedSub.nombre} (${matchedCat.nombre}) | ${settings.siteTitle || "Ventas Juem"}`;
+            description = `Comprá ${matchedSub.nombre.toLowerCase()} en la categoría ${matchedCat.nombre.toLowerCase()} de Ventas Juem. Calidad y envíos a todo Uruguay.`;
+            canonicalUrl = `${baseUrl}/${matchedCat.id}/${matchedSub.id}`;
+          }
+        }
+      }
     }
 
     if (!schemaJson) {
@@ -7602,21 +7551,20 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
 
   // Dynamic robots.txt
   app.get("/robots.txt", (req, res) => {
-    const baseUrl = `${req.protocol}://${req.get("host")}`;
     res.type("text/plain");
     res.send(`User-agent: *
 Allow: /
 Disallow: /admin
 Disallow: /api/
 
-Sitemap: ${baseUrl}/sitemap.xml
-Sitemap: ${baseUrl}/sitemap-image.xml`);
+Sitemap: https://juem.com.uy/sitemap.xml
+Sitemap: https://juem.com.uy/sitemap-image.xml`);
   });
 
   // Dynamic sitemap.xml compiling current categories and products with slugs for Google Index
   app.get("/sitemap.xml", async (req, res) => {
     try {
-      const baseUrl = `${req.protocol}://${req.get("host")}`;
+      const baseUrl = "https://juem.com.uy";
       let state = currentStoreState;
       if (process.env.DATABASE_URL && !dbUnavailable) {
         try {
@@ -7639,16 +7587,30 @@ Sitemap: ${baseUrl}/sitemap-image.xml`);
       xml += `    <priority>1.0</priority>\n`;
       xml += `  </url>\n`;
       
-      // 2. Categories mapping
+      // 2. Categories & Subcategories mapping (Clean URLs without query parameters)
       const categories = state.dbCategories || [];
+      const subcategories = state.dbSubcategories || [];
       categories.forEach(cat => {
-        if (cat.active !== false) {
+        if (cat.active !== false && cat.id) {
           xml += `  <url>\n`;
-          xml += `    <loc>${baseUrl}/${cat.id}</loc>\n`;
+          xml += `    <loc>${baseUrl}/${encodeURIComponent(cat.id.toLowerCase())}</loc>\n`;
           xml += `    <lastmod>${lastModDate}</lastmod>\n`;
           xml += `    <changefreq>weekly</changefreq>\n`;
           xml += `    <priority>0.8</priority>\n`;
           xml += `  </url>\n`;
+
+          // Related subcategories
+          const relSubs = subcategories.filter(s => s.categoria_id === cat.id);
+          relSubs.forEach(sub => {
+            if (sub.id && sub.id !== "all") {
+              xml += `  <url>\n`;
+              xml += `    <loc>${baseUrl}/${encodeURIComponent(cat.id.toLowerCase())}/${encodeURIComponent(sub.id.toLowerCase())}</loc>\n`;
+              xml += `    <lastmod>${lastModDate}</lastmod>\n`;
+              xml += `    <changefreq>weekly</changefreq>\n`;
+              xml += `    <priority>0.7</priority>\n`;
+              xml += `  </url>\n`;
+            }
+          });
         }
       });
       
@@ -7656,13 +7618,16 @@ Sitemap: ${baseUrl}/sitemap-image.xml`);
       const products = state.products || [];
       products.forEach(p => {
         const isWithStock = p.stock !== undefined ? p.stock > 0 : true;
-        if (isWithStock && p.paused !== true && p.active !== false) {
-          xml += `  <url>\n`;
-          xml += `    <loc>${baseUrl}/producto/${generateSlug(p.name)}</loc>\n`;
-          xml += `    <lastmod>${p.createdAt ? p.createdAt.split("T")[0] : lastModDate}</lastmod>\n`;
-          xml += `    <changefreq>weekly</changefreq>\n`;
-          xml += `    <priority>0.9</priority>\n`;
-          xml += `  </url>\n`;
+        if (isWithStock && p.paused !== true && p.active !== false && p.name) {
+          const prodSlug = generateSlug(p.name);
+          if (prodSlug) {
+            xml += `  <url>\n`;
+            xml += `    <loc>${baseUrl}/producto/${prodSlug}</loc>\n`;
+            xml += `    <lastmod>${p.createdAt ? p.createdAt.split("T")[0] : lastModDate}</lastmod>\n`;
+            xml += `    <changefreq>weekly</changefreq>\n`;
+            xml += `    <priority>0.9</priority>\n`;
+            xml += `  </url>\n`;
+          }
         }
       });
       
@@ -7679,7 +7644,7 @@ Sitemap: ${baseUrl}/sitemap-image.xml`);
   // Dynamic /sitemap-image.xml dedicated sitemap file mapping all high-quality product images for Google Rich Search Results
   app.get("/sitemap-image.xml", async (req, res) => {
     try {
-      const baseUrl = `${req.protocol}://${req.get("host")}`;
+      const baseUrl = "https://juem.com.uy";
       let state = currentStoreState;
       if (process.env.DATABASE_URL && !dbUnavailable) {
         try {
@@ -7696,14 +7661,17 @@ Sitemap: ${baseUrl}/sitemap-image.xml`);
       const products = state.products || [];
       products.forEach(p => {
         const isWithStock = p.stock !== undefined ? p.stock > 0 : true;
-        if (isWithStock && p.paused !== true && p.active !== false && p.imageUrl) {
-          xml += `  <url>\n`;
-          xml += `    <loc>${baseUrl}/producto/${generateSlug(p.name)}</loc>\n`;
-          xml += `    <image:image>\n`;
-          xml += `      <image:loc>${p.imageUrl.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</image:loc>\n`;
-          xml += `      <image:title>${p.name.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</image:title>\n`;
-          xml += `    </image:image>\n`;
-          xml += `  </url>\n`;
+        if (isWithStock && p.paused !== true && p.active !== false && p.imageUrl && p.name) {
+          const prodSlug = generateSlug(p.name);
+          if (prodSlug) {
+            xml += `  <url>\n`;
+            xml += `    <loc>${baseUrl}/producto/${prodSlug}</loc>\n`;
+            xml += `    <image:image>\n`;
+            xml += `      <image:loc>${p.imageUrl.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</image:loc>\n`;
+            xml += `      <image:title>${p.name.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</image:title>\n`;
+            xml += `    </image:image>\n`;
+            xml += `  </url>\n`;
+          }
         }
       });
 
@@ -7724,9 +7692,12 @@ Sitemap: ${baseUrl}/sitemap-image.xml`);
       return next();
     }
 
-    // Redirect category query parameters to clean, indexable URL paths (Solves duplicate/alternative page indexing issues)
-    if (req.query.category) {
-      const catQuery = String(req.query.category);
+    // Redirect category query parameters to clean, indexable URL paths (Solves duplicate/alternative page indexing issues in Google Search Console)
+    if (req.query.category !== undefined) {
+      const catQuery = String(req.query.category || "").trim();
+      if (!catQuery) {
+        return res.redirect(301, "/");
+      }
       let state = currentStoreState;
       if (process.env.DATABASE_URL && !dbUnavailable) {
         try {
@@ -7735,7 +7706,7 @@ Sitemap: ${baseUrl}/sitemap-image.xml`);
       }
       
       const normalize = (str: string) => 
-        str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+        str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 
       const categories = state.dbCategories || [];
       const matchedCat = categories.find(c => {
@@ -7748,12 +7719,44 @@ Sitemap: ${baseUrl}/sitemap-image.xml`);
       if (matchedCat) {
         let targetPath = `/${matchedCat.id}`;
         if (req.query.subcategory) {
-          targetPath += `/${String(req.query.subcategory).toLowerCase()}`;
+          const subQuery = normalize(String(req.query.subcategory));
+          const subcategories = state.dbSubcategories || [];
+          const matchedSub = subcategories.find(s => s.categoria_id === matchedCat.id && (normalize(s.id) === subQuery || normalize(s.nombre) === subQuery));
+          if (matchedSub) {
+            targetPath += `/${matchedSub.id}`;
+          }
         }
         console.log(`[SEO Redirect 301] Query parameter category redirecting from ${req.url} to ${targetPath}`);
         return res.redirect(301, targetPath);
+      } else {
+        // If the category is obsolete or not found (e.g. legacy / seasonal categories like "Juguetes" or "Día del Niño"), 301 permanent redirect to clean homepage
+        console.log(`[SEO Redirect 301] Legacy/unknown category parameter redirecting from ${req.url} to /`);
+        return res.redirect(301, "/");
       }
     }
+
+    // Redirect product query parameters to clean canonical product slug URLs
+    if (req.query.product !== undefined) {
+      const prodQuery = String(req.query.product || "").trim();
+      if (!prodQuery) {
+        return res.redirect(301, "/");
+      }
+      let state = currentStoreState;
+      if (process.env.DATABASE_URL && !dbUnavailable) {
+        try {
+          state = await getDbState();
+        } catch (e) {}
+      }
+      const products = state.products || [];
+      const prod = products.find(p => String(p.id) === prodQuery || (p.name && generateSlug(p.name) === prodQuery));
+      if (prod && prod.name) {
+        const prodSlug = generateSlug(prod.name);
+        return res.redirect(301, `/producto/${prodSlug}`);
+      } else {
+        return res.redirect(301, "/");
+      }
+    }
+
     next();
   });
 
