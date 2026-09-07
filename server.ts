@@ -7257,7 +7257,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     let title = settings.siteTitle || "Ventas Juem";
     let description = settings.siteSubtitle || "Moda, tecnología y accesorios con envío express a todo Uruguay.";
     let imgUrl = settings.bannerImageUrl || "https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=1200&q=80";
-    let canonicalUrl = `${baseUrl}${pathUrl === "/" ? "" : pathUrl}`;
+    let canonicalUrl = pathUrl === "/" ? `${baseUrl}/` : `${baseUrl}${pathUrl}`;
     let schemaJson = "";
 
     // Local-focused default description improvements
@@ -7504,7 +7504,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       `<meta name="description" content="${description.replace(/"/g, '&quot;')}" id="seo-description" />`
     );
     output = output.replace(
-      /<link rel="canonical" href=".*?" id="seo-canonical" \/>/gi,
+      /<link[^>]*id="seo-canonical"[^>]*\/?>/gi,
       `<link rel="canonical" href="${canonicalUrl}" id="seo-canonical" />`
     );
 
@@ -7522,7 +7522,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       `<meta property="og:image" content="${imgUrl}" id="og-image" />`
     );
     output = output.replace(
-      /<meta property="og:url" content=".*?" id="og-url" \/>/gi, 
+      /<meta[^>]*id="og-url"[^>]*\/?>/gi, 
       `<meta property="og:url" content="${canonicalUrl}" id="og-url" />`
     );
 
@@ -7690,6 +7690,19 @@ Sitemap: https://juem.com.uy/sitemap-image.xml`);
   app.use(async (req, res, next) => {
     if (req.path.includes(".") || req.path.startsWith("/api/")) {
       return next();
+    }
+
+    // 1. Remove trailing slashes (e.g. /ropa/ -> /ropa) except root "/"
+    if (req.path.length > 1 && req.path.endsWith("/")) {
+      const cleanPath = req.path.replace(/\/+$/, "");
+      const queryString = req.url.includes("?") ? req.url.slice(req.path.length) : "";
+      return res.redirect(301, cleanPath + queryString);
+    }
+
+    // 2. Normalize path to lowercase (e.g. /Ropa -> /ropa)
+    if (req.path !== req.path.toLowerCase()) {
+      const queryString = req.url.includes("?") ? req.url.slice(req.path.length) : "";
+      return res.redirect(301, req.path.toLowerCase() + queryString);
     }
 
     // Redirect category query parameters to clean, indexable URL paths (Solves duplicate/alternative page indexing issues in Google Search Console)
