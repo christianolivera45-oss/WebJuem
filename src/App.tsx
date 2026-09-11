@@ -48,6 +48,7 @@ import {
   Box,
   ChevronDown,
   HelpCircle,
+  ExternalLink,
   Menu,
   X,
   Ruler,
@@ -8754,7 +8755,16 @@ export default function App() {
                                       {p.codigo}
                                     </span>
                                   )}
-                                  <h5 className="font-semibold text-xs truncate text-[#F4EAD7]">{p.name}</h5>
+                                  <a
+                                    href={`/producto/${generateSlug(p.name)}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="font-semibold text-xs truncate text-[#F4EAD7] hover:text-[#E6BF76] hover:underline transition-colors cursor-pointer inline-flex items-center gap-1.5 group/item-link max-w-full"
+                                    title={`Ver "${p.name}" en la web (abre en nueva pestaña)`}
+                                  >
+                                    <span className="truncate">{p.name}</span>
+                                    <ExternalLink className="h-3 w-3 text-[#E6BF76]/60 group-hover/item-link:text-[#E6BF76] group-hover/item-link:translate-x-0.5 transition-all shrink-0" />
+                                  </a>
                                   {p.featured && (
                                     <span className="bg-amber-500/10 border border-amber-500/35 text-amber-500 rounded text-[9px] font-black uppercase px-2 py-0.5 tracking-wider font-mono flex items-center gap-1">
                                       <span>⭐ Destacado</span>
@@ -8797,6 +8807,15 @@ export default function App() {
                               </div>
 
                               <div className="flex items-center gap-1.5">
+                                <a
+                                  href={`/producto/${generateSlug(p.name)}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="p-1.5 rounded-lg bg-[#050B1A] border border-[#D4A55A]/25 hover:bg-[#D4A55A]/20 hover:text-[#E6BF76] text-[#E6BF76]/80 transition cursor-pointer flex items-center justify-center"
+                                  title={`Ver "${p.name}" en la web (abre en nueva pestaña)`}
+                                >
+                                  <ExternalLink className="h-3.5 w-3.5" />
+                                </a>
                                 <button
                                   onClick={() => handleToggleFeatured(p.id)}
                                   className={`p-1.5 rounded-lg border transition cursor-pointer ${
@@ -14900,9 +14919,16 @@ export default function App() {
                                             <td className="py-3 px-4 min-w-[200px]">
                                               <div className="flex flex-col">
                                                 <div className="flex items-center gap-1.5 flex-wrap">
-                                                  <span className="font-bold text-slate-800 dark:text-zinc-200 line-clamp-1 leading-snug">
-                                                    {item.name}
-                                                  </span>
+                                                  <a
+                                                    href={`/producto/${generateSlug(item.name)}`}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="font-bold text-slate-800 dark:text-zinc-200 line-clamp-1 leading-snug hover:text-indigo-600 dark:hover:text-indigo-400 hover:underline transition-colors cursor-pointer inline-flex items-center gap-1 group/stock-link"
+                                                    title={`Ver "${item.name}" en la web (abre en nueva pestaña)`}
+                                                  >
+                                                    <span>{item.name}</span>
+                                                    <ExternalLink className="h-3 w-3 opacity-0 group-hover/stock-link:opacity-100 transition-opacity shrink-0" />
+                                                  </a>
                                                   {item.productObj?.isCombo && (
                                                     <span className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase tracking-wide bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 py-0.5 px-1.5 rounded" title="Artículo Compuesto (Combo)">
                                                       📦 Compuesto
