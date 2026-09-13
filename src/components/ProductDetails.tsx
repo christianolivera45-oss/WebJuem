@@ -711,7 +711,7 @@ Me gustaría coordinar stock, fabricación y envío.`;
   const productSchema = useMemo(() => {
     const sku = product.codigo || `JUEM-${product.id}`;
     const productUrl = typeof window !== "undefined"
-      ? `${window.location.protocol}//${window.location.host}/producto/${encodeURIComponent(product.name.toLowerCase().replace(/[^a-z0-9]+/g, "-"))}`
+      ? `${window.location.protocol}//${window.location.host}/producto/${encodeURIComponent((product.name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-"))}`
       : `https://juem.com.uy/producto/${product.id}`;
 
     const imageUrls = product.imagenes && product.imagenes.length > 0

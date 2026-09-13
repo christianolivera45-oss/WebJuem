@@ -330,8 +330,12 @@ export interface ShippingOrigin {
 
 export interface StockTransfer {
   id: string;
+  transferCode?: string;
+  batchId?: string;
   productId: string;
   productName: string;
+  sku?: string;
+  imageUrl?: string;
   variantId?: string;
   variantName?: string;
   quantity: number;

@@ -2606,6 +2606,18 @@ async function initPostgresStore(): Promise<ShopState | null> {
         to_deposito VARCHAR(50) NOT NULL,
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
+      ALTER TABLE public.stock_transfers ADD COLUMN IF NOT EXISTS transfer_code VARCHAR(50);
+      ALTER TABLE public.stock_transfers ADD COLUMN IF NOT EXISTS batch_id VARCHAR(50);
+      ALTER TABLE public.stock_transfers ADD COLUMN IF NOT EXISTS sku VARCHAR(100);
+      ALTER TABLE public.stock_transfers ADD COLUMN IF NOT EXISTS image_url TEXT;
+      CREATE INDEX IF NOT EXISTS idx_stock_transfers_code ON public.stock_transfers (transfer_code);
+      CREATE INDEX IF NOT EXISTS idx_stock_transfers_batch ON public.stock_transfers (batch_id);
+
+      -- Consolidate any unassigned or initial transfer orders made together into a single unified transfer code
+      UPDATE public.stock_transfers 
+      SET transfer_code = 'TRF-20260912-0001', 
+          batch_id = 'batch-20260912-0001' 
+      WHERE transfer_code IS NULL OR transfer_code LIKE 'TRF-TRANS-%';
     `);
 
     // Create public.admin_tasks table
@@ -4411,24 +4423,36 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       const pool = getDbPool();
       if (pool && !dbUnavailable) {
         const transfersRes = await pool.query(`
-          SELECT id, product_id, product_name, variant_id, variant_name, quantity, from_deposito, to_deposito, created_at 
+          SELECT id, transfer_code, batch_id, product_id, product_name, sku, image_url, variant_id, variant_name, quantity, from_deposito, to_deposito, created_at 
           FROM public.stock_transfers 
           ORDER BY created_at DESC;
         `);
-        const transfers = transfersRes.rows.map(row => ({
-          id: row.id,
-          productId: row.product_id,
-          productName: row.product_name,
-          variantId: row.variant_id || undefined,
-          variantName: row.variant_name || undefined,
-          quantity: Number(row.quantity),
-          fromDeposito: row.from_deposito,
-          toDeposito: row.to_deposito,
-          createdAt: row.created_at
-        }));
+        const transfers = transfersRes.rows.map(row => {
+          const rawCode = row.transfer_code || (row.batch_id ? `TRF-${row.batch_id.replace('batch-', '').toUpperCase()}` : 'TRF-20260912-0001');
+          return {
+            id: row.id,
+            transferCode: rawCode,
+            batchId: row.batch_id || row.transfer_code || 'batch-20260912-0001',
+            productId: row.product_id,
+            productName: row.product_name,
+            sku: row.sku || undefined,
+            imageUrl: row.image_url || undefined,
+            variantId: row.variant_id || undefined,
+            variantName: row.variant_name || undefined,
+            quantity: Number(row.quantity),
+            fromDeposito: row.from_deposito,
+            toDeposito: row.to_deposito,
+            createdAt: row.created_at
+          };
+        });
         res.json({ success: true, transfers });
       } else {
-        res.json({ success: true, transfers: currentStoreState.stockTransfers || [] });
+        const transfers = (currentStoreState.stockTransfers || []).map((t: any) => ({
+          ...t,
+          transferCode: t.transferCode || (t.batchId ? `TRF-${t.batchId.replace('batch-', '').toUpperCase()}` : 'TRF-20260912-0001'),
+          batchId: t.batchId || t.transferCode || 'batch-20260912-0001'
+        }));
+        res.json({ success: true, transfers });
       }
     } catch (err: any) {
       console.error("Error reading stock transfers:", err);
@@ -4436,91 +4460,149 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     }
   });
 
-  // POST new stock transfer (Protected)
+  // POST new stock transfer (Protected) - Supports both single item and bulk items batch with unique code
   app.post("/api/stock-transfers", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!isValidToken(authHeader)) {
       return res.status(403).json({ success: false, message: "Acceso denegado. Se requiere autenticación de administrador principal." });
     }
-    const { productId, productName, variantId, variantName, quantity, fromDeposito, toDeposito } = req.body;
-    if (!productId || !productName || !quantity || !fromDeposito || !toDeposito || quantity <= 0) {
-      return res.status(400).json({ success: false, message: "Faltan parámetros requeridos o cantidad inválida." });
+    
+    const { fromDeposito, toDeposito } = req.body;
+    if (!fromDeposito || !toDeposito) {
+      return res.status(400).json({ success: false, message: "Faltan depósitos de origen o destino." });
     }
     if (fromDeposito === toDeposito) {
       return res.status(400).json({ success: false, message: "Los depósitos de origen y destino deben ser diferentes." });
     }
 
+    // Determine items list (either an array of items or single payload)
+    let transferItemsList: Array<{
+      productId: string;
+      productName: string;
+      variantId?: string;
+      variantName?: string;
+      sku?: string;
+      imageUrl?: string;
+      quantity: number;
+    }> = [];
+
+    if (Array.isArray(req.body.items) && req.body.items.length > 0) {
+      transferItemsList = req.body.items.map((i: any) => ({
+        productId: String(i.productId),
+        productName: String(i.productName),
+        variantId: i.variantId ? String(i.variantId) : undefined,
+        variantName: i.variantName ? String(i.variantName) : undefined,
+        sku: i.sku ? String(i.sku) : undefined,
+        imageUrl: i.imageUrl ? String(i.imageUrl) : undefined,
+        quantity: Number(i.quantity) || 1
+      }));
+    } else if (req.body.productId && req.body.productName && req.body.quantity > 0) {
+      transferItemsList = [{
+        productId: String(req.body.productId),
+        productName: String(req.body.productName),
+        variantId: req.body.variantId ? String(req.body.variantId) : undefined,
+        variantName: req.body.variantName ? String(req.body.variantName) : undefined,
+        sku: req.body.sku ? String(req.body.sku) : undefined,
+        imageUrl: req.body.imageUrl ? String(req.body.imageUrl) : undefined,
+        quantity: Number(req.body.quantity)
+      }];
+    } else {
+      return res.status(400).json({ success: false, message: "No se proporcionaron artículos válidos para transferir." });
+    }
+
+    // Generate readable unique transfer code (e.g., TRF-20260912-7482)
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+    const transferCode = `TRF-${yyyy}${mm}${dd}-${randomSuffix}`;
+    const batchId = `batch-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
+    const createdAt = now.toISOString();
+
     try {
       const pool = getDbPool();
-      const transferId = "trans-" + Math.random().toString(36).substring(2, 10);
-      const createdAt = new Date().toISOString();
 
       if (pool && !dbUnavailable) {
         const client = await pool.connect();
         try {
           await client.query("BEGIN;");
 
-          // Determine table and update query
-          if (variantId) {
-            // Check existing stock first
-            const checkRes = await client.query(
-              "SELECT stock_pinamar, stock_montevideo FROM public.product_variants WHERE id = $1 FOR UPDATE;",
-              [variantId]
-            );
-            if (checkRes.rows.length === 0) {
-              throw new Error("Variante no encontrada.");
-            }
-            const currentFromStock = fromDeposito === "Pinamar" ? checkRes.rows[0].stock_pinamar : checkRes.rows[0].stock_montevideo;
-            if (currentFromStock < quantity) {
-              throw new Error(`Stock insuficiente en ${fromDeposito}. Disponible: ${currentFromStock}.`);
+          for (const item of transferItemsList) {
+            const transferId = "trans-" + Math.random().toString(36).substring(2, 10);
+            
+            if (item.variantId) {
+              // Check existing stock of variant
+              const checkRes = await client.query(
+                "SELECT stock_pinamar, stock_montevideo FROM public.product_variants WHERE id = $1 FOR UPDATE;",
+                [item.variantId]
+              );
+              if (checkRes.rows.length === 0) {
+                throw new Error(`Variante no encontrada para el artículo "${item.productName}".`);
+              }
+              const currentFromStock = fromDeposito === "Pinamar" ? checkRes.rows[0].stock_pinamar : checkRes.rows[0].stock_montevideo;
+              if (currentFromStock < item.quantity) {
+                throw new Error(`Stock insuficiente en ${fromDeposito} para "${item.productName} (${item.variantName || 'Variante'})". Disponible: ${currentFromStock}u, Solicitado: ${item.quantity}u.`);
+              }
+
+              if (fromDeposito === "Pinamar") {
+                await client.query(
+                  "UPDATE public.product_variants SET stock_pinamar = GREATEST(0, stock_pinamar - $1), stock_montevideo = stock_montevideo + $1, updated_at = NOW() WHERE id = $2;",
+                  [item.quantity, item.variantId]
+                );
+              } else {
+                await client.query(
+                  "UPDATE public.product_variants SET stock_montevideo = GREATEST(0, stock_montevideo - $1), stock_pinamar = stock_pinamar + $1, updated_at = NOW() WHERE id = $2;",
+                  [item.quantity, item.variantId]
+                );
+              }
+            } else {
+              // Check existing stock of product
+              const checkRes = await client.query(
+                "SELECT stock_pinamar, stock_montevideo FROM public.products WHERE id = $1 FOR UPDATE;",
+                [item.productId]
+              );
+              if (checkRes.rows.length === 0) {
+                throw new Error(`Producto "${item.productName}" no encontrado.`);
+              }
+              const currentFromStock = fromDeposito === "Pinamar" ? checkRes.rows[0].stock_pinamar : checkRes.rows[0].stock_montevideo;
+              if (currentFromStock < item.quantity) {
+                throw new Error(`Stock insuficiente en ${fromDeposito} para "${item.productName}". Disponible: ${currentFromStock}u, Solicitado: ${item.quantity}u.`);
+              }
+
+              if (fromDeposito === "Pinamar") {
+                await client.query(
+                  "UPDATE public.products SET stock_pinamar = GREATEST(0, stock_pinamar - $1), stock_montevideo = stock_montevideo + $1, updated_at = NOW() WHERE id = $2;",
+                  [item.quantity, item.productId]
+                );
+              } else {
+                await client.query(
+                  "UPDATE public.products SET stock_montevideo = GREATEST(0, stock_montevideo - $1), stock_pinamar = stock_pinamar + $1, updated_at = NOW() WHERE id = $2;",
+                  [item.quantity, item.productId]
+                );
+              }
             }
 
-            // Perform transfer and sync total stock too
-            if (fromDeposito === "Pinamar") {
-              await client.query(
-                "UPDATE public.product_variants SET stock_pinamar = GREATEST(0, stock_pinamar - $1), stock_montevideo = stock_montevideo + $1, updated_at = NOW() WHERE id = $2;",
-                [quantity, variantId]
-              );
-            } else {
-              await client.query(
-                "UPDATE public.product_variants SET stock_montevideo = GREATEST(0, stock_montevideo - $1), stock_pinamar = stock_pinamar + $1, updated_at = NOW() WHERE id = $2;",
-                [quantity, variantId]
-              );
-            }
-          } else {
-            // Check existing stock first at product level
-            const checkRes = await client.query(
-              "SELECT stock_pinamar, stock_montevideo FROM public.products WHERE id = $1 FOR UPDATE;",
-              [productId]
+            // Insert stock_transfer record with transfer_code and batch_id
+            await client.query(
+              `INSERT INTO public.stock_transfers (id, transfer_code, batch_id, product_id, product_name, sku, image_url, variant_id, variant_name, quantity, from_deposito, to_deposito, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW());`,
+              [
+                transferId,
+                transferCode,
+                batchId,
+                item.productId,
+                item.productName,
+                item.sku || null,
+                item.imageUrl || null,
+                item.variantId || null,
+                item.variantName || null,
+                item.quantity,
+                fromDeposito,
+                toDeposito
+              ]
             );
-            if (checkRes.rows.length === 0) {
-              throw new Error("Producto no encontrado.");
-            }
-            const currentFromStock = fromDeposito === "Pinamar" ? checkRes.rows[0].stock_pinamar : checkRes.rows[0].stock_montevideo;
-            if (currentFromStock < quantity) {
-              throw new Error(`Stock insuficiente en ${fromDeposito}. Disponible: ${currentFromStock}.`);
-            }
-
-            // Perform transfer
-            if (fromDeposito === "Pinamar") {
-              await client.query(
-                "UPDATE public.products SET stock_pinamar = GREATEST(0, stock_pinamar - $1), stock_montevideo = stock_montevideo + $1, updated_at = NOW() WHERE id = $2;",
-                [quantity, productId]
-              );
-            } else {
-              await client.query(
-                "UPDATE public.products SET stock_montevideo = GREATEST(0, stock_montevideo - $1), stock_pinamar = stock_pinamar + $1, updated_at = NOW() WHERE id = $2;",
-                [quantity, productId]
-              );
-            }
           }
-
-          // Insert transfer log
-          await client.query(
-            `INSERT INTO public.stock_transfers (id, product_id, product_name, variant_id, variant_name, quantity, from_deposito, to_deposito, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW());`,
-            [transferId, String(productId), productName, variantId || null, variantName || null, quantity, fromDeposito, toDeposito]
-          );
 
           await client.query("COMMIT;");
         } catch (txErr: any) {
@@ -4530,77 +4612,96 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
           client.release();
         }
 
-        // Force memory state reload to match DB
+        // Force memory state reload
         const dbState = await getDbState();
         currentStoreState = dbState;
       } else {
         // Fallback for file-based JSON store
         const products = currentStoreState.products || [];
-        const product = products.find(p => String(p.id) === String(productId));
-        if (!product) {
-          return res.status(404).json({ success: false, message: "Producto no encontrado en la memoria de la tienda." });
-        }
+        const logsToAdd: any[] = [];
 
-        if (variantId) {
-          const variant = product.variants?.find(v => String(v.id) === String(variantId));
-          if (!variant) {
-            return res.status(404).json({ success: false, message: "Variante no encontrada." });
-          }
-          const currentFromStock = fromDeposito === "Pinamar" ? (variant.stockPinamar || 0) : (variant.stockMontevideo || 0);
-          if (currentFromStock < quantity) {
-            return res.status(400).json({ success: false, message: `Stock insuficiente en ${fromDeposito}. Disponible: ${currentFromStock}.` });
+        for (const item of transferItemsList) {
+          const product = products.find(p => String(p.id) === String(item.productId));
+          if (!product) {
+            return res.status(404).json({ success: false, message: `Producto "${item.productName}" no encontrado en memoria.` });
           }
 
-          if (fromDeposito === "Pinamar") {
-            variant.stockPinamar = Math.max(0, (variant.stockPinamar || 0) - quantity);
-            variant.stockMontevideo = (variant.stockMontevideo || 0) + quantity;
+          if (item.variantId) {
+            const variant = product.variants?.find(v => String(v.id) === String(item.variantId));
+            if (!variant) {
+              return res.status(404).json({ success: false, message: `Variante no encontrada para "${item.productName}".` });
+            }
+            const currentFromStock = fromDeposito === "Pinamar" ? (variant.stockPinamar || 0) : (variant.stockMontevideo || 0);
+            if (currentFromStock < item.quantity) {
+              return res.status(400).json({ success: false, message: `Stock insuficiente en ${fromDeposito} para "${item.productName}". Disponible: ${currentFromStock}u.` });
+            }
+
+            if (fromDeposito === "Pinamar") {
+              variant.stockPinamar = Math.max(0, (variant.stockPinamar || 0) - item.quantity);
+              variant.stockMontevideo = (variant.stockMontevideo || 0) + item.quantity;
+            } else {
+              variant.stockMontevideo = Math.max(0, (variant.stockMontevideo || 0) - item.quantity);
+              variant.stockPinamar = (variant.stockPinamar || 0) + item.quantity;
+            }
           } else {
-            variant.stockMontevideo = Math.max(0, (variant.stockMontevideo || 0) - quantity);
-            variant.stockPinamar = (variant.stockPinamar || 0) + quantity;
-          }
-        } else {
-          const currentFromStock = fromDeposito === "Pinamar" ? (product.stockPinamar || 0) : (product.stockMontevideo || 0);
-          if (currentFromStock < quantity) {
-            return res.status(400).json({ success: false, message: `Stock insuficiente en ${fromDeposito}. Disponible: ${currentFromStock}.` });
+            const currentFromStock = fromDeposito === "Pinamar" ? (product.stockPinamar || 0) : (product.stockMontevideo || 0);
+            if (currentFromStock < item.quantity) {
+              return res.status(400).json({ success: false, message: `Stock insuficiente en ${fromDeposito} para "${item.productName}". Disponible: ${currentFromStock}u.` });
+            }
+
+            if (fromDeposito === "Pinamar") {
+              product.stockPinamar = Math.max(0, (product.stockPinamar || 0) - item.quantity);
+              product.stockMontevideo = (product.stockMontevideo || 0) + item.quantity;
+            } else {
+              product.stockMontevideo = Math.max(0, (product.stockMontevideo || 0) - item.quantity);
+              product.stockPinamar = (product.stockPinamar || 0) + item.quantity;
+            }
           }
 
-          if (fromDeposito === "Pinamar") {
-            product.stockPinamar = Math.max(0, (product.stockPinamar || 0) - quantity);
-            product.stockMontevideo = (product.stockMontevideo || 0) + quantity;
-          } else {
-            product.stockMontevideo = Math.max(0, (product.stockMontevideo || 0) - quantity);
-            product.stockPinamar = (product.stockPinamar || 0) + quantity;
-          }
+          logsToAdd.push({
+            id: "trans-" + Math.random().toString(36).substring(2, 10),
+            transferCode,
+            batchId,
+            productId: item.productId,
+            productName: item.productName,
+            sku: item.sku || product.codigo,
+            imageUrl: item.imageUrl || product.imageUrl,
+            variantId: item.variantId || undefined,
+            variantName: item.variantName || undefined,
+            quantity: item.quantity,
+            fromDeposito,
+            toDeposito,
+            createdAt
+          });
         }
-
-        const logRecord = {
-          id: transferId,
-          productId: String(productId),
-          productName,
-          variantId: variantId || undefined,
-          variantName: variantName || undefined,
-          quantity,
-          fromDeposito,
-          toDeposito,
-          createdAt
-        };
 
         if (!currentStoreState.stockTransfers) {
           currentStoreState.stockTransfers = [];
         }
-        currentStoreState.stockTransfers.unshift(logRecord);
-
+        currentStoreState.stockTransfers.unshift(...logsToAdd);
         await saveDbState(currentStoreState);
       }
 
-      res.json({ success: true, message: "Transferencia de mercadería registrada exitosamente." });
+      const totalQuantity = transferItemsList.reduce((acc, curr) => acc + curr.quantity, 0);
+
+      res.json({
+        success: true,
+        transferCode,
+        batchId,
+        totalItems: transferItemsList.length,
+        totalQuantity,
+        fromDeposito,
+        toDeposito,
+        createdAt,
+        message: `Traslado ${transferCode} registrado exitosamente (${transferItemsList.length} artículos, ${totalQuantity} unidades).`
+      });
     } catch (err: any) {
       console.error("Error making stock transfer:", err);
       res.status(500).json({ success: false, message: err.message || "Error al realizar la transferencia.", error: err.message });
     }
   });
 
-  // DELETE /api/stock-transfers/:id (Protected - Revert stock transfer)
+  // DELETE /api/stock-transfers/:id (Protected - Revert stock transfer by ID, transferCode or batchId)
   app.delete("/api/stock-transfers/:id", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!isValidToken(authHeader)) {
@@ -4616,69 +4717,65 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         try {
           await client.query("BEGIN;");
 
-          // 1. Get the transfer record to know details
+          // 1. Get all matching transfer records (could be single ID, batchId or transferCode)
           const transferRes = await client.query(
-            "SELECT id, product_id, product_name, variant_id, quantity, from_deposito, to_deposito FROM public.stock_transfers WHERE id = $1 FOR UPDATE;",
+            "SELECT id, transfer_code, batch_id, product_id, product_name, variant_id, quantity, from_deposito, to_deposito FROM public.stock_transfers WHERE id = $1 OR transfer_code = $1 OR batch_id = $1 FOR UPDATE;",
             [id]
           );
 
           if (transferRes.rows.length === 0) {
-            throw new Error("La transferencia no existe o ya fue revertida.");
+            throw new Error("El traslado o transferencia no existe o ya fue revertido.");
           }
 
-          const transfer = transferRes.rows[0];
-          const productId = transfer.product_id;
-          const variantId = transfer.variant_id;
-          const quantity = Number(transfer.quantity);
-          const fromDeposito = transfer.from_deposito;
-          const toDeposito = transfer.to_deposito;
+          // 2. Revert stock for all matching records
+          for (const transfer of transferRes.rows) {
+            const productId = transfer.product_id;
+            const variantId = transfer.variant_id;
+            const quantity = Number(transfer.quantity);
+            const fromDeposito = transfer.from_deposito;
+            const toDeposito = transfer.to_deposito;
 
-          // 2. Revert the stock (From -> To originally, so To -> From now)
-          // To gets decremented by quantity, From gets incremented by quantity
-          if (variantId) {
-            // Check existing stock of variant
-            const varCheck = await client.query(
-              "SELECT stock_pinamar, stock_montevideo FROM public.product_variants WHERE id = $1 FOR UPDATE;",
-              [variantId]
-            );
-            if (varCheck.rows.length > 0) {
-              if (fromDeposito === "Pinamar") {
-                // Pinamar gets incremented, Montevideo gets decremented
-                await client.query(
-                  "UPDATE public.product_variants SET stock_pinamar = stock_pinamar + $1, stock_montevideo = GREATEST(0, stock_montevideo - $1), updated_at = NOW() WHERE id = $2;",
-                  [quantity, variantId]
-                );
-              } else {
-                // Montevideo gets incremented, Pinamar gets decremented
-                await client.query(
-                  "UPDATE public.product_variants SET stock_montevideo = stock_montevideo + $1, stock_pinamar = GREATEST(0, stock_pinamar - $1), updated_at = NOW() WHERE id = $2;",
-                  [quantity, variantId]
-                );
+            if (variantId) {
+              const varCheck = await client.query(
+                "SELECT stock_pinamar, stock_montevideo FROM public.product_variants WHERE id = $1 FOR UPDATE;",
+                [variantId]
+              );
+              if (varCheck.rows.length > 0) {
+                if (fromDeposito === "Pinamar") {
+                  await client.query(
+                    "UPDATE public.product_variants SET stock_pinamar = stock_pinamar + $1, stock_montevideo = GREATEST(0, stock_montevideo - $1), updated_at = NOW() WHERE id = $2;",
+                    [quantity, variantId]
+                  );
+                } else {
+                  await client.query(
+                    "UPDATE public.product_variants SET stock_montevideo = stock_montevideo + $1, stock_pinamar = GREATEST(0, stock_pinamar - $1), updated_at = NOW() WHERE id = $2;",
+                    [quantity, variantId]
+                  );
+                }
               }
-            }
-          } else {
-            // Check existing stock of product
-            const prodCheck = await client.query(
-              "SELECT stock_pinamar, stock_montevideo FROM public.products WHERE id = $1 FOR UPDATE;",
-              [productId]
-            );
-            if (prodCheck.rows.length > 0) {
-              if (fromDeposito === "Pinamar") {
-                await client.query(
-                  "UPDATE public.products SET stock_pinamar = stock_pinamar + $1, stock_montevideo = GREATEST(0, stock_montevideo - $1), updated_at = NOW() WHERE id = $2;",
-                  [quantity, productId]
-                );
-              } else {
-                await client.query(
-                  "UPDATE public.products SET stock_montevideo = stock_montevideo + $1, stock_pinamar = GREATEST(0, stock_pinamar - $1), updated_at = NOW() WHERE id = $2;",
-                  [quantity, productId]
-                );
+            } else {
+              const prodCheck = await client.query(
+                "SELECT stock_pinamar, stock_montevideo FROM public.products WHERE id = $1 FOR UPDATE;",
+                [productId]
+              );
+              if (prodCheck.rows.length > 0) {
+                if (fromDeposito === "Pinamar") {
+                  await client.query(
+                    "UPDATE public.products SET stock_pinamar = stock_pinamar + $1, stock_montevideo = GREATEST(0, stock_montevideo - $1), updated_at = NOW() WHERE id = $2;",
+                    [quantity, productId]
+                  );
+                } else {
+                  await client.query(
+                    "UPDATE public.products SET stock_montevideo = stock_montevideo + $1, stock_pinamar = GREATEST(0, stock_pinamar - $1), updated_at = NOW() WHERE id = $2;",
+                    [quantity, productId]
+                  );
+                }
               }
             }
           }
 
-          // 3. Delete the transfer log record
-          await client.query("DELETE FROM public.stock_transfers WHERE id = $1;", [id]);
+          // 3. Delete the matching transfer log records
+          await client.query("DELETE FROM public.stock_transfers WHERE id = $1 OR transfer_code = $1 OR batch_id = $1;", [id]);
 
           await client.query("COMMIT;");
         } catch (txErr: any) {
@@ -4688,7 +4785,6 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
           client.release();
         }
 
-        // Force memory state reload to match DB
         const dbState = await getDbState();
         currentStoreState = dbState;
       } else {
@@ -4696,48 +4792,385 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         if (!currentStoreState.stockTransfers) {
           currentStoreState.stockTransfers = [];
         }
-        const idx = currentStoreState.stockTransfers.findIndex(t => String(t.id) === String(id));
-        if (idx === -1) {
-          return res.status(404).json({ success: false, message: "La transferencia no existe en la memoria." });
+        
+        const matchingIndices: number[] = [];
+        currentStoreState.stockTransfers.forEach((t: any, index: number) => {
+          if (t.id === id || t.transferCode === id || t.batchId === id) {
+            matchingIndices.push(index);
+          }
+        });
+
+        if (matchingIndices.length === 0) {
+          return res.status(404).json({ success: false, message: "El traslado no existe en la memoria o ya fue revertido." });
         }
 
-        const transfer = currentStoreState.stockTransfers[idx];
         const products = currentStoreState.products || [];
-        const product = products.find(p => String(p.id) === String(transfer.productId));
 
-        if (product) {
-          const qty = Number(transfer.quantity);
-          if (transfer.variantId) {
-            const variant = product.variants?.find(v => String(v.id) === String(transfer.variantId));
-            if (variant) {
-              if (transfer.fromDeposito === "Pinamar") {
-                variant.stockPinamar = (variant.stockPinamar || 0) + qty;
-                variant.stockMontevideo = Math.max(0, (variant.stockMontevideo || 0) - qty);
-              } else {
-                variant.stockMontevideo = (variant.stockMontevideo || 0) + qty;
-                variant.stockPinamar = Math.max(0, (variant.stockPinamar || 0) - qty);
+        // Revert stock for each matching transfer in memory
+        for (const idx of matchingIndices) {
+          const transfer = currentStoreState.stockTransfers[idx];
+          const product = products.find(p => String(p.id) === String(transfer.productId));
+          if (product) {
+            const qty = Number(transfer.quantity);
+            if (transfer.variantId) {
+              const variant = product.variants?.find(v => String(v.id) === String(transfer.variantId));
+              if (variant) {
+                if (transfer.fromDeposito === "Pinamar") {
+                  variant.stockPinamar = (variant.stockPinamar || 0) + qty;
+                  variant.stockMontevideo = Math.max(0, (variant.stockMontevideo || 0) - qty);
+                } else {
+                  variant.stockMontevideo = (variant.stockMontevideo || 0) + qty;
+                  variant.stockPinamar = Math.max(0, (variant.stockPinamar || 0) - qty);
+                }
               }
-            }
-          } else {
-            if (transfer.fromDeposito === "Pinamar") {
-              product.stockPinamar = (product.stockPinamar || 0) + qty;
-              product.stockMontevideo = Math.max(0, (product.stockMontevideo || 0) - qty);
             } else {
-              product.stockMontevideo = (product.stockMontevideo || 0) + qty;
-              product.stockPinamar = Math.max(0, (product.stockPinamar || 0) - qty);
+              if (transfer.fromDeposito === "Pinamar") {
+                product.stockPinamar = (product.stockPinamar || 0) + qty;
+                product.stockMontevideo = Math.max(0, (product.stockMontevideo || 0) - qty);
+              } else {
+                product.stockMontevideo = (product.stockMontevideo || 0) + qty;
+                product.stockPinamar = Math.max(0, (product.stockPinamar || 0) - qty);
+              }
             }
           }
         }
 
         // Remove from list
-        currentStoreState.stockTransfers.splice(idx, 1);
+        currentStoreState.stockTransfers = currentStoreState.stockTransfers.filter(
+          (t: any) => !(t.id === id || t.transferCode === id || t.batchId === id)
+        );
         await saveDbState(currentStoreState);
       }
 
-      res.json({ success: true, message: "Transferencia revertida y existencias acomodadas exitosamente." });
+      res.json({ success: true, message: "Traslado anulado exitosamente y existencias restablecidas en sus depósitos originales." });
     } catch (err: any) {
       console.error("Error reverting stock transfer:", err);
       res.status(500).json({ success: false, message: err.message || "Error al revertir la transferencia.", error: err.message });
+    }
+  });
+
+  // PUT /api/stock-transfers/:id (Protected - Modify stock transfer: add/remove items or change quantities)
+  app.put("/api/stock-transfers/:id", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!isValidToken(authHeader)) {
+      return res.status(403).json({ success: false, message: "Acceso denegado. Se requiere autenticación de administrador principal." });
+    }
+    const { id } = req.params;
+    const { items } = req.body;
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, message: "El traslado debe contener al menos un artículo. Si deseas anularlo por completo, utiliza la opción Anular Traslado." });
+    }
+
+    // Clean and validate items
+    const sanitizedItems: Array<{
+      productId: string;
+      productName: string;
+      variantId?: string;
+      variantName?: string;
+      sku?: string;
+      imageUrl?: string;
+      quantity: number;
+    }> = [];
+
+    for (const rawItem of items) {
+      const q = Number(rawItem.quantity);
+      if (!rawItem.productId || !rawItem.productName || isNaN(q) || q <= 0) {
+        return res.status(400).json({ success: false, message: "Todos los artículos deben tener datos válidos y cantidad mayor a cero." });
+      }
+      sanitizedItems.push({
+        productId: String(rawItem.productId),
+        productName: String(rawItem.productName),
+        variantId: rawItem.variantId ? String(rawItem.variantId) : undefined,
+        variantName: rawItem.variantName ? String(rawItem.variantName) : undefined,
+        sku: rawItem.sku ? String(rawItem.sku) : undefined,
+        imageUrl: rawItem.imageUrl ? String(rawItem.imageUrl) : undefined,
+        quantity: Math.floor(q)
+      });
+    }
+
+    try {
+      const pool = getDbPool();
+
+      if (pool && !dbUnavailable) {
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN;");
+
+          // 1. Fetch current transfer records to get metadata and old stock allocations
+          const transferRes = await client.query(
+            `SELECT id, transfer_code, batch_id, product_id, product_name, sku, image_url, variant_id, variant_name, quantity, from_deposito, to_deposito, created_at 
+             FROM public.stock_transfers 
+             WHERE id = $1 OR transfer_code = $1 OR batch_id = $1 
+             FOR UPDATE;`,
+            [id]
+          );
+
+          if (transferRes.rows.length === 0) {
+            throw new Error("El traslado no fue encontrado o ya fue revertido.");
+          }
+
+          const fromDeposito = transferRes.rows[0].from_deposito;
+          const toDeposito = transferRes.rows[0].to_deposito;
+          const transferCode = transferRes.rows[0].transfer_code || id;
+          const batchId = transferRes.rows[0].batch_id || id;
+          const originalCreatedAt = transferRes.rows[0].created_at;
+
+          // 2. Revert old stock allocations (return items to fromDeposito, deduct from toDeposito)
+          for (const old of transferRes.rows) {
+            const oldQty = Number(old.quantity);
+            if (old.variant_id) {
+              if (fromDeposito === "Pinamar") {
+                await client.query(
+                  "UPDATE public.product_variants SET stock_pinamar = stock_pinamar + $1, stock_montevideo = GREATEST(0, stock_montevideo - $1), updated_at = NOW() WHERE id = $2;",
+                  [oldQty, old.variant_id]
+                );
+              } else {
+                await client.query(
+                  "UPDATE public.product_variants SET stock_montevideo = stock_montevideo + $1, stock_pinamar = GREATEST(0, stock_pinamar - $1), updated_at = NOW() WHERE id = $2;",
+                  [oldQty, old.variant_id]
+                );
+              }
+            } else {
+              if (fromDeposito === "Pinamar") {
+                await client.query(
+                  "UPDATE public.products SET stock_pinamar = stock_pinamar + $1, stock_montevideo = GREATEST(0, stock_montevideo - $1), updated_at = NOW() WHERE id = $2;",
+                  [oldQty, old.product_id]
+                );
+              } else {
+                await client.query(
+                  "UPDATE public.products SET stock_montevideo = stock_montevideo + $1, stock_pinamar = GREATEST(0, stock_pinamar - $1), updated_at = NOW() WHERE id = $2;",
+                  [oldQty, old.product_id]
+                );
+              }
+            }
+          }
+
+          // 3. Validate and apply the new items list against the restored stock in fromDeposito
+          for (const item of sanitizedItems) {
+            if (item.variantId) {
+              const varCheck = await client.query(
+                "SELECT stock_pinamar, stock_montevideo FROM public.product_variants WHERE id = $1 FOR UPDATE;",
+                [item.variantId]
+              );
+              if (varCheck.rows.length === 0) {
+                throw new Error(`Variante no encontrada para "${item.productName}".`);
+              }
+              const available = fromDeposito === "Pinamar" ? varCheck.rows[0].stock_pinamar : varCheck.rows[0].stock_montevideo;
+              if (available < item.quantity) {
+                throw new Error(`Stock insuficiente en ${fromDeposito} para "${item.productName}${item.variantName ? ` (${item.variantName})` : ''}". Disponible: ${available}u, Requerido: ${item.quantity}u.`);
+              }
+
+              if (fromDeposito === "Pinamar") {
+                await client.query(
+                  "UPDATE public.product_variants SET stock_pinamar = GREATEST(0, stock_pinamar - $1), stock_montevideo = stock_montevideo + $1, updated_at = NOW() WHERE id = $2;",
+                  [item.quantity, item.variantId]
+                );
+              } else {
+                await client.query(
+                  "UPDATE public.product_variants SET stock_montevideo = GREATEST(0, stock_montevideo - $1), stock_pinamar = stock_pinamar + $1, updated_at = NOW() WHERE id = $2;",
+                  [item.quantity, item.variantId]
+                );
+              }
+            } else {
+              const prodCheck = await client.query(
+                "SELECT stock_pinamar, stock_montevideo FROM public.products WHERE id = $1 FOR UPDATE;",
+                [item.productId]
+              );
+              if (prodCheck.rows.length === 0) {
+                throw new Error(`Producto "${item.productName}" no encontrado.`);
+              }
+              const available = fromDeposito === "Pinamar" ? prodCheck.rows[0].stock_pinamar : prodCheck.rows[0].stock_montevideo;
+              if (available < item.quantity) {
+                throw new Error(`Stock insuficiente en ${fromDeposito} para "${item.productName}". Disponible: ${available}u, Requerido: ${item.quantity}u.`);
+              }
+
+              if (fromDeposito === "Pinamar") {
+                await client.query(
+                  "UPDATE public.products SET stock_pinamar = GREATEST(0, stock_pinamar - $1), stock_montevideo = stock_montevideo + $1, updated_at = NOW() WHERE id = $2;",
+                  [item.quantity, item.productId]
+                );
+              } else {
+                await client.query(
+                  "UPDATE public.products SET stock_montevideo = GREATEST(0, stock_montevideo - $1), stock_pinamar = stock_pinamar + $1, updated_at = NOW() WHERE id = $2;",
+                  [item.quantity, item.productId]
+                );
+              }
+            }
+          }
+
+          // 4. Delete old transfer rows
+          await client.query("DELETE FROM public.stock_transfers WHERE id = $1 OR transfer_code = $1 OR batch_id = $1;", [id]);
+
+          // 5. Insert new transfer rows with identical transferCode, batchId, origin, destination and original date
+          for (const item of sanitizedItems) {
+            const transferId = "trans-" + Math.random().toString(36).substring(2, 10);
+            await client.query(
+              `INSERT INTO public.stock_transfers (id, transfer_code, batch_id, product_id, product_name, sku, image_url, variant_id, variant_name, quantity, from_deposito, to_deposito, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13);`,
+              [
+                transferId,
+                transferCode,
+                batchId,
+                item.productId,
+                item.productName,
+                item.sku || null,
+                item.imageUrl || null,
+                item.variantId || null,
+                item.variantName || null,
+                item.quantity,
+                fromDeposito,
+                toDeposito,
+                originalCreatedAt
+              ]
+            );
+          }
+
+          await client.query("COMMIT;");
+        } catch (txErr: any) {
+          await client.query("ROLLBACK;");
+          throw txErr;
+        } finally {
+          client.release();
+        }
+
+        const dbState = await getDbState();
+        currentStoreState = dbState;
+      } else {
+        // Fallback for file-based JSON store
+        if (!currentStoreState.stockTransfers) {
+          currentStoreState.stockTransfers = [];
+        }
+
+        const matchingTransfers = currentStoreState.stockTransfers.filter(
+          (t: any) => t.id === id || t.transferCode === id || t.batchId === id
+        );
+
+        if (matchingTransfers.length === 0) {
+          return res.status(404).json({ success: false, message: "El traslado no existe en memoria." });
+        }
+
+        const fromDeposito = matchingTransfers[0].fromDeposito;
+        const toDeposito = matchingTransfers[0].toDeposito;
+        const transferCode = matchingTransfers[0].transferCode || id;
+        const batchId = matchingTransfers[0].batchId || id;
+        const originalCreatedAt = matchingTransfers[0].createdAt;
+        const products = currentStoreState.products || [];
+
+        // 1. Temporarily revert old quantities
+        for (const old of matchingTransfers) {
+          const product = products.find(p => String(p.id) === String(old.productId));
+          if (product) {
+            const qty = Number(old.quantity);
+            if (old.variantId) {
+              const variant = product.variants?.find(v => String(v.id) === String(old.variantId));
+              if (variant) {
+                if (fromDeposito === "Pinamar") {
+                  variant.stockPinamar = (variant.stockPinamar || 0) + qty;
+                  variant.stockMontevideo = Math.max(0, (variant.stockMontevideo || 0) - qty);
+                } else {
+                  variant.stockMontevideo = (variant.stockMontevideo || 0) + qty;
+                  variant.stockPinamar = Math.max(0, (variant.stockPinamar || 0) - qty);
+                }
+              }
+            } else {
+              if (fromDeposito === "Pinamar") {
+                product.stockPinamar = (product.stockPinamar || 0) + qty;
+                product.stockMontevideo = Math.max(0, (product.stockMontevideo || 0) - qty);
+              } else {
+                product.stockMontevideo = (product.stockMontevideo || 0) + qty;
+                product.stockPinamar = Math.max(0, (product.stockPinamar || 0) - qty);
+              }
+            }
+          }
+        }
+
+        // 2. Validate all new items have sufficient stock in fromDeposito
+        for (const item of sanitizedItems) {
+          const product = products.find(p => String(p.id) === String(item.productId));
+          if (!product) {
+            return res.status(404).json({ success: false, message: `Producto "${item.productName}" no encontrado en memoria.` });
+          }
+          if (item.variantId) {
+            const variant = product.variants?.find(v => String(v.id) === String(item.variantId));
+            if (!variant) {
+              return res.status(404).json({ success: false, message: `Variante no encontrada para "${item.productName}".` });
+            }
+            const avail = fromDeposito === "Pinamar" ? (variant.stockPinamar || 0) : (variant.stockMontevideo || 0);
+            if (avail < item.quantity) {
+              return res.status(400).json({ success: false, message: `Stock insuficiente en ${fromDeposito} para "${item.productName}${item.variantName ? ` (${item.variantName})` : ''}". Disponible: ${avail}u, Requerido: ${item.quantity}u.` });
+            }
+          } else {
+            const avail = fromDeposito === "Pinamar" ? (product.stockPinamar || 0) : (product.stockMontevideo || 0);
+            if (avail < item.quantity) {
+              return res.status(400).json({ success: false, message: `Stock insuficiente en ${fromDeposito} para "${item.productName}". Disponible: ${avail}u, Requerido: ${item.quantity}u.` });
+            }
+          }
+        }
+
+        // 3. Apply deductions from fromDeposito and additions to toDeposito
+        const newLogsToAdd: any[] = [];
+        for (const item of sanitizedItems) {
+          const product = products.find(p => String(p.id) === String(item.productId))!;
+          if (item.variantId) {
+            const variant = product.variants?.find(v => String(v.id) === String(item.variantId))!;
+            if (fromDeposito === "Pinamar") {
+              variant.stockPinamar = Math.max(0, (variant.stockPinamar || 0) - item.quantity);
+              variant.stockMontevideo = (variant.stockMontevideo || 0) + item.quantity;
+            } else {
+              variant.stockMontevideo = Math.max(0, (variant.stockMontevideo || 0) - item.quantity);
+              variant.stockPinamar = (variant.stockPinamar || 0) + item.quantity;
+            }
+          } else {
+            if (fromDeposito === "Pinamar") {
+              product.stockPinamar = Math.max(0, (product.stockPinamar || 0) - item.quantity);
+              product.stockMontevideo = (product.stockMontevideo || 0) + item.quantity;
+            } else {
+              product.stockMontevideo = Math.max(0, (product.stockMontevideo || 0) - item.quantity);
+              product.stockPinamar = (product.stockPinamar || 0) + item.quantity;
+            }
+          }
+
+          newLogsToAdd.push({
+            id: "trans-" + Math.random().toString(36).substring(2, 10),
+            transferCode,
+            batchId,
+            productId: item.productId,
+            productName: item.productName,
+            sku: item.sku || product.codigo,
+            imageUrl: item.imageUrl || product.imageUrl,
+            variantId: item.variantId || undefined,
+            variantName: item.variantName || undefined,
+            quantity: item.quantity,
+            fromDeposito,
+            toDeposito,
+            createdAt: originalCreatedAt
+          });
+        }
+
+        // Remove old logs and insert new ones
+        currentStoreState.stockTransfers = currentStoreState.stockTransfers.filter(
+          (t: any) => !(t.id === id || t.transferCode === id || t.batchId === id)
+        );
+        currentStoreState.stockTransfers.unshift(...newLogsToAdd);
+        await saveDbState(currentStoreState);
+      }
+
+      const totalQuantity = sanitizedItems.reduce((acc, curr) => acc + curr.quantity, 0);
+
+      res.json({
+        success: true,
+        message: `Traslado ${id} actualizado correctamente (${sanitizedItems.length} artículos, ${totalQuantity} unidades).`,
+        transfer: {
+          transferCode: id,
+          totalItems: sanitizedItems.length,
+          totalQuantity,
+          items: sanitizedItems
+        }
+      });
+    } catch (err: any) {
+      console.error("Error updating stock transfer:", err);
+      res.status(500).json({ success: false, message: err.message || "Error al actualizar la transferencia.", error: err.message });
     }
   });
 

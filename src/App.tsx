@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, FormEvent } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Search,
@@ -57,6 +58,9 @@ import {
   History,
   RotateCcw,
   ChevronLeft,
+  Copy,
+  Clock,
+  FileText,
   TrendingUp,
   TrendingDown,
   Upload,
@@ -75,6 +79,9 @@ import {
   Lightbulb,
   Smile,
   Printer,
+  Maximize2,
+  Minimize2,
+  Minus,
   Music,
   Dumbbell,
   Glasses,
@@ -485,8 +492,9 @@ export default function App() {
   const [cloudinarySelectorConfig, setCloudinarySelectorConfig] = useState<{ isOpen: boolean; onSelect: (url: string) => void } | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>("todos");
   const getCategoryDisplayNameWithDb = (cat: string) => {
+    const safeCat = (cat || "").toLowerCase();
     const catObj = (store.dbCategories || []).find(
-      (c) => c.nombre.toLowerCase() === cat.toLowerCase() || c.id === cat.toLowerCase()
+      (c) => (c.nombre || "").toLowerCase() === safeCat || (c.id || "").toLowerCase() === safeCat
     );
     if (catObj) {
       return catObj.nombre;
@@ -535,6 +543,47 @@ export default function App() {
   // Stock Transfer States
   const [stockSubSection, setStockSubSection] = useState<"list" | "transfer" | "history" | "adjustments">("list");
   const [stockTransfers, setStockTransfers] = useState<StockTransfer[]>([]);
+  const [selectedTransferGroup, setSelectedTransferGroup] = useState<{
+    transferCode: string;
+    batchId?: string;
+    createdAt: string;
+    fromDeposito: "Pinamar" | "Montevideo";
+    toDeposito: "Pinamar" | "Montevideo";
+    items: Array<{
+      id: string;
+      productId: string;
+      productName: string;
+      variantId?: string;
+      variantName?: string;
+      sku?: string;
+      imageUrl?: string;
+      quantity: number;
+    }>;
+    totalQuantity: number;
+    totalItems: number;
+  } | null>(null);
+  const [isTransferModalMaximized, setIsTransferModalMaximized] = useState<boolean>(false);
+  const [transferHistorySearch, setTransferHistorySearch] = useState<string>("");
+  
+  // States for modifying an existing transfer
+  const [isEditingTransfer, setIsEditingTransfer] = useState<boolean>(false);
+  const [editTransferItems, setEditTransferItems] = useState<Array<{
+    id?: string;
+    productId: string;
+    productName: string;
+    variantId?: string;
+    variantName?: string;
+    sku?: string;
+    imageUrl?: string;
+    quantity: number;
+  }>>([]);
+  const [editAddProductId, setEditAddProductId] = useState<string>("");
+  const [editAddVariantId, setEditAddVariantId] = useState<string>("");
+  const [editAddQty, setEditAddQty] = useState<number>(1);
+  const [editSearchProduct, setEditSearchProduct] = useState<string>("");
+  const [editShowSuggestions, setEditShowSuggestions] = useState<boolean>(false);
+  const [editFilterOnlyWithStock, setEditFilterOnlyWithStock] = useState<boolean>(false);
+  const [isSavingTransferEdit, setIsSavingTransferEdit] = useState<boolean>(false);
   
   // Direct Stock Adjustment Confirmation Modal States
   const [showStockAdjustmentModal, setShowStockAdjustmentModal] = useState<boolean>(false);
@@ -580,6 +629,23 @@ export default function App() {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
+
+  // Lock body scroll and close on Escape key when transfer detail modal is open
+  useEffect(() => {
+    if (!selectedTransferGroup) return;
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setSelectedTransferGroup(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [selectedTransferGroup]);
 
   const scrollToCatalogTop = useCallback(() => {
     setTimeout(() => {
@@ -1605,21 +1671,35 @@ export default function App() {
     fromDeposito: "Pinamar" | "Montevideo";
     toDeposito: "Pinamar" | "Montevideo";
   }) => {
+    setTransfersLoading(true);
     try {
       const activeToken = localStorage.getItem("apex_admin_token") || authToken;
+      const prod = (store.products || []).find(p => String(p.id) === String(payload.productId));
       const res = await fetch("/api/stock-transfers", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${activeToken}`
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({
+          fromDeposito: payload.fromDeposito,
+          toDeposito: payload.toDeposito,
+          items: [{
+            productId: payload.productId,
+            productName: payload.productName,
+            variantId: payload.variantId,
+            variantName: payload.variantName,
+            sku: prod?.codigo,
+            imageUrl: prod?.imageUrl,
+            quantity: payload.quantity
+          }]
+        })
       });
       const data = await res.json();
       if (data.success) {
-        showToast("¡Transferencia registrada y existencias actualizadas!", "success");
+        showToast(`¡Traslado ${data.transferCode} registrado con éxito!`, "success");
         fetchStoreData(true);
-        fetchStockTransfers();
+        await fetchStockTransfers();
         setStockSubSection("history");
         setTransferProductId("");
         setTransferVariantId("");
@@ -1631,6 +1711,8 @@ export default function App() {
     } catch (e: any) {
       console.error("Error executing stock transfer", e);
       showToast("Error de conexión al realizar la transferencia", "error");
+    } finally {
+      setTransfersLoading(false);
     }
   };
 
@@ -1648,43 +1730,36 @@ export default function App() {
     setTransfersLoading(true);
     try {
       const activeToken = localStorage.getItem("apex_admin_token") || authToken;
-      let successCount = 0;
-      let errors: string[] = [];
-
-      for (const item of items) {
-        const payload = {
+      const itemsPayload = items.map(item => {
+        const prod = (store.products || []).find(p => String(p.id) === String(item.productId));
+        return {
           productId: item.productId,
           productName: item.productName,
           variantId: item.variantId,
           variantName: item.variantName,
-          quantity: item.quantity,
-          fromDeposito: fromDep,
-          toDeposito: toDep
+          sku: prod?.codigo,
+          imageUrl: prod?.imageUrl,
+          quantity: item.quantity
         };
+      });
 
-        const res = await fetch("/api/stock-transfers", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${activeToken}`
-          },
-          body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-        if (data.success) {
-          successCount++;
-        } else {
-          errors.push(`${item.productName}${item.variantName ? ` (${item.variantName})` : ""}: ${data.message || "Error"}`);
-        }
-      }
-
-      if (successCount > 0) {
-        showToast(`¡Se registraron ${successCount} transferencias de forma exitosa!`, "success");
-        if (errors.length > 0) {
-          showToast(`Algunos errores ocurrieron: ${errors.join(", ")}`, "error");
-        }
+      const res = await fetch("/api/stock-transfers", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${activeToken}`
+        },
+        body: JSON.stringify({
+          fromDeposito: fromDep,
+          toDeposito: toDep,
+          items: itemsPayload
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`¡Traslado ${data.transferCode} registrado exitosamente (${data.totalItems} artículos, ${data.totalQuantity} unidades)!`, "success");
         fetchStoreData(true);
-        fetchStockTransfers();
+        await fetchStockTransfers();
         setTransferItems([]);
         setTransferProductId("");
         setTransferVariantId("");
@@ -1692,7 +1767,7 @@ export default function App() {
         setTransferStep(1);
         setStockSubSection("history");
       } else {
-        showToast(`No se pudo registrar ninguna transferencia: ${errors.join("; ")}`, "error");
+        showToast(data.message || "Error al registrar el traslado múltiple.", "error");
       }
     } catch (e: any) {
       console.error("Error executing bulk transfer", e);
@@ -1702,14 +1777,14 @@ export default function App() {
     }
   };
 
-  const revertStockTransfer = async (id: string) => {
-    if (!window.confirm("¿Estás seguro de que deseas anular esta transferencia? Esto revertirá los niveles de stock (sumará stock al depósito de origen y restará del de destino) y eliminará el registro de transferencia.")) {
+  const revertStockTransfer = async (identifier: string) => {
+    if (!window.confirm(`¿Estás seguro de que deseas anular este traslado (${identifier})? Esto revertirá los niveles de stock (sumará las unidades al depósito de origen y las restará del depósito de destino) y eliminará el registro.`)) {
       return;
     }
     setTransfersLoading(true);
     try {
       const activeToken = localStorage.getItem("apex_admin_token") || authToken;
-      const res = await fetch(`/api/stock-transfers/${id}`, {
+      const res = await fetch(`/api/stock-transfers/${encodeURIComponent(identifier)}`, {
         method: "DELETE",
         headers: {
           "Authorization": `Bearer ${activeToken}`,
@@ -1718,19 +1793,396 @@ export default function App() {
       });
       const data = await res.json();
       if (data.success) {
-        showToast("¡Transferencia revertida y existencias acomodadas!", "success");
+        showToast("¡Traslado anulado exitosamente y existencias restablecidas!", "success");
+        if (selectedTransferGroup && (selectedTransferGroup.transferCode === identifier || selectedTransferGroup.batchId === identifier)) {
+          setSelectedTransferGroup(null);
+        }
         fetchStoreData(true);
-        fetchStockTransfers();
+        await fetchStockTransfers();
       } else {
-        showToast(data.message || "Error al revertir la transferencia", "error");
+        showToast(data.message || "Error al anular el traslado", "error");
       }
     } catch (e: any) {
       console.error("Error reverting stock transfer", e);
-      showToast("Error de conexión al revertir la transferencia", "error");
+      showToast("Error de conexión al revertir el traslado", "error");
     } finally {
       setTransfersLoading(false);
     }
   };
+
+  const handleStartEditTransfer = (group?: any) => {
+    const target = group || selectedTransferGroup;
+    if (!target) return;
+    setSelectedTransferGroup(target);
+    setEditTransferItems(target.items.map((it: any) => ({
+      id: it.id,
+      productId: String(it.productId),
+      productName: it.productName,
+      variantId: it.variantId ? String(it.variantId) : undefined,
+      variantName: it.variantName ? String(it.variantName) : undefined,
+      sku: it.sku,
+      imageUrl: it.imageUrl,
+      quantity: Number(it.quantity) || 1
+    })));
+    setEditAddProductId("");
+    setEditAddVariantId("");
+    setEditAddQty(1);
+    setEditSearchProduct("");
+    setIsEditingTransfer(true);
+  };
+
+  const handleCancelEditTransfer = () => {
+    setIsEditingTransfer(false);
+    setEditTransferItems([]);
+    setEditAddProductId("");
+    setEditAddVariantId("");
+    setEditAddQty(1);
+    setEditSearchProduct("");
+  };
+
+  const handleUpdateItemQty = (index: number, newQty: number) => {
+    if (newQty < 1) return;
+    setEditTransferItems(prev => {
+      const copy = [...prev];
+      copy[index] = { ...copy[index], quantity: Math.floor(newQty) };
+      return copy;
+    });
+  };
+
+  const handleRemoveTransferItem = (index: number) => {
+    if (editTransferItems.length <= 1) {
+      showToast("El traslado debe contener al menos un artículo. Si deseas anularlo por completo, usa 'Anular Traslado'.", "info");
+      return;
+    }
+    setEditTransferItems(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleAddProductToTransfer = () => {
+    if (!editAddProductId) {
+      showToast("Selecciona un artículo para agregar al traslado.", "info");
+      return;
+    }
+    const product = store.products.find(p => String(p.id) === String(editAddProductId));
+    if (!product) return;
+
+    if (product.variants && product.variants.length > 0 && !editAddVariantId) {
+      showToast("Selecciona la variante correspondiente del artículo.", "info");
+      return;
+    }
+
+    const variant = editAddVariantId ? product.variants?.find(v => String(v.id) === String(editAddVariantId)) : undefined;
+    const variantDisplayName = variant ? [variant.size, variant.color].filter(Boolean).join(" / ") : "";
+    const qty = Math.max(1, Math.floor(Number(editAddQty) || 1));
+
+    // Check if identical item already in the transfer
+    const existingIndex = editTransferItems.findIndex(
+      it => String(it.productId) === String(editAddProductId) && String(it.variantId || "") === String(editAddVariantId || "")
+    );
+
+    if (existingIndex >= 0) {
+      setEditTransferItems(prev => {
+        const copy = [...prev];
+        copy[existingIndex] = { ...copy[existingIndex], quantity: copy[existingIndex].quantity + qty };
+        return copy;
+      });
+      showToast(`Se sumaron +${qty}u a "${product.name}${variantDisplayName ? ` (${variantDisplayName})` : ''}".`, "info");
+    } else {
+      setEditTransferItems(prev => [
+        ...prev,
+        {
+          id: "item-" + Math.random().toString(36).substring(2, 8),
+          productId: String(product.id),
+          productName: product.name,
+          variantId: variant ? String(variant.id) : undefined,
+          variantName: variant ? variantDisplayName : undefined,
+          sku: variant?.sku || product.codigo,
+          imageUrl: variant?.imageUrl || product.imageUrl,
+          quantity: qty
+        }
+      ]);
+      showToast(`"${product.name}${variantDisplayName ? ` (${variantDisplayName})` : ''}" agregado a la orden.`, "success");
+    }
+
+    setEditAddProductId("");
+    setEditAddVariantId("");
+    setEditAddQty(1);
+    setEditSearchProduct("");
+  };
+
+  const handleSaveTransferModifications = async () => {
+    if (!selectedTransferGroup) return;
+    if (editTransferItems.length === 0) {
+      showToast("El traslado debe contener al menos un artículo.", "error");
+      return;
+    }
+
+    setIsSavingTransferEdit(true);
+    try {
+      const activeToken = localStorage.getItem("apex_admin_token") || authToken;
+      const res = await fetch(`/api/stock-transfers/${encodeURIComponent(selectedTransferGroup.transferCode)}`, {
+        method: "PUT",
+        headers: {
+          "Authorization": `Bearer ${activeToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          items: editTransferItems.map(it => ({
+            productId: it.productId,
+            productName: it.productName,
+            variantId: it.variantId,
+            variantName: it.variantName,
+            sku: it.sku,
+            imageUrl: it.imageUrl,
+            quantity: it.quantity
+          }))
+        })
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        showToast(data.message || "¡Traslado modificado y stock actualizado con éxito!", "success");
+        // Update local selectedTransferGroup
+        const updatedItems = editTransferItems.map((it, idx) => ({
+          id: it.id || `item-${idx}`,
+          productId: it.productId,
+          productName: it.productName,
+          variantId: it.variantId,
+          variantName: it.variantName,
+          sku: it.sku,
+          imageUrl: it.imageUrl,
+          quantity: it.quantity
+        }));
+        setSelectedTransferGroup({
+          ...selectedTransferGroup,
+          items: updatedItems,
+          totalItems: updatedItems.length,
+          totalQuantity: updatedItems.reduce((acc, curr) => acc + curr.quantity, 0)
+        });
+        setIsEditingTransfer(false);
+        fetchStoreData(true);
+        await fetchStockTransfers();
+      } else {
+        showToast(data.message || "Error al modificar el traslado.", "error");
+      }
+    } catch (err: any) {
+      console.error("Error modifying transfer:", err);
+      showToast("Error de conexión al modificar el traslado.", "error");
+    } finally {
+      setIsSavingTransferEdit(false);
+    }
+  };
+
+  const handlePrintTransferReceipt = (group: {
+    transferCode: string;
+    createdAt: string;
+    fromDeposito: string;
+    toDeposito: string;
+    totalQuantity: number;
+    totalItems: number;
+    items: Array<{
+      productName: string;
+      variantName?: string;
+      sku?: string;
+      quantity: number;
+    }>;
+  }) => {
+    const printWindow = window.open("", "_blank", "width=850,height=950");
+    if (!printWindow) {
+      showToast("Por favor habilita las ventanas emergentes en tu navegador para imprimir el remito.", "error");
+      return;
+    }
+
+    const formattedDate = new Date(group.createdAt).toLocaleString("es-UY", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
+    });
+
+    const rowsHtml = group.items.map((it, idx) => `
+      <tr style="border-bottom: 1px solid #e2e8f0;">
+        <td style="padding: 10px 8px; font-size: 11px; color: #64748b; font-family: monospace;">${idx + 1}</td>
+        <td style="padding: 10px 8px; font-size: 12px; font-weight: bold; color: #0f172a;">
+          ${it.productName}
+          ${it.variantName ? `<br><span style="font-size: 10px; color: #4f46e5; font-weight: 700;">Variante: ${it.variantName}</span>` : ''}
+        </td>
+        <td style="padding: 10px 8px; font-size: 11px; font-family: monospace; color: #475569;">${it.sku || '-'}</td>
+        <td style="padding: 10px 8px; font-size: 14px; font-weight: 900; text-align: center; color: #0f172a; font-family: monospace;">${it.quantity}</td>
+      </tr>
+    `).join("");
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html lang="es">
+        <head>
+          <meta charset="utf-8">
+          <title>Remito de Traslado ${group.transferCode}</title>
+          <style>
+            * { box-sizing: border-box; }
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 30px; color: #0f172a; line-height: 1.4; }
+            .header { border-bottom: 2px solid #0f172a; padding-bottom: 16px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-end; }
+            .title { font-size: 20px; font-weight: 900; letter-spacing: -0.5px; text-transform: uppercase; margin: 0; color: #0f172a; }
+            .subtitle { font-size: 11px; color: #64748b; margin-top: 3px; font-weight: 600; text-transform: uppercase; }
+            .badge-code { font-family: monospace; font-size: 15px; font-weight: 800; background: #f8fafc; padding: 6px 14px; border-radius: 8px; border: 1.5px solid #cbd5e1; color: #0f172a; }
+            .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 24px; padding: 16px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; }
+            .info-item { font-size: 12px; }
+            .info-label { color: #64748b; font-weight: 700; text-transform: uppercase; font-size: 9px; letter-spacing: 0.5px; margin-bottom: 2px; }
+            .info-val { font-weight: 800; font-size: 13px; color: #0f172a; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 25px; }
+            th { text-align: left; padding: 9px 8px; background: #f1f5f9; font-size: 10px; font-weight: 800; text-transform: uppercase; color: #475569; border-bottom: 2px solid #cbd5e1; }
+            .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 60px; padding-top: 20px; }
+            .sign-box { border-top: 1px solid #94a3b8; text-align: center; padding-top: 10px; font-size: 11px; font-weight: 700; color: #475569; }
+            @media print {
+              body { margin: 10mm; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div>
+              <h1 class="title">REMITO DE TRASLADO DE MERCADERÍA</h1>
+              <div class="subtitle">JUEM &bull; Comprobante de Movimiento entre Sucursales</div>
+            </div>
+            <div class="badge-code">${group.transferCode}</div>
+          </div>
+
+          <div class="info-grid">
+            <div class="info-item">
+              <div class="info-label">Fecha y Hora de Operación:</div>
+              <div class="info-val">${formattedDate}</div>
+            </div>
+            <div class="info-item">
+              <div class="info-label">Estado de la Carga:</div>
+              <div class="info-val" style="color: #059669;">INGRESADO Y ACREDITADO</div>
+            </div>
+            <div class="info-item">
+              <div class="info-label">Sucursal de Origen (Enviado Desde):</div>
+              <div class="info-val" style="color: #b45309;">${group.fromDeposito}</div>
+            </div>
+            <div class="info-item">
+              <div class="info-label">Sucursal de Destino (Llegó e Ingresó A):</div>
+              <div class="info-val" style="color: #4338ca;">${group.toDeposito}</div>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 35px;">#</th>
+                <th>Artículo / Descripción</th>
+                <th style="width: 140px;">SKU / Código</th>
+                <th style="width: 110px; text-align: center;">Cant. Ingresada</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+            <tfoot>
+              <tr style="background: #f8fafc; border-top: 2px solid #cbd5e1;">
+                <td colspan="3" style="padding: 12px 8px; font-size: 12px; text-align: right; text-transform: uppercase; font-weight: 800;">Total Unidades Físicas Ingresadas:</td>
+                <td style="padding: 12px 8px; font-size: 16px; text-align: center; color: #4f46e5; font-weight: 900; font-family: monospace;">${group.totalQuantity}</td>
+              </tr>
+            </tfoot>
+          </table>
+
+          <div class="signatures">
+            <div class="sign-box">
+              Firma y Aclaración Despacho<br>
+              Sucursal Origen (${group.fromDeposito})
+            </div>
+            <div class="sign-box">
+              Firma y Aclaración Recepción<br>
+              Sucursal Destino (${group.toDeposito})
+            </div>
+          </div>
+
+          <script>
+            window.onload = function() {
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  const groupedStockTransfers = useMemo(() => {
+    const groups: { [key: string]: {
+      transferCode: string;
+      batchId?: string;
+      createdAt: string;
+      fromDeposito: "Pinamar" | "Montevideo";
+      toDeposito: "Pinamar" | "Montevideo";
+      items: Array<{
+        id: string;
+        productId: string;
+        productName: string;
+        variantId?: string;
+        variantName?: string;
+        sku?: string;
+        imageUrl?: string;
+        quantity: number;
+      }>;
+      totalQuantity: number;
+      totalItems: number;
+    } } = {};
+
+    for (const t of stockTransfers) {
+      // Clean transfer code and handle legacy isolated codes from initial bulk batch
+      let code = t.transferCode;
+      const legacyIdList = [
+        'trans-60kvgp4h', 'trans-ygue0ccv', 'trans-9riqcj59', 'trans-ik468slw', 
+        'trans-rvmzg3rs', 'trans-95v4rygp', 'trans-9zgyss41', 'trans-uszc038q', 
+        'trans-poyjvfv7', 'trans-usruo2nv'
+      ];
+      
+      const isLegacyFirstTransfer = 
+        legacyIdList.includes(t.id) || 
+        (code && (code.startsWith('TRF-TRANS-') || code.includes('USRU') || code.includes('POYJ') || code.includes('USZC') || code.includes('9ZGY') || code.includes('95V4') || code.includes('RVMZ') || code.includes('IK46') || code.includes('9RIQ') || code.includes('YGUE') || code.includes('60KV')));
+
+      if (!code || isLegacyFirstTransfer) {
+        code = 'TRF-20260912-0001';
+      }
+
+      const timeMinute = t.createdAt ? t.createdAt.substring(0, 16) : 'batch-1';
+      const groupKey = code || t.batchId || `${t.fromDeposito}-${t.toDeposito}-${timeMinute}`;
+
+      if (!groups[groupKey]) {
+        groups[groupKey] = {
+          transferCode: code,
+          batchId: t.batchId || 'batch-20260912-0001',
+          createdAt: t.createdAt,
+          fromDeposito: t.fromDeposito,
+          toDeposito: t.toDeposito,
+          items: [],
+          totalQuantity: 0,
+          totalItems: 0
+        };
+      }
+
+      const pMatch = (store.products || []).find(p => String(p.id) === String(t.productId));
+      const skuVal = t.sku || pMatch?.codigo;
+      const imgVal = t.imageUrl || pMatch?.imageUrl;
+
+      groups[groupKey].items.push({
+        id: t.id,
+        productId: t.productId,
+        productName: t.productName,
+        variantId: t.variantId,
+        variantName: t.variantName,
+        sku: skuVal,
+        imageUrl: imgVal,
+        quantity: t.quantity
+      });
+      groups[groupKey].totalQuantity += Number(t.quantity) || 0;
+      groups[groupKey].totalItems += 1;
+    }
+
+    return Object.values(groups).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [stockTransfers, store.products]);
 
   const handleSendTestEmail = async () => {
     if (!testEmailAddress.trim()) {
@@ -2520,7 +2972,7 @@ export default function App() {
       let path = "/";
       if (selectedCategory && selectedCategory !== "todos") {
         const catObj = (store.dbCategories || []).find(
-          (c) => c.nombre.toLowerCase() === selectedCategory.toLowerCase() || c.id === selectedCategory.toLowerCase()
+          (c) => (c.nombre || "").toLowerCase() === (selectedCategory || "").toLowerCase() || (c.id || "").toLowerCase() === (selectedCategory || "").toLowerCase()
         );
         if (catObj) {
           path = `/${catObj.id}`;
@@ -4148,13 +4600,14 @@ export default function App() {
     
     let matchesCategory = true;
     if (selectedCategory !== "todos") {
+      const safeSelectedCat = (selectedCategory || "").toLowerCase();
       const catObj = (store.dbCategories || []).find(
-        (c) => c.nombre.toLowerCase() === selectedCategory.toLowerCase() || c.id === selectedCategory.toLowerCase()
+        (c) => (c.nombre || "").toLowerCase() === safeSelectedCat || (c.id || "").toLowerCase() === safeSelectedCat
       );
       const catId = catObj ? catObj.id : "";
       
       const isMainCatMatch = (p.categoria_id && catId && p.categoria_id === catId) || 
-                             (p.category && p.category.toLowerCase() === selectedCategory.toLowerCase());
+                             (p.category && p.category.toLowerCase() === safeSelectedCat);
       
       const isAdditionalCatMatch = !!(p.categorias_adicionales && catId && p.categorias_adicionales.includes(catId));
       const hasCatMatch = isMainCatMatch || isAdditionalCatMatch;
@@ -4173,14 +4626,14 @@ export default function App() {
           // Fallback to keyword search for backward compatibility
           const keywords = SUBCATEGORY_KEYWORDS[selectedSubcategory] || [];
           if (keywords.length > 0) {
-            const textToSearch = (p.name + " " + p.description).toLowerCase();
+            const textToSearch = ((p.name || "") + " " + (p.description || "")).toLowerCase();
             const matchesKeyword = keywords.some(kw => textToSearch.includes(kw));
             matchesCategory = matchesKeyword;
           } else {
             // Unrecognized subcategory identifier fallback matching by checking strings
             const subcatObj = (store.dbSubcategories || []).find(s => s.id === selectedSubcategory);
-            const subName = subcatObj ? subcatObj.nombre.toLowerCase() : selectedSubcategory.toLowerCase();
-            const textToSearch = (p.name + " " + p.description).toLowerCase();
+            const subName = subcatObj ? (subcatObj.nombre || "").toLowerCase() : (selectedSubcategory || "").toLowerCase();
+            const textToSearch = ((p.name || "") + " " + (p.description || "")).toLowerCase();
             matchesCategory = textToSearch.includes(subName);
           }
         }
@@ -7031,8 +7484,8 @@ export default function App() {
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                           {THEME_PRESETS.map((preset) => {
                             const isSelected = 
-                              editingSettings.primaryColor.toLowerCase() === preset.primaryColor.toLowerCase() &&
-                              editingSettings.accentColor.toLowerCase() === preset.accentColor.toLowerCase() &&
+                              editingSettings.primaryColor?.toLowerCase() === preset.primaryColor?.toLowerCase() &&
+                              editingSettings.accentColor?.toLowerCase() === preset.accentColor?.toLowerCase() &&
                               editingSettings.themeMode === preset.themeMode;
                             
                             return (
@@ -9202,7 +9655,7 @@ export default function App() {
                                 onChange={(e) => {
                                   const val = e.target.value;
                                   const match = (store.dbCategories || []).find(c => c.id === val);
-                                  const isCategory3D = !!match && (
+                                  const isCategory3D = !!match && !!match.nombre && (
                                     match.nombre.toLowerCase().includes("3d") ||
                                     match.nombre.toLowerCase().includes("impresión") ||
                                     match.nombre.toLowerCase().includes("impresion") ||
@@ -11034,7 +11487,7 @@ export default function App() {
                           onChange={(e) => {
                             const val = e.target.value;
                             const match = (store.dbCategories || []).find(c => c.id === val);
-                            const isCategory3D = !!match && (
+                            const isCategory3D = !!match && !!match.nombre && (
                               match.nombre.toLowerCase().includes("3d") ||
                               match.nombre.toLowerCase().includes("impresión") ||
                               match.nombre.toLowerCase().includes("impresion") ||
@@ -16002,107 +16455,1134 @@ export default function App() {
                     )}
 
                     {stockSubSection === "history" && (
-                      <div className="bg-white dark:bg-zinc-950 rounded-2xl border border-slate-200 dark:border-zinc-800 shadow-sm overflow-hidden animate-fade-in">
-                        <div className="p-4 border-b border-slate-200 dark:border-zinc-800 flex items-center justify-between bg-slate-50/50 dark:bg-zinc-950/50">
-                          <div className="flex items-center gap-2.5">
-                            <History className="h-4 w-4 text-indigo-500" />
-                            <h3 className="font-extrabold text-xs uppercase text-slate-900 dark:text-zinc-200 tracking-wider">
-                              REGISTRO GENERAL DE MOVIMIENTOS
-                            </h3>
+                      <div className="bg-[#060B1A] rounded-2xl border border-zinc-800 shadow-xl overflow-hidden animate-fade-in">
+                        {/* HEADER DEL HISTORIAL */}
+                        <div className="p-4 sm:p-5 border-b border-zinc-800 flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-[#081024]">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <History className="h-4 w-4 text-[#E6BF76]" />
+                              <h3 className="font-extrabold text-xs uppercase text-white tracking-wider">
+                                HISTORIAL DE TRASLADOS Y REMITOS ENTRE SUCURSALES
+                              </h3>
+                              <span className="px-2 py-0.5 text-[10px] font-mono font-bold bg-[#D4A55A]/20 text-[#E6BF76] border border-[#D4A55A]/30 rounded-full">
+                                {groupedStockTransfers.length} {groupedStockTransfers.length === 1 ? "traslado" : "traslados"}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-zinc-400 mt-1">
+                              Cada traslado genera un código único. Haz clic sobre el código de traslado para ver el detalle de artículos ingresados y emitir el remito oficial.
+                            </p>
                           </div>
-                          <button
-                            onClick={fetchStockTransfers}
-                            disabled={transfersLoading}
-                            className="p-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-850 dark:hover:bg-zinc-800 text-slate-600 dark:text-zinc-400 rounded-lg text-xs font-semibold transition flex items-center gap-1 cursor-pointer"
-                          >
-                            <RefreshCw className={`h-3 w-3 ${transfersLoading ? "animate-spin" : ""}`} />
-                            <span>Actualizar Historial</span>
-                          </button>
+
+                          <div className="flex items-center gap-2">
+                            <div className="relative">
+                              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
+                              <input
+                                type="text"
+                                value={transferHistorySearch}
+                                onChange={(e) => setTransferHistorySearch(e.target.value)}
+                                placeholder="Buscar por código o producto..."
+                                className="pl-8 pr-3 py-1.5 text-xs bg-[#040816] text-white border border-zinc-750 focus:border-[#D4A55A] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#D4A55A] w-48 sm:w-64 placeholder:text-zinc-500"
+                              />
+                              {transferHistorySearch && (
+                                <button
+                                  type="button"
+                                  onClick={() => setTransferHistorySearch("")}
+                                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white text-xs"
+                                >
+                                  ×
+                                </button>
+                              )}
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={fetchStockTransfers}
+                              disabled={transfersLoading}
+                              className="px-3 py-1.5 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer shrink-0"
+                            >
+                              <RefreshCw className={`h-3 w-3 ${transfersLoading ? "animate-spin" : ""}`} />
+                              <span>Actualizar</span>
+                            </button>
+                          </div>
                         </div>
 
                         {transfersLoading ? (
                           <div className="p-12 text-center space-y-3">
-                            <Loader2 className="h-8 w-8 text-indigo-500 animate-spin mx-auto" />
-                            <p className="text-xs text-zinc-500 font-bold">Cargando bitácora de transferencias...</p>
+                            <Loader2 className="h-8 w-8 text-[#E6BF76] animate-spin mx-auto" />
+                            <p className="text-xs text-zinc-400 font-bold">Cargando registros de traslados...</p>
                           </div>
-                        ) : stockTransfers.length === 0 ? (
-                          <div className="p-12 text-center text-zinc-500 text-xs font-semibold">
+                        ) : groupedStockTransfers.length === 0 ? (
+                          <div className="p-12 text-center text-zinc-400 text-xs font-semibold">
                             Aún no se han registrado transferencias de stock entre Montevideo y Pinamar.
                           </div>
                         ) : (
                           <div className="overflow-x-auto">
                             <table className="w-full text-left border-collapse text-xs">
                               <thead>
-                                <tr className="bg-slate-50 dark:bg-zinc-900 text-slate-500 dark:text-zinc-400 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200 dark:border-zinc-800">
-                                  <th className="py-3 px-4">Fecha y Hora</th>
-                                  <th className="py-3 px-4">ID Transferencia</th>
-                                  <th className="py-3 px-4">Artículo / Variante</th>
-                                  <th className="py-3 px-4 text-center">Movimiento</th>
-                                  <th className="py-3 px-4 text-center">Cantidad</th>
-                                  <th className="py-3 px-4 text-right">Acción</th>
+                                <tr className="bg-[#0A132C] text-zinc-400 font-bold uppercase text-[10px] tracking-wider border-b border-zinc-800">
+                                  <th className="py-3.5 px-4">Código de Traslado</th>
+                                  <th className="py-3.5 px-4">Fecha y Hora</th>
+                                  <th className="py-3.5 px-4">Sucursales (Movimiento)</th>
+                                  <th className="py-3.5 px-4">Artículos Trasladados</th>
+                                  <th className="py-3.5 px-4 text-center">Unidades Ingresadas</th>
+                                  <th className="py-3.5 px-4 text-right">Acciones</th>
                                 </tr>
                               </thead>
-                              <tbody className="divide-y divide-slate-100 dark:divide-zinc-900 font-medium">
-                                {stockTransfers.map((log) => {
-                                  const formattedDate = new Date(log.createdAt).toLocaleString("es-UY", {
-                                    day: "2-digit",
-                                    month: "2-digit",
-                                    year: "numeric",
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                    second: "2-digit"
-                                  });
-                                  return (
-                                    <tr key={log.id} className="hover:bg-slate-50/50 dark:hover:bg-zinc-900/10">
-                                      <td className="py-3.5 px-4 font-mono text-[11px] text-zinc-500 dark:text-zinc-400">
-                                        {formattedDate}
-                                      </td>
-                                      <td className="py-3.5 px-4 font-mono text-[10px] text-slate-500">
-                                        #{log.id}
-                                      </td>
-                                      <td className="py-3.5 px-4">
-                                        <div className="flex flex-col">
-                                          <span className="font-bold text-slate-800 dark:text-zinc-100">
-                                            {log.productName}
-                                          </span>
-                                          {log.variantName && (
-                                            <span className="text-[9px] font-extrabold font-mono text-indigo-500 mt-0.5">
-                                              Variante: {log.variantName}
+                              <tbody className="divide-y divide-zinc-800/60 font-medium">
+                                {groupedStockTransfers
+                                  .filter((group) => {
+                                    if (!transferHistorySearch.trim()) return true;
+                                    const q = (transferHistorySearch || "").toLowerCase();
+                                    return (
+                                      (group.transferCode || "").toLowerCase().includes(q) ||
+                                      (group.fromDeposito || "").toLowerCase().includes(q) ||
+                                      (group.toDeposito || "").toLowerCase().includes(q) ||
+                                      (group.items || []).some(
+                                        (it) =>
+                                          (it.productName || "").toLowerCase().includes(q) ||
+                                          (it.sku && it.sku.toLowerCase().includes(q)) ||
+                                          (it.variantName && it.variantName.toLowerCase().includes(q))
+                                      )
+                                    );
+                                  })
+                                  .map((group) => {
+                                    const formattedDate = new Date(group.createdAt).toLocaleString("es-UY", {
+                                      day: "2-digit",
+                                      month: "2-digit",
+                                      year: "numeric",
+                                      hour: "2-digit",
+                                      minute: "2-digit"
+                                    });
+
+                                    return (
+                                      <tr key={group.transferCode} className="hover:bg-[#0A132C]/60 transition-colors">
+                                        {/* CODIGO CLICKEABLE */}
+                                        <td className="py-3.5 px-4">
+                                          <button
+                                            type="button"
+                                            onClick={() => setSelectedTransferGroup(group)}
+                                            className="group flex items-center gap-1.5 px-2.5 py-1.5 bg-[#0D1838] hover:bg-[#132352] border border-[#D4A55A]/35 hover:border-[#D4A55A]/60 rounded-lg text-[#E6BF76] font-mono font-extrabold text-xs transition cursor-pointer text-left shadow-xs"
+                                            title="Clic para abrir comprobante y detalle completo de este traslado"
+                                          >
+                                            <Package className="h-3.5 w-3.5 shrink-0 text-[#E6BF76] group-hover:scale-110 transition-transform" />
+                                            <span>{group.transferCode}</span>
+                                            <ExternalLink className="h-2.5 w-2.5 opacity-60 ml-0.5 text-zinc-400 group-hover:text-white" />
+                                          </button>
+                                        </td>
+
+                                        {/* FECHA Y HORA */}
+                                        <td className="py-3.5 px-4 font-mono text-[11px] text-zinc-400 whitespace-nowrap">
+                                          {formattedDate}
+                                        </td>
+
+                                        {/* SUCURSALES */}
+                                        <td className="py-3.5 px-4">
+                                          <div className="inline-flex items-center gap-1.5 text-xs font-semibold">
+                                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                              group.fromDeposito === "Pinamar"
+                                                ? "bg-amber-950/60 text-amber-300 border border-amber-600/40"
+                                                : "bg-blue-950/60 text-blue-300 border border-blue-600/40"
+                                            }`}>
+                                              {group.fromDeposito}
                                             </span>
-                                          )}
-                                        </div>
-                                      </td>
-                                      <td className="py-3.5 px-4 text-center">
-                                        <div className="inline-flex items-center gap-2 bg-slate-100 dark:bg-zinc-900 py-1 px-3 rounded-full text-[10px] font-bold">
-                                          <span className={log.fromDeposito === "Montevideo" ? "text-indigo-600 dark:text-indigo-400" : "text-amber-600 dark:text-amber-450"}>
-                                            {log.fromDeposito}
+                                            <ArrowRight className="h-3 w-3 text-zinc-500 shrink-0" />
+                                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                              group.toDeposito === "Pinamar"
+                                                ? "bg-amber-950/60 text-amber-300 border border-amber-600/40"
+                                                : "bg-blue-950/60 text-blue-300 border border-blue-600/40"
+                                            }`}>
+                                              {group.toDeposito}
+                                            </span>
+                                          </div>
+                                        </td>
+
+                                        {/* ARTICULOS EN RESUMEN */}
+                                        <td className="py-3.5 px-4">
+                                          <div className="flex flex-col gap-0.5 max-w-xs">
+                                            <span className="font-extrabold text-white text-xs">
+                                              {group.totalItems} {group.totalItems === 1 ? "artículo" : "artículos"}
+                                            </span>
+                                            <span className="text-[11px] text-zinc-400 truncate">
+                                              {group.items.map((it) => it.productName).join(", ")}
+                                            </span>
+                                          </div>
+                                        </td>
+
+                                        {/* UNIDADES INGRESADAS */}
+                                        <td className="py-3.5 px-4 text-center">
+                                          <span className="inline-flex items-center justify-center px-2.5 py-1 bg-emerald-950/60 border border-emerald-500/40 rounded-lg font-mono font-black text-emerald-300 text-xs">
+                                            +{group.totalQuantity} u.
                                           </span>
-                                          <ArrowLeftRight className="h-3 w-3 text-zinc-400" />
-                                          <span className={log.toDeposito === "Montevideo" ? "text-indigo-600 dark:text-indigo-400" : "text-amber-600 dark:text-amber-450"}>
-                                            {log.toDeposito}
-                                          </span>
-                                        </div>
-                                      </td>
-                                      <td className="py-3.5 px-4 text-center font-mono font-black text-slate-800 dark:text-white text-[12px]">
-                                        {log.quantity}
-                                      </td>
-                                      <td className="py-3.5 px-4 text-right">
-                                        <button
-                                          type="button"
-                                          onClick={() => revertStockTransfer(log.id)}
-                                          title="Revertir Traslado"
-                                          className="p-1 text-slate-400 hover:text-red-500 hover:bg-slate-100 dark:hover:bg-zinc-900 rounded-lg transition inline-flex items-center gap-1 cursor-pointer font-bold text-[10px]"
-                                        >
-                                          <RotateCcw className="h-3.5 w-3.5" />
-                                          <span>Anular</span>
-                                        </button>
-                                      </td>
-                                    </tr>
-                                  );
-                                })}
+                                        </td>
+
+                                        {/* ACCIONES */}
+                                        <td className="py-3.5 px-4 text-right">
+                                          <div className="flex items-center justify-end gap-1.5">
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setSelectedTransferGroup(group);
+                                                setIsEditingTransfer(false);
+                                              }}
+                                              title="Ver Detalle de Artículos Ingresados"
+                                              className="px-2.5 py-1.5 bg-zinc-850 hover:bg-zinc-750 text-white rounded-lg text-[11px] font-bold transition flex items-center gap-1 cursor-pointer border border-zinc-700"
+                                            >
+                                              <Eye className="h-3 w-3 text-[#E6BF76]" />
+                                              <span>Detalle</span>
+                                            </button>
+
+                                            <button
+                                              type="button"
+                                              onClick={() => handleStartEditTransfer(group)}
+                                              title="Modificar artículos o cantidades de este traslado"
+                                              className="px-2.5 py-1.5 bg-indigo-900/40 hover:bg-indigo-900/60 text-indigo-300 border border-indigo-700/50 rounded-lg text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
+                                            >
+                                              <Edit3 className="h-3 w-3 text-indigo-400" />
+                                              <span>Modificar</span>
+                                            </button>
+
+                                            <button
+                                              type="button"
+                                              onClick={() => handlePrintTransferReceipt(group)}
+                                              title="Imprimir Remito Oficial"
+                                              className="px-2.5 py-1.5 bg-[#D4A55A]/20 hover:bg-[#D4A55A]/35 text-[#E6BF76] border border-[#D4A55A]/40 rounded-lg text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
+                                            >
+                                              <Printer className="h-3 w-3 text-[#E6BF76]" />
+                                              <span>Remito</span>
+                                            </button>
+
+                                            <button
+                                              type="button"
+                                              onClick={() => revertStockTransfer(group.transferCode)}
+                                              title="Anular Traslado y restituir stock a origen"
+                                              className="p-1.5 text-zinc-400 hover:text-red-400 hover:bg-red-950/40 rounded-lg transition cursor-pointer border border-transparent hover:border-red-900/50"
+                                            >
+                                              <RotateCcw className="h-3.5 w-3.5" />
+                                            </button>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
                               </tbody>
                             </table>
                           </div>
+                        )}
+
+                        {/* MODAL DETALLE DE TRASLADO */}
+                        {typeof document !== "undefined" && createPortal(
+                          <AnimatePresence>
+                            {selectedTransferGroup && (
+                              <div 
+                                className="fixed inset-0 z-[999999] flex items-center justify-center p-2 sm:p-4 md:p-6 bg-black/85 backdrop-blur-md"
+                                onClick={(e) => {
+                                  if (e.target === e.currentTarget) {
+                                    if (isEditingTransfer) handleCancelEditTransfer();
+                                    setSelectedTransferGroup(null);
+                                  }
+                                }}
+                              >
+                                <motion.div
+                                  initial={{ opacity: 0, scale: 0.96, y: 15 }}
+                                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                                  exit={{ opacity: 0, scale: 0.96, y: 15 }}
+                                  transition={{ duration: 0.18 }}
+                                  className={`${
+                                    isTransferModalMaximized
+                                      ? "w-[99vw] max-w-[99vw] h-[98vh] max-h-[98vh]"
+                                      : "w-[98vw] max-w-7xl h-[94vh] max-h-[96vh]"
+                                  } bg-[#070D1E] border ${isEditingTransfer ? "border-indigo-500/50 shadow-indigo-950/40" : "border-[#D4A55A]/40"} text-white rounded-2xl shadow-2xl shadow-black flex flex-col overflow-hidden relative transition-all duration-200`}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {/* HEADER MODAL - FIJO */}
+                                  <div className="p-4 sm:p-5 border-b border-zinc-800 bg-[#050A18] flex items-center justify-between shrink-0">
+                                    <div className="flex items-center gap-3">
+                                      <div className={`p-2.5 rounded-xl border shadow-inner ${
+                                        isEditingTransfer
+                                          ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-300"
+                                          : "bg-[#D4A55A]/15 border-[#D4A55A]/30 text-[#E6BF76]"
+                                      }`}>
+                                        {isEditingTransfer ? <Edit3 className="h-5 w-5" /> : <Package className="h-5 w-5" />}
+                                      </div>
+                                      <div>
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <span className={`text-[10px] font-black uppercase tracking-widest ${
+                                            isEditingTransfer ? "text-indigo-400" : "text-[#E6BF76]"
+                                          }`}>
+                                            {isEditingTransfer ? "MODIFICANDO TRASLADO DE STOCK" : "ORDEN DE TRASLADO OFICIAL"}
+                                          </span>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              navigator.clipboard.writeText(selectedTransferGroup.transferCode);
+                                              showAdminToast("¡Código copiado al portapapeles!", "success");
+                                            }}
+                                            className="text-[10px] text-zinc-400 hover:text-[#E6BF76] bg-zinc-900/90 hover:bg-zinc-800 px-2 py-0.5 rounded border border-zinc-700/80 flex items-center gap-1 font-mono transition cursor-pointer"
+                                            title="Copiar código de traslado"
+                                          >
+                                            <Copy className="h-2.5 w-2.5" />
+                                            <span>Copiar</span>
+                                          </button>
+                                        </div>
+                                        <h3 className="text-base sm:text-lg font-mono font-black text-white tracking-tight flex items-center gap-2 mt-0.5">
+                                          <span>{selectedTransferGroup.transferCode}</span>
+                                        </h3>
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-2">
+                                      {!isEditingTransfer && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleStartEditTransfer(selectedTransferGroup)}
+                                          className="px-3 py-1.5 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/40 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+                                          title="Modificar artículos o cantidades"
+                                        >
+                                          <Edit3 className="h-3.5 w-3.5 text-indigo-300" />
+                                          <span className="hidden sm:inline">Modificar</span>
+                                        </button>
+                                      )}
+
+                                      <button
+                                        type="button"
+                                        onClick={() => setIsTransferModalMaximized(!isTransferModalMaximized)}
+                                        className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800/80 rounded-xl transition cursor-pointer border border-transparent hover:border-zinc-700"
+                                        title={isTransferModalMaximized ? "Restaurar tamaño normal" : "Maximizar a pantalla casi completa"}
+                                      >
+                                        {isTransferModalMaximized ? (
+                                          <Minimize2 className="h-4 w-4" />
+                                        ) : (
+                                          <Maximize2 className="h-4 w-4" />
+                                        )}
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (isEditingTransfer) handleCancelEditTransfer();
+                                          setSelectedTransferGroup(null);
+                                        }}
+                                        className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800/80 rounded-xl transition cursor-pointer border border-transparent hover:border-zinc-700"
+                                        title="Cerrar ventana"
+                                      >
+                                        <X className="h-5 w-5" />
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {/* BODY MODAL - SCROLLABLE */}
+                                  <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-5 bg-[#080E20]">
+                                    {/* BANNER MODO EDICIÓN */}
+                                    {isEditingTransfer && (
+                                      <div className="p-4 rounded-xl border border-indigo-500/40 bg-indigo-950/40 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs shadow-inner">
+                                        <div className="flex items-start gap-3">
+                                          <Edit3 className="h-5 w-5 text-indigo-400 shrink-0 mt-0.5" />
+                                          <div>
+                                            <div className="font-black text-white text-sm flex items-center gap-2">
+                                              <span>Modo de Modificación Activo</span>
+                                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                                                En vivo
+                                              </span>
+                                            </div>
+                                            <div className="text-zinc-300 text-[11px] mt-1 leading-relaxed">
+                                              Puedes subir o bajar la cantidad con <strong className="text-white font-mono">+</strong> y <strong className="text-white font-mono">-</strong>, quitar artículos con el icono de papelera o agregar nuevos artículos desde el catálogo. Al presionar <strong>Guardar Cambios</strong>, las existencias se actualizarán automáticamente en los depósitos de origen y destino.
+                                            </div>
+                                          </div>
+                                        </div>
+                                        <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
+                                          <button
+                                            type="button"
+                                            onClick={handleCancelEditTransfer}
+                                            className="px-3.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl text-xs font-bold transition cursor-pointer"
+                                          >
+                                            Cancelar
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={handleSaveTransferModifications}
+                                            disabled={isSavingTransferEdit}
+                                            className="px-4 py-2 bg-[#D4A55A] hover:bg-[#E6BF76] text-slate-950 rounded-xl text-xs font-black transition flex items-center gap-2 cursor-pointer shadow-md disabled:opacity-50"
+                                          >
+                                            {isSavingTransferEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                                            <span>Guardar Cambios</span>
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* RUTA Y RESUMEN DE TRASLADO */}
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                      {/* ORIGEN */}
+                                      <div className="p-4 rounded-xl border border-amber-500/30 bg-[#0B1736] flex flex-col justify-between">
+                                        <div>
+                                          <div className="flex items-center justify-between">
+                                            <span className="text-[9px] font-extrabold uppercase tracking-wider text-amber-400/90">
+                                              Sucursal Despachada (Origen)
+                                            </span>
+                                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                              - DESPACHO
+                                            </span>
+                                          </div>
+                                          <div className="text-base font-black text-white mt-1">
+                                            Sucursal {selectedTransferGroup.fromDeposito}
+                                          </div>
+                                        </div>
+                                        <div className="text-[11px] text-zinc-400 mt-2 font-medium">
+                                          Mercadería enviada desde este depósito
+                                        </div>
+                                      </div>
+
+                                      {/* TOTALES */}
+                                      <div className="p-4 rounded-xl border border-indigo-500/30 bg-indigo-950/40 flex flex-col items-center justify-center text-center">
+                                        <span className="text-[9px] font-extrabold uppercase tracking-wider text-indigo-300">
+                                          {isEditingTransfer ? "Total Modificado en Destino" : "Total Ingresado en Destino"}
+                                        </span>
+                                        <div className="text-2xl font-mono font-black text-white my-0.5">
+                                          +{isEditingTransfer ? editTransferItems.reduce((acc, curr) => acc + curr.quantity, 0) : selectedTransferGroup.totalQuantity} <span className="text-xs font-bold font-sans text-indigo-300">unidades</span>
+                                        </div>
+                                        <span className="text-[10px] text-indigo-300/80 font-bold">
+                                          {isEditingTransfer ? editTransferItems.length : selectedTransferGroup.totalItems} {(isEditingTransfer ? editTransferItems.length : selectedTransferGroup.totalItems) === 1 ? "artículo" : "artículos"} en esta orden
+                                        </span>
+                                      </div>
+
+                                      {/* DESTINO */}
+                                      <div className="p-4 rounded-xl border border-emerald-500/30 bg-[#071F1E] flex flex-col justify-between">
+                                        <div>
+                                          <div className="flex items-center justify-between">
+                                            <span className="text-[9px] font-extrabold uppercase tracking-wider text-emerald-400">
+                                              Sucursal Receptora (Destino)
+                                            </span>
+                                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                              + INGRESO
+                                            </span>
+                                          </div>
+                                          <div className="text-base font-black text-emerald-100 mt-1">
+                                            Sucursal {selectedTransferGroup.toDeposito}
+                                          </div>
+                                        </div>
+                                        <div className="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-400 mt-2">
+                                          <CheckCircle2 className="h-3.5 w-3.5" />
+                                          <span>{isEditingTransfer ? "Receptora de stock" : "Stock ingresado con éxito"}</span>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* FECHA Y HORA */}
+                                    <div className="bg-[#050A18] border border-zinc-800/80 px-4 py-2.5 rounded-xl flex items-center justify-between text-xs font-mono">
+                                      <span className="text-zinc-400 font-bold flex items-center gap-2">
+                                        <Clock className="h-3.5 w-3.5 text-[#E6BF76]" />
+                                        <span>Fecha original de emisión:</span>
+                                      </span>
+                                      <span className="text-white font-bold capitalize">
+                                        {new Date(selectedTransferGroup.createdAt).toLocaleString("es-UY", {
+                                          weekday: "long",
+                                          year: "numeric",
+                                          month: "long",
+                                          day: "numeric",
+                                          hour: "2-digit",
+                                          minute: "2-digit",
+                                          second: "2-digit"
+                                        })}
+                                      </span>
+                                    </div>
+
+                                    {/* TABLA DE ARTÍCULOS - MODO EDICIÓN vs MODO LECTURA */}
+                                    <div className="space-y-2">
+                                      <div className="flex items-center justify-between px-1">
+                                        <h4 className="text-xs font-black uppercase text-white tracking-wider flex items-center gap-2">
+                                          <span>{isEditingTransfer ? "Artículos en la Orden (Ajustar Cantidades o Quitar)" : "Artículos y Cantidades Ingresadas"}</span>
+                                        </h4>
+                                        <span className="text-[11px] text-[#E6BF76] font-bold font-mono">
+                                          {isEditingTransfer ? editTransferItems.length : selectedTransferGroup.items.length} {(isEditingTransfer ? editTransferItems.length : selectedTransferGroup.items.length) === 1 ? "artículo" : "artículos"}
+                                        </span>
+                                      </div>
+
+                                      <div className="border border-zinc-800 rounded-xl overflow-hidden bg-[#060B1A] divide-y divide-zinc-800/60 shadow-inner">
+                                        <div className="bg-[#0B152F] px-4 py-2.5 grid grid-cols-12 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                                          <div className="col-span-1 text-center">#</div>
+                                          <div className={isEditingTransfer ? "col-span-5" : "col-span-7"}>Artículo / Variante</div>
+                                          <div className="col-span-2 text-center">SKU / Código</div>
+                                          <div className={isEditingTransfer ? "col-span-3 text-center" : "col-span-2 text-right"}>
+                                            {isEditingTransfer ? "Cantidad a Trasladar" : "Cant. Ingresada"}
+                                          </div>
+                                          {isEditingTransfer && (
+                                            <div className="col-span-1 text-center">Quitar</div>
+                                          )}
+                                        </div>
+
+                                        {isEditingTransfer ? (
+                                          // FILAS EN MODO EDICIÓN
+                                          editTransferItems.map((it, idx) => {
+                                            const prodMatch = (store.products || []).find((p) => String(p.id) === String(it.productId));
+                                            const itemImg = it.imageUrl || prodMatch?.imageUrl;
+                                            const itemSku = it.sku || prodMatch?.codigo;
+
+                                            return (
+                                              <div key={it.id || idx} className="px-4 py-3 grid grid-cols-12 text-xs items-center hover:bg-zinc-800/30 transition-colors">
+                                                <div className="col-span-1 text-center font-mono text-[11px] text-zinc-500">
+                                                  {idx + 1}
+                                                </div>
+
+                                                <div className="col-span-5 flex items-center gap-3 pr-2">
+                                                  {itemImg ? (
+                                                    <img
+                                                      src={itemImg}
+                                                      alt={it.productName}
+                                                      className="w-10 h-10 object-cover rounded-lg border border-zinc-700/80 bg-zinc-900 shrink-0 cursor-pointer hover:opacity-80 transition"
+                                                      onClick={() => setLightboxImage({ src: itemImg, name: it.productName, sku: itemSku })}
+                                                    />
+                                                  ) : (
+                                                    <div className="w-10 h-10 rounded-lg bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-400 shrink-0">
+                                                      <Package className="h-5 w-5" />
+                                                    </div>
+                                                  )}
+
+                                                  <div className="min-w-0">
+                                                    <span className="font-bold text-white truncate block max-w-full">
+                                                      {it.productName}
+                                                    </span>
+                                                    {it.variantName && (
+                                                      <div className="text-[10px] font-bold text-indigo-400 mt-0.5">
+                                                        Variante: {it.variantName}
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                </div>
+
+                                                <div className="col-span-2 text-center font-mono text-[11px] text-zinc-400 font-bold">
+                                                  {itemSku || "-"}
+                                                </div>
+
+                                                {/* CONTROLES DE SUBIR / BAJAR CANTIDAD */}
+                                                <div className="col-span-3 flex items-center justify-center gap-1.5">
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleUpdateItemQty(idx, it.quantity - 1)}
+                                                    disabled={it.quantity <= 1}
+                                                    title="Bajar cantidad"
+                                                    className="w-7 h-7 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:hover:bg-zinc-800 text-white flex items-center justify-center transition cursor-pointer border border-zinc-700 active:scale-95"
+                                                  >
+                                                    <Minus className="h-3 w-3" />
+                                                  </button>
+                                                  <input
+                                                    type="number"
+                                                    min={1}
+                                                    value={it.quantity}
+                                                    onChange={(e) => {
+                                                      const val = parseInt(e.target.value, 10);
+                                                      if (!isNaN(val) && val >= 1) {
+                                                        handleUpdateItemQty(idx, val);
+                                                      }
+                                                    }}
+                                                    className="w-14 text-center bg-zinc-900 border border-zinc-700 rounded-lg py-1 text-xs font-mono font-black text-white focus:border-[#D4A55A] focus:outline-none"
+                                                  />
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleUpdateItemQty(idx, it.quantity + 1)}
+                                                    title="Subir cantidad"
+                                                    className="w-7 h-7 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white flex items-center justify-center transition cursor-pointer border border-zinc-700 active:scale-95"
+                                                  >
+                                                    <Plus className="h-3 w-3" />
+                                                  </button>
+                                                </div>
+
+                                                {/* BOTÓN QUITAR ARTÍCULO */}
+                                                <div className="col-span-1 text-center">
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleRemoveTransferItem(idx)}
+                                                    title="Quitar este artículo del traslado"
+                                                    className="p-1.5 text-zinc-400 hover:text-red-400 hover:bg-red-950/40 rounded-lg transition cursor-pointer border border-transparent hover:border-red-900/50"
+                                                  >
+                                                    <Trash2 className="h-4 w-4" />
+                                                  </button>
+                                                </div>
+                                              </div>
+                                            );
+                                          })
+                                        ) : (
+                                          // FILAS EN MODO LECTURA NORMAL
+                                          selectedTransferGroup.items.map((it, idx) => {
+                                            const prodMatch = (store.products || []).find((p) => String(p.id) === String(it.productId));
+                                            const itemImg = it.imageUrl || prodMatch?.imageUrl;
+                                            const itemSku = it.sku || prodMatch?.codigo;
+
+                                            return (
+                                              <div key={it.id || idx} className="px-4 py-3 grid grid-cols-12 text-xs items-center hover:bg-zinc-800/30 transition-colors">
+                                                <div className="col-span-1 text-center font-mono text-[11px] text-zinc-500">
+                                                  {idx + 1}
+                                                </div>
+
+                                                <div className="col-span-7 flex items-center gap-3 pr-2">
+                                                  {itemImg ? (
+                                                    <img
+                                                      src={itemImg}
+                                                      alt={it.productName}
+                                                      className="w-10 h-10 object-cover rounded-lg border border-zinc-700/80 bg-zinc-900 shrink-0 cursor-pointer hover:opacity-80 transition"
+                                                      onClick={() => setLightboxImage({ src: itemImg, name: it.productName, sku: itemSku })}
+                                                    />
+                                                  ) : (
+                                                    <div className="w-10 h-10 rounded-lg bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-400 shrink-0">
+                                                      <Package className="h-5 w-5" />
+                                                    </div>
+                                                  )}
+
+                                                  <div className="min-w-0">
+                                                    <a
+                                                      href={`/producto/${encodeURIComponent(prodMatch?.slug || it.productId)}`}
+                                                      target="_blank"
+                                                      rel="noreferrer"
+                                                      className="font-bold text-white hover:text-[#E6BF76] transition-colors inline-flex items-center gap-1.5 group/link truncate max-w-full"
+                                                      title="Ver artículo en la tienda web"
+                                                    >
+                                                      <span className="truncate">{it.productName}</span>
+                                                      <ExternalLink className="h-3 w-3 text-zinc-400 group-hover/link:text-[#E6BF76] transition-colors shrink-0" />
+                                                    </a>
+                                                    {it.variantName && (
+                                                      <div className="text-[10px] font-bold text-indigo-400 mt-0.5">
+                                                        Variante: {it.variantName}
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                </div>
+
+                                                <div className="col-span-2 text-center font-mono text-[11px] text-zinc-400 font-bold">
+                                                  {itemSku || "-"}
+                                                </div>
+
+                                                <div className="col-span-2 text-right">
+                                                  <span className="font-mono font-black text-xs text-emerald-300 bg-emerald-950/60 px-2.5 py-1 rounded-lg border border-emerald-500/40 inline-block shadow-xs">
+                                                    +{it.quantity} u.
+                                                  </span>
+                                                </div>
+                                              </div>
+                                            );
+                                          })
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* SECCIÓN BUSCADOR PRO DE ARTÍCULOS - ESTILO PÁGINA PRINCIPAL (MODO EDICIÓN) */}
+                                    {isEditingTransfer && (
+                                      <div className="p-4 sm:p-5 rounded-2xl border border-[#D4A55A]/40 bg-gradient-to-b from-[#0B1730] to-[#070E22] space-y-4 shadow-2xl relative">
+                                        {/* Encabezado con estilo idéntico a la tienda */}
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-[#D4A55A]/20">
+                                          <div className="flex items-center gap-2.5">
+                                            <div className="p-2 rounded-xl bg-[#D4A55A]/15 border border-[#D4A55A]/35 text-[#E6BF76]">
+                                              <Search className="h-4 w-4" />
+                                            </div>
+                                            <div>
+                                              <div className="text-xs font-black text-[#F4EAD7] uppercase tracking-wider flex items-center gap-2">
+                                                <span>Buscador de Artículos</span>
+                                                <span className="bg-[#D4A55A]/20 text-[#E6BF76] text-[9px] font-extrabold px-2 py-0.5 rounded-full border border-[#D4A55A]/40 uppercase tracking-widest">
+                                                  Catálogo Oficial
+                                                </span>
+                                              </div>
+                                              <p className="text-[11px] text-zinc-400">
+                                                Busca por nombre, modelo, SKU o categoría para agregar artículos a este traslado.
+                                              </p>
+                                            </div>
+                                          </div>
+
+                                          <div className="flex items-center gap-2 self-start sm:self-auto">
+                                            <span className="text-[10px] text-zinc-300 font-semibold bg-[#050A18]/90 px-3 py-1 rounded-lg border border-[#D4A55A]/30">
+                                              Origen: <strong className="text-[#E6BF76] font-bold">{selectedTransferGroup.fromDeposito}</strong>
+                                            </span>
+                                            <span className="text-[10px] text-zinc-400 font-semibold bg-[#050A18]/90 px-3 py-1 rounded-lg border border-zinc-700/60">
+                                              Destino: <strong className="text-blue-300 font-bold">{selectedTransferGroup.toDeposito}</strong>
+                                            </span>
+                                          </div>
+                                        </div>
+
+                                        {/* SI HAY UN PRODUCTO SELECCIONADO: DETALLE Y CONFIGURACIÓN */}
+                                        {editAddProductId ? (() => {
+                                          const selectedProd = store.products.find(p => String(p.id) === String(editAddProductId));
+                                          if (!selectedProd) return null;
+
+                                          const hasVariants = selectedProd.variants && selectedProd.variants.length > 0;
+                                          const selectedVariant = hasVariants && editAddVariantId
+                                            ? selectedProd.variants?.find(v => String(v.id) === String(editAddVariantId))
+                                            : undefined;
+
+                                          const originStock = hasVariants
+                                            ? (selectedVariant ? (selectedTransferGroup.fromDeposito === "Pinamar" ? (selectedVariant.stockPinamar || 0) : (selectedVariant.stockMontevideo || 0)) : (selectedTransferGroup.fromDeposito === "Pinamar" ? (selectedProd.stockPinamar || 0) : (selectedProd.stockMontevideo || 0)))
+                                            : (selectedTransferGroup.fromDeposito === "Pinamar" ? (selectedProd.stockPinamar || 0) : (selectedProd.stockMontevideo || 0));
+
+                                          const destStock = hasVariants
+                                            ? (selectedVariant ? (selectedTransferGroup.toDeposito === "Pinamar" ? (selectedVariant.stockPinamar || 0) : (selectedVariant.stockMontevideo || 0)) : (selectedTransferGroup.toDeposito === "Pinamar" ? (selectedProd.stockPinamar || 0) : (selectedProd.stockMontevideo || 0)))
+                                            : (selectedTransferGroup.toDeposito === "Pinamar" ? (selectedProd.stockPinamar || 0) : (selectedProd.stockMontevideo || 0));
+
+                                          const displayImg = selectedVariant?.imageUrl || selectedProd.imageUrl || "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=200&q=80";
+
+                                          return (
+                                            <div className="p-4 bg-[#050B1A]/95 rounded-2xl border border-[#D4A55A]/40 space-y-4 animate-fade-in shadow-2xl">
+                                              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                                                <div className="flex items-center gap-3.5 min-w-0">
+                                                  <div className="relative w-16 h-16 rounded-xl overflow-hidden bg-[#030610] border border-[#D4A55A]/40 shrink-0 shadow-lg">
+                                                    <img
+                                                      src={displayImg}
+                                                      alt={selectedProd.name}
+                                                      className="w-full h-full object-cover"
+                                                      referrerPolicy="no-referrer"
+                                                    />
+                                                  </div>
+                                                  <div className="space-y-1 min-w-0">
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                      <span className="text-sm font-black text-[#F4EAD7]">{selectedProd.name}</span>
+                                                      {selectedProd.codigo && (
+                                                        <span className="text-[10px] font-mono font-bold bg-[#0B1730] text-[#E6BF76] px-2 py-0.5 rounded border border-[#D4A55A]/30">
+                                                          SKU: {selectedProd.codigo}
+                                                        </span>
+                                                      )}
+                                                      {selectedProd.category && (
+                                                        <span className="text-[10px] text-zinc-400 bg-zinc-800/80 px-2 py-0.5 rounded">
+                                                          {selectedProd.category}
+                                                        </span>
+                                                      )}
+                                                    </div>
+
+                                                    <div className="flex items-center gap-3 text-[11px] font-semibold flex-wrap">
+                                                      <span className="text-zinc-300">
+                                                        Disponible en {selectedTransferGroup.fromDeposito}:{" "}
+                                                        <strong className={originStock > 0 ? "text-emerald-400 font-bold font-mono" : "text-amber-400 font-bold font-mono"}>
+                                                          {originStock} u.
+                                                        </strong>
+                                                      </span>
+                                                      <span className="text-zinc-600">•</span>
+                                                      <span className="text-zinc-400">
+                                                        Destino ({selectedTransferGroup.toDeposito}):{" "}
+                                                        <strong className="text-blue-300 font-bold font-mono">{destStock} u.</strong>
+                                                      </span>
+                                                    </div>
+                                                  </div>
+                                                </div>
+
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    setEditAddProductId("");
+                                                    setEditAddVariantId("");
+                                                    setEditShowSuggestions(true);
+                                                  }}
+                                                  className="text-xs font-bold text-[#E6BF76] hover:text-[#F4EAD7] px-3.5 py-1.5 rounded-xl bg-[#0B1730] hover:bg-[#14234b] border border-[#D4A55A]/40 transition cursor-pointer self-start sm:self-center shrink-0 flex items-center gap-1.5 shadow-sm"
+                                                >
+                                                  <Search className="h-3 w-3" />
+                                                  <span>Buscar otro artículo</span>
+                                                </button>
+                                              </div>
+
+                                              {/* Selector Visual de Variantes */}
+                                              {hasVariants && (
+                                                <div className="space-y-2 pt-3 border-t border-[#D4A55A]/15">
+                                                  <label className="text-[10px] font-extrabold uppercase tracking-wider text-[#E6BF76] block">
+                                                    Selecciona Variante del Artículo *
+                                                  </label>
+                                                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                                    {selectedProd.variants?.map((v) => {
+                                                      const isSelected = String(v.id) === String(editAddVariantId);
+                                                      const vStock = selectedTransferGroup.fromDeposito === "Pinamar" ? (v.stockPinamar || 0) : (v.stockMontevideo || 0);
+                                                      const vLabel = [v.size, v.color].filter(Boolean).join(" / ") || "Variante";
+                                                      const vImg = v.imageUrl || displayImg;
+
+                                                      return (
+                                                        <button
+                                                          key={v.id}
+                                                          type="button"
+                                                          onClick={() => setEditAddVariantId(String(v.id))}
+                                                          className={`p-2 rounded-xl text-left border transition flex items-center gap-2.5 cursor-pointer ${
+                                                            isSelected
+                                                              ? "bg-[#D4A55A]/25 border-[#D4A55A] text-[#F4EAD7] shadow-md ring-1 ring-[#D4A55A]"
+                                                              : "bg-[#0B1730]/70 border-zinc-700/60 text-zinc-300 hover:bg-[#0B1730] hover:border-[#D4A55A]/40"
+                                                          }`}
+                                                        >
+                                                          <div className="w-9 h-9 rounded-lg overflow-hidden bg-black/50 border border-[#D4A55A]/30 shrink-0">
+                                                            <img src={vImg} alt={vLabel} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                                          </div>
+                                                          <div className="min-w-0 flex-1">
+                                                            <div className="text-[11px] font-bold truncate leading-tight">{vLabel}</div>
+                                                            <div className="text-[9px] text-zinc-400 font-mono mt-0.5">
+                                                              Stock: <strong className={vStock > 0 ? "text-emerald-400" : "text-amber-400"}>{vStock}u</strong>
+                                                            </div>
+                                                          </div>
+                                                        </button>
+                                                      );
+                                                    })}
+                                                  </div>
+                                                </div>
+                                              )}
+
+                                              {/* Controles de Cantidad y Botón de Añadir */}
+                                              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-[#D4A55A]/15">
+                                                <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
+                                                  <label className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mr-1">
+                                                    Cantidad a agregar:
+                                                  </label>
+                                                  <div className="flex items-center bg-[#0B1730] rounded-xl border border-[#D4A55A]/40 p-0.5">
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => setEditAddQty(prev => Math.max(1, prev - 1))}
+                                                      className="w-8 h-8 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-[#F4EAD7] font-bold text-sm flex items-center justify-center transition cursor-pointer"
+                                                    >
+                                                      -
+                                                    </button>
+                                                    <input
+                                                      type="number"
+                                                      min={1}
+                                                      value={editAddQty}
+                                                      onChange={(e) => setEditAddQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                                                      className="w-14 text-center bg-transparent text-sm font-mono font-black text-[#F4EAD7] focus:outline-none"
+                                                    />
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => setEditAddQty(prev => prev + 1)}
+                                                      className="w-8 h-8 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-[#F4EAD7] font-bold text-sm flex items-center justify-center transition cursor-pointer"
+                                                    >
+                                                      +
+                                                    </button>
+                                                  </div>
+
+                                                  {/* Presets rápidos */}
+                                                  <div className="flex items-center gap-1 ml-1">
+                                                    {[1, 5, 10].map(n => (
+                                                      <button
+                                                        key={n}
+                                                        type="button"
+                                                        onClick={() => setEditAddQty(n)}
+                                                        className="px-2 py-1 text-[10px] font-mono font-bold rounded-md bg-[#0B1730] hover:bg-[#14234b] text-[#E6BF76] border border-[#D4A55A]/30 transition cursor-pointer"
+                                                      >
+                                                        +{n}
+                                                      </button>
+                                                    ))}
+                                                    {originStock > 0 && (
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => setEditAddQty(originStock)}
+                                                        className="px-2 py-1 text-[10px] font-mono font-extrabold rounded-md bg-[#D4A55A]/20 hover:bg-[#D4A55A]/30 text-[#F4EAD7] border border-[#D4A55A]/50 transition cursor-pointer"
+                                                        title="Todo el stock disponible en depósito de origen"
+                                                      >
+                                                        Todo ({originStock}u)
+                                                      </button>
+                                                    )}
+                                                  </div>
+                                                </div>
+
+                                                <button
+                                                  type="button"
+                                                  onClick={handleAddProductToTransfer}
+                                                  disabled={hasVariants && !editAddVariantId}
+                                                  className="w-full sm:w-auto px-6 py-2.5 bg-gradient-to-r from-[#D4A55A] to-[#B3873C] hover:brightness-110 disabled:opacity-40 text-black text-xs font-black rounded-xl transition flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-[#D4A55A]/20"
+                                                >
+                                                  <Plus className="h-4 w-4 stroke-[2.5]" />
+                                                  <span>Añadir al Traslado</span>
+                                                </button>
+                                              </div>
+                                            </div>
+                                          );
+                                        })() : (
+                                          /* BUSCADOR CON INPUT Y FLOATING AUTOCOMPLETE IDÉNTICO A LA PÁGINA PRINCIPAL */
+                                          <div className="space-y-2 relative">
+                                            <div className="flex flex-col sm:flex-row gap-2">
+                                              {/* Barra de Búsqueda tipo Página Principal */}
+                                              <div className="relative flex-1">
+                                                <div className="flex items-center gap-2.5 bg-[#0B1730]/95 border border-[#D4A55A]/40 rounded-xl px-3.5 py-2.5 shadow-inner focus-within:border-[#D4A55A] focus-within:ring-1 focus-within:ring-[#D4A55A]/60 transition-all">
+                                                  <Search className="h-4 w-4 text-[#D4A55A] shrink-0" />
+                                                  <input
+                                                    type="text"
+                                                    placeholder="Buscar por artículo, modelo, código SKU o categoría..."
+                                                    value={editSearchProduct}
+                                                    onChange={(e) => {
+                                                      setEditSearchProduct(e.target.value);
+                                                      setEditShowSuggestions(true);
+                                                    }}
+                                                    onFocus={() => setEditShowSuggestions(true)}
+                                                    className="w-full bg-transparent text-[#F4EAD7] placeholder-zinc-500 border-none outline-none text-xs select-all font-medium"
+                                                  />
+                                                  {editSearchProduct && (
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => {
+                                                        setEditSearchProduct("");
+                                                        setEditShowSuggestions(false);
+                                                      }}
+                                                      className="text-[#E6BF76] hover:text-[#F4EAD7] text-sm px-1.5 font-bold font-mono cursor-pointer shrink-0"
+                                                    >
+                                                      ×
+                                                    </button>
+                                                  )}
+                                                </div>
+                                              </div>
+
+                                              {/* Botón Filtro Solo con Stock */}
+                                              <button
+                                                type="button"
+                                                onClick={() => setEditFilterOnlyWithStock(prev => !prev)}
+                                                className={`px-3.5 py-2 text-xs font-bold rounded-xl border transition flex items-center justify-center gap-2 cursor-pointer shrink-0 ${
+                                                  editFilterOnlyWithStock
+                                                    ? "bg-emerald-950/60 border-emerald-500/50 text-emerald-300 shadow-sm"
+                                                    : "bg-[#0B1730] border-zinc-700/80 text-zinc-300 hover:text-white hover:border-[#D4A55A]/40"
+                                                }`}
+                                              >
+                                                <span className={`w-2 h-2 rounded-full ${editFilterOnlyWithStock ? "bg-emerald-400 ring-2 ring-emerald-400/30" : "bg-zinc-500"}`} />
+                                                <span>Solo con stock en {selectedTransferGroup.fromDeposito}</span>
+                                              </button>
+                                            </div>
+
+                                            {/* FLOATING SUGGESTIONS DROPDOWN (IDÉNTICO A LA PÁGINA PRINCIPAL) */}
+                                            {editShowSuggestions && (() => {
+                                              const term = (editSearchProduct || "").trim().toLowerCase();
+                                              const normQ = normalizeText(term);
+
+                                              // Filtrar categorías sugeridas si hay término
+                                              const matchingCats = normQ
+                                                ? (store.dbCategories || []).filter(c => c.active !== false && normalizeText(c.nombre).includes(normQ)).slice(0, 4)
+                                                : [];
+
+                                              // Filtrar artículos sugeridos
+                                              const matchingProds = (store.products || []).filter((p) => {
+                                                if (p.active === false) return false;
+
+                                                const originStock = selectedTransferGroup.fromDeposito === "Pinamar" ? (p.stockPinamar || 0) : (p.stockMontevideo || 0);
+                                                const totalOriginStock = originStock + (p.variants?.reduce((sum, v) => sum + (selectedTransferGroup.fromDeposito === "Pinamar" ? (v.stockPinamar || 0) : (v.stockMontevideo || 0)), 0) || 0);
+
+                                                if (editFilterOnlyWithStock && totalOriginStock <= 0) {
+                                                  return false;
+                                                }
+
+                                                if (!normQ) return true;
+
+                                                const nameMatch = normalizeText(p.name || "").includes(normQ);
+                                                const codeMatch = normalizeText(p.codigo || "").includes(normQ);
+                                                const catMatch = normalizeText(p.category || "").includes(normQ);
+                                                const variantMatch = p.variants?.some(v => 
+                                                  normalizeText(v.size || "").includes(normQ) ||
+                                                  normalizeText(v.color || "").includes(normQ) ||
+                                                  normalizeText(v.sku || "").includes(normQ)
+                                                );
+
+                                                return nameMatch || codeMatch || catMatch || variantMatch;
+                                              });
+
+                                              const hasAnySuggestion = matchingCats.length > 0 || matchingProds.length > 0;
+
+                                              return (
+                                                <div className="absolute left-0 right-0 top-full mt-2 bg-[#0B1730]/98 border border-[#D4A55A]/40 backdrop-blur-xl rounded-2xl shadow-2xl z-50 overflow-hidden divide-y divide-[#D4A55A]/15 max-h-[380px] flex flex-col animate-fade-in">
+                                                  {!hasAnySuggestion ? (
+                                                    <div className="p-6 text-center">
+                                                      <p className="text-xs text-zinc-400">
+                                                        No hay sugerencias para "{editSearchProduct}"
+                                                      </p>
+                                                      <p className="text-[11px] text-zinc-500 mt-1">
+                                                        Prueba buscando por otra palabra clave o desactiva "Solo con stock".
+                                                      </p>
+                                                    </div>
+                                                  ) : (
+                                                    <>
+                                                      {/* Categorías Sugeridas */}
+                                                      {matchingCats.length > 0 && (
+                                                        <div className="p-2.5 bg-[#050B1A]/80 shrink-0">
+                                                          <span className="block text-[9px] font-extrabold uppercase text-[#E6BF76]/70 px-2 py-0.5 tracking-wider">
+                                                            Categorías sugeridas
+                                                          </span>
+                                                          <div className="flex flex-wrap gap-1.5 mt-1.5 px-2">
+                                                            {matchingCats.map(cat => (
+                                                              <button
+                                                                key={`edit-cat-${cat.id}`}
+                                                                type="button"
+                                                                onClick={() => {
+                                                                  setEditSearchProduct(cat.nombre);
+                                                                }}
+                                                                className="px-2.5 py-1 rounded-lg text-xs bg-[#0B1730] hover:bg-[#D4A55A]/20 text-[#F4EAD7] hover:text-[#E6BF76] border border-[#D4A55A]/25 transition cursor-pointer"
+                                                              >
+                                                                {cat.nombre}
+                                                              </button>
+                                                            ))}
+                                                          </div>
+                                                        </div>
+                                                      )}
+
+                                                      {/* Artículos Sugeridos con Imágenes */}
+                                                      <div className="p-2 overflow-y-auto flex-1 custom-scrollbar space-y-1">
+                                                        <div className="flex items-center justify-between px-2 py-1">
+                                                          <span className="text-[9px] font-extrabold uppercase text-[#E6BF76]/70 tracking-wider">
+                                                            Artículos sugeridos ({matchingProds.length})
+                                                          </span>
+                                                          <button
+                                                            type="button"
+                                                            onClick={() => setEditShowSuggestions(false)}
+                                                            className="text-[10px] text-zinc-400 hover:text-white cursor-pointer"
+                                                          >
+                                                            Cerrar ✕
+                                                          </button>
+                                                        </div>
+
+                                                        {matchingProds.slice(0, 30).map((p) => {
+                                                          const hasVariants = p.variants && p.variants.length > 0;
+                                                          const originStock = selectedTransferGroup.fromDeposito === "Pinamar" ? (p.stockPinamar || 0) : (p.stockMontevideo || 0);
+                                                          const totalOriginStock = hasVariants
+                                                            ? p.variants!.reduce((sum, v) => sum + (selectedTransferGroup.fromDeposito === "Pinamar" ? (v.stockPinamar || 0) : (v.stockMontevideo || 0)), 0)
+                                                            : originStock;
+
+                                                          const imgUrl = p.imageUrl || "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=120&q=80";
+
+                                                          return (
+                                                            <button
+                                                              key={`suggest-prod-${p.id}`}
+                                                              type="button"
+                                                              onClick={() => {
+                                                                setEditAddProductId(String(p.id));
+                                                                if (p.variants && p.variants.length === 1) {
+                                                                  setEditAddVariantId(String(p.variants[0].id));
+                                                                } else {
+                                                                  setEditAddVariantId("");
+                                                                }
+                                                                setEditAddQty(1);
+                                                                setEditShowSuggestions(false);
+                                                              }}
+                                                              className="w-full text-left p-2 rounded-xl hover:bg-[#D4A55A]/10 transition-colors flex items-center justify-between gap-3 cursor-pointer group border border-transparent hover:border-[#D4A55A]/25 bg-transparent"
+                                                            >
+                                                              <div className="flex items-center gap-3 min-w-0">
+                                                                <div className="w-11 h-11 rounded-lg overflow-hidden bg-[#050B1A] shrink-0 border border-[#D4A55A]/30 group-hover:scale-105 transition-transform duration-200 shadow-sm">
+                                                                  <img
+                                                                    src={imgUrl}
+                                                                    alt={p.name}
+                                                                    referrerPolicy="no-referrer"
+                                                                    className="w-full h-full object-cover"
+                                                                  />
+                                                                </div>
+                                                                <div className="min-w-0">
+                                                                  <span className="block text-xs font-bold text-[#F4EAD7] truncate group-hover:text-[#E6BF76] transition-colors">
+                                                                    {p.name}
+                                                                  </span>
+                                                                  <div className="flex items-center gap-2 mt-0.5 text-[10px] text-zinc-400">
+                                                                    {p.codigo && (
+                                                                      <span className="font-mono text-[#E6BF76] bg-black/40 px-1.5 py-0.2 rounded border border-[#D4A55A]/20">
+                                                                        {p.codigo}
+                                                                      </span>
+                                                                    )}
+                                                                    <span className="truncate">{p.category || "General"}</span>
+                                                                    {hasVariants && (
+                                                                      <span className="text-zinc-500">• {p.variants!.length} variantes</span>
+                                                                    )}
+                                                                  </div>
+                                                                </div>
+                                                              </div>
+
+                                                              <div className="text-right shrink-0">
+                                                                <div className="text-[10px] font-mono">
+                                                                  <span className="text-zinc-400 block text-[9px]">Disp {selectedTransferGroup.fromDeposito}:</span>
+                                                                  <span className={`font-black ${totalOriginStock > 0 ? "text-emerald-400" : "text-amber-400"}`}>
+                                                                    {totalOriginStock} u.
+                                                                  </span>
+                                                                </div>
+                                                                <span className="text-[9px] font-bold text-[#E6BF76] group-hover:underline block mt-0.5">
+                                                                  Seleccionar ›
+                                                                </span>
+                                                              </div>
+                                                            </button>
+                                                          );
+                                                        })}
+                                                      </div>
+
+                                                      {/* Footer informativo */}
+                                                      <div className="p-2 px-3 flex items-center justify-between bg-[#050B1A] text-[10px] text-[#E6BF76]/80 shrink-0">
+                                                        <span>Mostrando hasta 30 artículos coincidentes</span>
+                                                        <button
+                                                          type="button"
+                                                          onClick={() => setEditShowSuggestions(false)}
+                                                          className="hover:underline font-bold bg-transparent border-0 cursor-pointer text-[#E6BF76]"
+                                                        >
+                                                          Ocultar lista
+                                                        </button>
+                                                      </div>
+                                                    </>
+                                                  )}
+                                                </div>
+                                              );
+                                            })()}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* FOOTER MODAL - FIJO */}
+                                  <div className="p-4 sm:p-5 border-t border-zinc-800 bg-[#050A18] flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
+                                    {isEditingTransfer ? (
+                                      // FOOTER EN MODO EDICIÓN
+                                      <>
+                                        <div className="text-xs text-zinc-400 flex items-center gap-2">
+                                          <span className="font-bold text-white">Artículos:</span> {editTransferItems.length}
+                                          <span className="text-zinc-600">|</span>
+                                          <span className="font-bold text-white">Total unidades:</span> +{editTransferItems.reduce((sum, it) => sum + it.quantity, 0)} u.
+                                        </div>
+
+                                        <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
+                                          <button
+                                            type="button"
+                                            onClick={handleCancelEditTransfer}
+                                            className="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold rounded-xl transition cursor-pointer"
+                                          >
+                                            Cancelar
+                                          </button>
+
+                                          <button
+                                            type="button"
+                                            onClick={handleSaveTransferModifications}
+                                            disabled={isSavingTransferEdit}
+                                            className="px-5 py-2.5 bg-[#D4A55A] hover:bg-[#E6BF76] text-slate-950 text-xs font-black rounded-xl shadow-md transition flex items-center gap-2 cursor-pointer hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+                                          >
+                                            {isSavingTransferEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                                            <span>Guardar Cambios y Actualizar Stock</span>
+                                          </button>
+                                        </div>
+                                      </>
+                                    ) : (
+                                      // FOOTER EN MODO LECTURA
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => revertStockTransfer(selectedTransferGroup.transferCode)}
+                                          className="text-xs text-red-400 hover:text-red-300 hover:bg-red-950/40 px-3 py-2 rounded-xl transition flex items-center gap-1.5 font-bold cursor-pointer border border-transparent hover:border-red-900/50"
+                                        >
+                                          <RotateCcw className="h-3.5 w-3.5" />
+                                          <span>Anular Traslado (Restituir existencias a origen)</span>
+                                        </button>
+
+                                        <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end flex-wrap">
+                                          <button
+                                            type="button"
+                                            onClick={() => handleStartEditTransfer(selectedTransferGroup)}
+                                            className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-md transition flex items-center gap-2 cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+                                          >
+                                            <Edit3 className="h-4 w-4 text-indigo-200" />
+                                            <span>Modificar Traslado</span>
+                                          </button>
+
+                                          <button
+                                            type="button"
+                                            onClick={() => handlePrintTransferReceipt(selectedTransferGroup)}
+                                            className="px-4 py-2.5 bg-[#D4A55A] hover:bg-[#E6BF76] text-slate-950 text-xs font-black rounded-xl shadow-md transition flex items-center gap-2 cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+                                          >
+                                            <Printer className="h-4 w-4" />
+                                            <span>Imprimir Remito Oficial</span>
+                                          </button>
+
+                                          <button
+                                            type="button"
+                                            onClick={() => setSelectedTransferGroup(null)}
+                                            className="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold rounded-xl transition cursor-pointer"
+                                          >
+                                            Cerrar
+                                          </button>
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
+                                </motion.div>
+                              </div>
+                            )}
+                          </AnimatePresence>,
+                          document.body
                         )}
                       </div>
                     )}
