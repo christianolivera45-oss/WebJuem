@@ -702,7 +702,7 @@ export default function App() {
         handleLogout();
       }
     } catch (err) {
-      console.error("No se pudo verificar el token administrativa:", err);
+      console.warn("No se pudo verificar el token de administración:", err);
     }
   };
 
@@ -968,12 +968,15 @@ export default function App() {
               setAdminTasks(data.tasks || []);
             }
           } catch (jsonErr) {
-            console.error("Error parsing admin tasks JSON:", jsonErr);
+            console.warn("Error parsing admin tasks JSON:", jsonErr);
           }
         }
+      } else if (res.status === 401 || res.status === 403) {
+        // Token might be expired or invalid
+        console.warn(`Admin tasks authorization failed (status ${res.status}).`);
       }
     } catch (err) {
-      console.error("Error al obtener las tareas de administración:", err);
+      console.warn("Aviso: no se pudieron cargar las tareas de administración temporalmente:", err);
     }
   };
 
@@ -1633,12 +1636,14 @@ export default function App() {
       const res = await fetch("/api/admin/emails/logs", {
         headers: { "Authorization": `Bearer ${activeToken}` }
       });
-      const data = await res.json();
-      if (data.success) {
-        setEmailLogs(data.logs || []);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.success) {
+          setEmailLogs(data.logs || []);
+        }
       }
     } catch (e) {
-      console.error("Error fetching email logs", e);
+      console.warn("Aviso al consultar registros de correos:", e);
     } finally {
       setEmailLogsLoading(false);
     }
@@ -1651,12 +1656,14 @@ export default function App() {
       const res = await fetch("/api/stock-transfers", {
         headers: { "Authorization": `Bearer ${activeToken}` }
       });
-      const data = await res.json();
-      if (data.success) {
-        setStockTransfers(data.transfers || []);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.success) {
+          setStockTransfers(data.transfers || []);
+        }
       }
     } catch (e) {
-      console.error("Error fetching stock transfers", e);
+      console.warn("Aviso al consultar transferencias de stock:", e);
     } finally {
       setTransfersLoading(false);
     }
@@ -2109,6 +2116,184 @@ export default function App() {
     printWindow.document.close();
   };
 
+  const handleDownloadTransferPDF = (group: {
+    transferCode: string;
+    createdAt: string;
+    fromDeposito: string;
+    toDeposito: string;
+    totalQuantity: number;
+    totalItems: number;
+    items: Array<{
+      productName: string;
+      variantName?: string;
+      sku?: string;
+      quantity: number;
+    }>;
+  }) => {
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      showToast("Por favor habilita las ventanas emergentes en tu navegador para descargar el PDF.", "error");
+      return;
+    }
+
+    const formattedDate = new Date(group.createdAt).toLocaleString("es-UY", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
+    });
+
+    const rowsHtml = group.items.map((it, idx) => `
+      <tr style="border-bottom: 1px solid #e2e8f0;">
+        <td style="padding: 10px 8px; font-size: 11px; color: #64748b; font-family: monospace;">${idx + 1}</td>
+        <td style="padding: 10px 8px; font-size: 12px; font-weight: bold; color: #0f172a;">
+          ${it.productName}
+          ${it.variantName ? `<br><span style="font-size: 10px; color: #4f46e5; font-weight: 700;">Variante: ${it.variantName}</span>` : ''}
+        </td>
+        <td style="padding: 10px 8px; font-size: 11px; font-family: monospace; color: #475569;">${it.sku || '-'}</td>
+        <td style="padding: 10px 8px; font-size: 14px; font-weight: 900; text-align: center; color: #0f172a; font-family: monospace;">${it.quantity}</td>
+      </tr>
+    `).join("");
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html lang="es">
+        <head>
+          <meta charset="utf-8">
+          <title>Remito de Traslado ${group.transferCode}</title>
+          <style>
+            @page { size: A4 portrait; margin: 12mm; }
+            * { box-sizing: border-box; }
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 20px; background: #0f172a; color: #0f172a; line-height: 1.4; }
+            #pdf-container { width: 100%; max-width: 800px; margin: 0 auto; background: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3); }
+            .header { border-bottom: 3px solid #0f172a; padding-bottom: 16px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-end; }
+            .title { font-size: 20px; font-weight: 900; letter-spacing: -0.5px; text-transform: uppercase; margin: 0; color: #0f172a; }
+            .subtitle { font-size: 11px; color: #64748b; margin-top: 3px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+            .badge-code { font-family: monospace; font-size: 16px; font-weight: 800; background: #f8fafc; padding: 6px 14px; border-radius: 8px; border: 2px solid #cbd5e1; color: #0f172a; }
+            .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 24px; padding: 16px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; }
+            .info-item { font-size: 12px; }
+            .info-label { color: #64748b; font-weight: 700; text-transform: uppercase; font-size: 9px; letter-spacing: 0.5px; margin-bottom: 2px; }
+            .info-val { font-weight: 800; font-size: 13px; color: #0f172a; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 25px; }
+            th { text-align: left; padding: 9px 8px; background: #f1f5f9; font-size: 10px; font-weight: 800; text-transform: uppercase; color: #475569; border-bottom: 2px solid #cbd5e1; }
+            .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 40px; padding-top: 20px; }
+            .sign-box { border-top: 1px solid #94a3b8; text-align: center; padding-top: 10px; font-size: 11px; font-weight: 700; color: #475569; }
+            .footer-notes { margin-top: 25px; font-size: 10px; color: #94a3b8; text-align: center; border-top: 1px dashed #e2e8f0; padding-top: 10px; }
+          </style>
+          <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+        </head>
+        <body>
+          <div id="pdf-container">
+            <div class="header">
+              <div>
+                <h1 class="title">REMITO DE TRASLADO DE MERCADERÍA</h1>
+                <div class="subtitle">JUEM &bull; Comprobante Oficial de Movimiento entre Sucursales</div>
+              </div>
+              <div class="badge-code">${group.transferCode}</div>
+            </div>
+
+            <div class="info-grid">
+              <div class="info-item">
+                <div class="info-label">Fecha y Hora de Operación:</div>
+                <div class="info-val">${formattedDate}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Estado del Movimiento:</div>
+                <div class="info-val" style="color: #059669;">INGRESADO Y ACREDITADO</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Sucursal de Origen (Enviado Desde):</div>
+                <div class="info-val" style="color: #b45309;">${group.fromDeposito}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Sucursal de Destino (Llegó e Ingresó A):</div>
+                <div class="info-val" style="color: #4338ca;">${group.toDeposito}</div>
+              </div>
+            </div>
+
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 35px;">#</th>
+                  <th>Artículo / Descripción</th>
+                  <th style="width: 140px;">SKU / Código</th>
+                  <th style="width: 110px; text-align: center;">Cant. Ingresada</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rowsHtml}
+              </tbody>
+              <tfoot>
+                <tr style="background: #f8fafc; border-top: 2px solid #cbd5e1;">
+                  <td colspan="3" style="padding: 12px 8px; font-size: 12px; text-align: right; text-transform: uppercase; font-weight: 800;">Total Unidades Físicas Ingresadas:</td>
+                  <td style="padding: 12px 8px; font-size: 16px; text-align: center; color: #4f46e5; font-weight: 900; font-family: monospace;">+${group.totalQuantity} u.</td>
+                </tr>
+              </tfoot>
+            </table>
+
+            <div class="signatures">
+              <div class="sign-box">
+                Firma y Aclaración Despacho<br>
+                Sucursal Origen (${group.fromDeposito})
+              </div>
+              <div class="sign-box">
+                Firma y Aclaración Recepción<br>
+                Sucursal Destino (${group.toDeposito})
+              </div>
+            </div>
+
+            <div class="footer-notes">
+              Documento digital generado automáticamente por el sistema de gestión JUEM &bull; ${group.transferCode}
+            </div>
+          </div>
+
+          <script>
+            window.onload = function() {
+              var element = document.getElementById('pdf-container');
+              var opt = {
+                margin: 10,
+                filename: 'Remito_Traslado_${group.transferCode}.pdf',
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2.2, useCORS: true, logging: false },
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+              };
+
+              var overlay = document.createElement('div');
+              overlay.style.position = 'fixed';
+              overlay.style.top = '0';
+              overlay.style.left = '0';
+              overlay.style.width = '100%';
+              overlay.style.height = '100%';
+              overlay.style.background = 'rgba(15, 23, 42, 0.92)';
+              overlay.style.display = 'flex';
+              overlay.style.flexDirection = 'column';
+              overlay.style.justifyContent = 'center';
+              overlay.style.alignItems = 'center';
+              overlay.style.fontFamily = 'system-ui, -apple-system, sans-serif';
+              overlay.style.color = '#f8fafc';
+              overlay.style.zIndex = '99999';
+              overlay.innerHTML = '<div style="font-size: 20px; font-weight: 900; margin-bottom: 8px; color: #E6BF76;">Generando archivo PDF del Traslado ${group.transferCode}...</div><div style="font-size: 13px; color: #94a3b8;">La descarga comenzará automáticamente en un instante.</div>';
+              document.body.appendChild(overlay);
+
+              html2pdf().set(opt).from(element).save().then(function() {
+                overlay.innerHTML = '<div style="font-size: 20px; font-weight: 900; margin-bottom: 8px; color: #10b981;">¡PDF descargado con éxito!</div><div style="font-size: 13px; color: #94a3b8;">Cerrando esta ventana...</div>';
+                setTimeout(function() { window.close(); }, 1400);
+              }).catch(function(err) {
+                console.error('Error generating PDF:', err);
+                overlay.innerHTML = '<div style="font-size: 20px; font-weight: 900; margin-bottom: 8px; color: #ef4444;">Error al generar el PDF</div><div style="font-size: 13px; color: #cbd5e1; margin-bottom: 16px;">Puedes guardarlo pulsando Ctrl + P</div><button onclick="window.print()" style="padding: 8px 16px; background: #4f46e5; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">Imprimir / Guardar como PDF</button>';
+              });
+            };
+          </script>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+  };
+
   const groupedStockTransfers = useMemo(() => {
     const groups: { [key: string]: {
       transferCode: string;
@@ -2332,13 +2517,39 @@ export default function App() {
     };
   }, []);
 
-  // Real-time stock / background inventory automatic sync interval to prevent stale storefront stock counts
+  // Smart background inventory sync: only syncs when tab is visible, spaced to 90s, with immediate on-focus sync
   useEffect(() => {
-    // Poll the backend silently every 12 seconds to catch automatic inventory/ERP sync events
+    let lastSync = Date.now();
+
+    const doSync = () => {
+      if (document.visibilityState === "visible") {
+        lastSync = Date.now();
+        fetchStoreData(true);
+      }
+    };
+
+    // Poll every 90 seconds (reduced from 12s) only if the page is currently active/visible to the user
     const syncInterval = setInterval(() => {
-      fetchStoreData(true);
-    }, 12000);
-    return () => clearInterval(syncInterval);
+      if (document.visibilityState === "visible") {
+        doSync();
+      }
+    }, 90000);
+
+    // When the user focuses or returns to the tab after 45+ seconds, sync fresh stock immediately
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && Date.now() - lastSync > 45000) {
+        doSync();
+      }
+    };
+
+    window.addEventListener("focus", handleVisibilityChange);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      clearInterval(syncInterval);
+      window.removeEventListener("focus", handleVisibilityChange);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, []);
 
   // Active session expiration checker (forces redirect/logout after exactly 1 hour of session time)
@@ -2394,8 +2605,10 @@ export default function App() {
     
     fetchAdminTasks();
     const interval = setInterval(() => {
-      fetchAdminTasks();
-    }, 25000);
+      if (document.visibilityState === "visible") {
+        fetchAdminTasks();
+      }
+    }, 60000);
 
     return () => clearInterval(interval);
   }, [authToken]);
@@ -3230,10 +3443,12 @@ export default function App() {
         }
       }
     } catch (err: any) {
-      console.error(err);
       if (!isSilent) {
+        console.error("Error al sincronizar datos de la tienda:", err);
         setErrorMessage("No se pudo sincronizar con la base de datos.");
         setSyncStatus("error");
+      } else {
+        console.warn("Reintento silencioso de sincronización:", err);
       }
     } finally {
       if (!isSilent) setLoading(false);
@@ -16643,6 +16858,16 @@ export default function App() {
 
                                             <button
                                               type="button"
+                                              onClick={() => handleDownloadTransferPDF(group)}
+                                              title="Descargar Traslado en PDF"
+                                              className="px-2.5 py-1.5 bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 rounded-lg text-[11px] font-bold transition flex items-center gap-1 cursor-pointer shadow-sm hover:scale-[1.02] active:scale-[0.98]"
+                                            >
+                                              <FileText className="h-3 w-3 text-rose-400" />
+                                              <span>PDF</span>
+                                            </button>
+
+                                            <button
+                                              type="button"
                                               onClick={() => handlePrintTransferReceipt(group)}
                                               title="Imprimir Remito Oficial"
                                               className="px-2.5 py-1.5 bg-[#D4A55A]/20 hover:bg-[#D4A55A]/35 text-[#E6BF76] border border-[#D4A55A]/40 rounded-lg text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
@@ -16732,15 +16957,27 @@ export default function App() {
 
                                     <div className="flex items-center gap-2">
                                       {!isEditingTransfer && (
-                                        <button
-                                          type="button"
-                                          onClick={() => handleStartEditTransfer(selectedTransferGroup)}
-                                          className="px-3 py-1.5 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/40 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm"
-                                          title="Modificar artículos o cantidades"
-                                        >
-                                          <Edit3 className="h-3.5 w-3.5 text-indigo-300" />
-                                          <span className="hidden sm:inline">Modificar</span>
-                                        </button>
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleDownloadTransferPDF(selectedTransferGroup)}
+                                            className="px-3 py-1.5 bg-rose-600/30 hover:bg-rose-600/50 text-rose-200 border border-rose-500/40 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+                                            title="Descargar archivo PDF del Traslado"
+                                          >
+                                            <FileText className="h-3.5 w-3.5 text-rose-300" />
+                                            <span className="hidden sm:inline">PDF</span>
+                                          </button>
+
+                                          <button
+                                            type="button"
+                                            onClick={() => handleStartEditTransfer(selectedTransferGroup)}
+                                            className="px-3 py-1.5 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/40 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+                                            title="Modificar artículos o cantidades"
+                                          >
+                                            <Edit3 className="h-3.5 w-3.5 text-indigo-300" />
+                                            <span className="hidden sm:inline">Modificar</span>
+                                          </button>
+                                        </>
                                       )}
 
                                       <button
@@ -17556,6 +17793,16 @@ export default function App() {
                                           >
                                             <Edit3 className="h-4 w-4 text-indigo-200" />
                                             <span>Modificar Traslado</span>
+                                          </button>
+
+                                          <button
+                                            type="button"
+                                            onClick={() => handleDownloadTransferPDF(selectedTransferGroup)}
+                                            className="px-4 py-2.5 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded-xl shadow-md transition flex items-center gap-2 cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+                                            title="Descargar archivo PDF oficial del Traslado"
+                                          >
+                                            <FileText className="h-4 w-4 text-rose-100" />
+                                            <span>Descargar PDF</span>
                                           </button>
 
                                           <button
