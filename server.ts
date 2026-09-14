@@ -2619,9 +2619,9 @@ async function initPostgresStore(): Promise<ShopState | null> {
 
       -- Consolidate any unassigned or initial transfer orders made together into a single unified transfer code
       UPDATE public.stock_transfers 
-      SET transfer_code = 'TRF-20260912-0001', 
-          batch_id = 'batch-20260912-0001' 
-      WHERE transfer_code IS NULL OR transfer_code LIKE 'TRF-TRANS-%';
+      SET transfer_code = 'TRF-0001', 
+          batch_id = 'batch-0001' 
+      WHERE transfer_code IS NULL OR transfer_code LIKE 'TRF-TRANS-%' OR transfer_code = 'TRF-20260912-0001' OR batch_id = 'batch-20260912-0001';
     `);
 
     // Create public.admin_tasks table
@@ -4436,11 +4436,14 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
           ORDER BY created_at DESC;
         `);
         const transfers = transfersRes.rows.map(row => {
-          const rawCode = row.transfer_code || (row.batch_id ? `TRF-${row.batch_id.replace('batch-', '').toUpperCase()}` : 'TRF-20260912-0001');
+          let rawCode = row.transfer_code;
+          if (!rawCode || rawCode === 'TRF-20260912-0001' || rawCode.startsWith('TRF-TRANS-')) {
+            rawCode = 'TRF-0001';
+          }
           return {
             id: row.id,
             transferCode: rawCode,
-            batchId: row.batch_id || row.transfer_code || 'batch-20260912-0001',
+            batchId: row.batch_id || (rawCode ? `batch-${rawCode.replace('TRF-', '')}` : 'batch-0001'),
             productId: row.product_id,
             productName: row.product_name,
             sku: row.sku || undefined,
@@ -4455,11 +4458,17 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         });
         res.json({ success: true, transfers });
       } else {
-        const transfers = (currentStoreState.stockTransfers || []).map((t: any) => ({
-          ...t,
-          transferCode: t.transferCode || (t.batchId ? `TRF-${t.batchId.replace('batch-', '').toUpperCase()}` : 'TRF-20260912-0001'),
-          batchId: t.batchId || t.transferCode || 'batch-20260912-0001'
-        }));
+        const transfers = (currentStoreState.stockTransfers || []).map((t: any) => {
+          let rawCode = t.transferCode;
+          if (!rawCode || rawCode === 'TRF-20260912-0001' || rawCode.startsWith('TRF-TRANS-')) {
+            rawCode = 'TRF-0001';
+          }
+          return {
+            ...t,
+            transferCode: rawCode,
+            batchId: t.batchId || (rawCode ? `batch-${rawCode.replace('TRF-', '')}` : 'batch-0001')
+          };
+        });
         res.json({ success: true, transfers });
       }
     } catch (err: any) {
@@ -4518,14 +4527,10 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       return res.status(400).json({ success: false, message: "No se proporcionaron artículos válidos para transferir." });
     }
 
-    // Generate readable unique transfer code (e.g., TRF-20260912-7482)
+    // Generate sequential transfer code formatted as TRF-0001, TRF-0002, etc.
+    let transferCode = "TRF-0001";
+    let batchId = "batch-0001";
     const now = new Date();
-    const yyyy = now.getFullYear();
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const dd = String(now.getDate()).padStart(2, '0');
-    const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-    const transferCode = `TRF-${yyyy}${mm}${dd}-${randomSuffix}`;
-    const batchId = `batch-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
     const createdAt = now.toISOString();
 
     try {
@@ -4535,6 +4540,27 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         const client = await pool.connect();
         try {
           await client.query("BEGIN;");
+
+          // Determine next sequential transfer code from public.stock_transfers
+          const codeQueryRes = await client.query(
+            "SELECT DISTINCT transfer_code FROM public.stock_transfers WHERE transfer_code IS NOT NULL FOR UPDATE;"
+          );
+          let maxTransferNum = 0;
+          for (const row of codeQueryRes.rows) {
+            const raw = String(row.transfer_code || "").trim();
+            const match = raw.match(/^TRF-(\d+)$/i);
+            if (match) {
+              const num = parseInt(match[1], 10);
+              if (!isNaN(num) && num > maxTransferNum) {
+                maxTransferNum = num;
+              }
+            } else if (raw === 'TRF-20260912-0001') {
+              if (maxTransferNum < 1) maxTransferNum = 1;
+            }
+          }
+          const nextTransferNum = maxTransferNum + 1;
+          transferCode = `TRF-${String(nextTransferNum).padStart(4, "0")}`;
+          batchId = `batch-${String(nextTransferNum).padStart(4, "0")}`;
 
           for (const item of transferItemsList) {
             const transferId = "trans-" + Math.random().toString(36).substring(2, 10);
@@ -4626,6 +4652,23 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         currentStoreState = dbState;
       } else {
         // Fallback for file-based JSON store
+        let maxTransferNum = 0;
+        for (const t of (currentStoreState.stockTransfers || [])) {
+          const raw = String(t.transferCode || "").trim();
+          const match = raw.match(/^TRF-(\d+)$/i);
+          if (match) {
+            const num = parseInt(match[1], 10);
+            if (!isNaN(num) && num > maxTransferNum) {
+              maxTransferNum = num;
+            }
+          } else if (raw === 'TRF-20260912-0001') {
+            if (maxTransferNum < 1) maxTransferNum = 1;
+          }
+        }
+        const nextTransferNum = maxTransferNum + 1;
+        transferCode = `TRF-${String(nextTransferNum).padStart(4, "0")}`;
+        batchId = `batch-${String(nextTransferNum).padStart(4, "0")}`;
+
         const products = currentStoreState.products || [];
         const logsToAdd: any[] = [];
 

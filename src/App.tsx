@@ -1853,6 +1853,32 @@ export default function App() {
 
   const handleUpdateItemQty = (index: number, newQty: number) => {
     if (newQty < 1) return;
+    const item = editTransferItems[index];
+    if (item && selectedTransferGroup) {
+      const prod = store.products.find(p => String(p.id) === String(item.productId));
+      const variant = item.variantId ? prod?.variants?.find(v => String(v.id) === String(item.variantId)) : undefined;
+      const fromDep = selectedTransferGroup.fromDeposito || "Pinamar";
+      const currentStock = fromDep === "Pinamar"
+        ? (variant ? (variant.stockPinamar || 0) : (prod?.stockPinamar || 0))
+        : (variant ? (variant.stockMontevideo || 0) : (prod?.stockMontevideo || 0));
+      
+      const origItem = selectedTransferGroup.items.find(
+        oi => String(oi.productId) === String(item.productId) && String(oi.variantId || "") === String(item.variantId || "")
+      );
+      const origQty = origItem ? Number(origItem.quantity) : 0;
+      const maxAvailableForTransfer = currentStock + origQty;
+
+      if (newQty > maxAvailableForTransfer) {
+        showToast(`Stock insuficiente en ${fromDep}: Solo dispones de ${maxAvailableForTransfer}u en total para "${item.productName}${item.variantName ? ` (${item.variantName})` : ''}".`, "error");
+        setEditTransferItems(prev => {
+          const copy = [...prev];
+          copy[index] = { ...copy[index], quantity: Math.max(1, maxAvailableForTransfer) };
+          return copy;
+        });
+        setHasUnsavedTransferEdits(true);
+        return;
+      }
+    }
     setHasUnsavedTransferEdits(true);
     setEditTransferItems(prev => {
       const copy = [...prev];
@@ -2013,9 +2039,12 @@ export default function App() {
     totalQuantity: number;
     totalItems: number;
     items: Array<{
+      productId?: string;
       productName: string;
+      variantId?: string;
       variantName?: string;
       sku?: string;
+      imageUrl?: string;
       quantity: number;
     }>;
   }) => {
@@ -2034,17 +2063,40 @@ export default function App() {
       second: "2-digit"
     });
 
-    const rowsHtml = group.items.map((it, idx) => `
-      <tr style="border-bottom: 1px solid #e2e8f0;">
-        <td style="padding: 10px 8px; font-size: 11px; color: #64748b; font-family: monospace;">${idx + 1}</td>
-        <td style="padding: 10px 8px; font-size: 12px; font-weight: bold; color: #0f172a;">
-          ${it.productName}
-          ${it.variantName ? `<br><span style="font-size: 10px; color: #4f46e5; font-weight: 700;">Variante: ${it.variantName}</span>` : ''}
-        </td>
-        <td style="padding: 10px 8px; font-size: 11px; font-family: monospace; color: #475569;">${it.sku || '-'}</td>
-        <td style="padding: 10px 8px; font-size: 14px; font-weight: 900; text-align: center; color: #0f172a; font-family: monospace;">${it.quantity}</td>
-      </tr>
-    `).join("");
+    const rowsHtml = group.items.map((it, idx) => {
+      let finalImg = it.imageUrl;
+      if (!finalImg) {
+        const prod = (store.products || []).find(p => String(p.id) === String(it.productId))
+          || (store.products || []).find(p => p.name && it.productName && p.name.trim().toLowerCase() === it.productName.trim().toLowerCase());
+        const variant = prod?.variants?.find(v => String(v.id) === String(it.variantId));
+        finalImg = variant?.imageUrl || prod?.imageUrl || prod?.imagenes?.[0];
+      }
+
+      return `
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+          <td style="padding: 8px 6px; font-size: 11px; color: #64748b; font-family: monospace; text-align: center; vertical-align: middle;">${idx + 1}</td>
+          <td style="padding: 6px; text-align: center; vertical-align: middle;">
+            ${finalImg ? `
+              <img 
+                src="${finalImg}" 
+                alt="${it.productName}" 
+                crossorigin="anonymous" 
+                referrerpolicy="no-referrer" 
+                style="width: 46px; height: 46px; object-fit: cover; border-radius: 6px; border: 1px solid #cbd5e1; display: block; margin: 0 auto; background: #fff;"
+              />
+            ` : `
+              <div style="width: 46px; height: 46px; border-radius: 6px; background: #f1f5f9; border: 1px dashed #cbd5e1; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 9px; font-weight: 700; text-align: center; margin: 0 auto; line-height: 1.1;">Sin foto</div>
+            `}
+          </td>
+          <td style="padding: 8px 10px; font-size: 12px; font-weight: bold; color: #0f172a; vertical-align: middle;">
+            ${it.productName}
+            ${it.variantName ? `<br><span style="font-size: 10px; color: #4f46e5; font-weight: 700;">Variante: ${it.variantName}</span>` : ''}
+          </td>
+          <td style="padding: 8px 10px; font-size: 11px; font-family: monospace; color: #475569; vertical-align: middle;">${it.sku || '-'}</td>
+          <td style="padding: 8px 10px; font-size: 14px; font-weight: 900; text-align: center; color: #0f172a; font-family: monospace; vertical-align: middle;">${it.quantity}</td>
+        </tr>
+      `;
+    }).join("");
 
     printWindow.document.write(`
       <!DOCTYPE html>
@@ -2103,7 +2155,8 @@ export default function App() {
           <table>
             <thead>
               <tr>
-                <th style="width: 35px;">#</th>
+                <th style="width: 35px; text-align: center;">#</th>
+                <th style="width: 58px; text-align: center;">Foto</th>
                 <th>Artículo / Descripción</th>
                 <th style="width: 140px;">SKU / Código</th>
                 <th style="width: 110px; text-align: center;">Cant. Ingresada</th>
@@ -2114,7 +2167,7 @@ export default function App() {
             </tbody>
             <tfoot>
               <tr style="background: #f8fafc; border-top: 2px solid #cbd5e1;">
-                <td colspan="3" style="padding: 12px 8px; font-size: 12px; text-align: right; text-transform: uppercase; font-weight: 800;">Total Unidades Físicas Ingresadas:</td>
+                <td colspan="4" style="padding: 12px 8px; font-size: 12px; text-align: right; text-transform: uppercase; font-weight: 800;">Total Unidades Físicas Ingresadas:</td>
                 <td style="padding: 12px 8px; font-size: 16px; text-align: center; color: #4f46e5; font-weight: 900; font-family: monospace;">${group.totalQuantity}</td>
               </tr>
             </tfoot>
@@ -2133,7 +2186,21 @@ export default function App() {
 
           <script>
             window.onload = function() {
-              window.print();
+              var imgs = Array.from(document.querySelectorAll('img'));
+              if (imgs.length === 0) {
+                window.print();
+                return;
+              }
+              var promises = imgs.map(function(img) {
+                if (img.complete) return Promise.resolve();
+                return new Promise(function(resolve) {
+                  img.onload = resolve;
+                  img.onerror = resolve;
+                });
+              });
+              Promise.all(promises).then(function() {
+                setTimeout(function() { window.print(); }, 250);
+              });
             };
           </script>
         </body>
@@ -2150,9 +2217,12 @@ export default function App() {
     totalQuantity: number;
     totalItems: number;
     items: Array<{
+      productId?: string;
       productName: string;
+      variantId?: string;
       variantName?: string;
       sku?: string;
+      imageUrl?: string;
       quantity: number;
     }>;
   }) => {
@@ -2171,17 +2241,40 @@ export default function App() {
       second: "2-digit"
     });
 
-    const rowsHtml = group.items.map((it, idx) => `
-      <tr style="border-bottom: 1px solid #e2e8f0;">
-        <td style="padding: 10px 8px; font-size: 11px; color: #64748b; font-family: monospace;">${idx + 1}</td>
-        <td style="padding: 10px 8px; font-size: 12px; font-weight: bold; color: #0f172a;">
-          ${it.productName}
-          ${it.variantName ? `<br><span style="font-size: 10px; color: #4f46e5; font-weight: 700;">Variante: ${it.variantName}</span>` : ''}
-        </td>
-        <td style="padding: 10px 8px; font-size: 11px; font-family: monospace; color: #475569;">${it.sku || '-'}</td>
-        <td style="padding: 10px 8px; font-size: 14px; font-weight: 900; text-align: center; color: #0f172a; font-family: monospace;">${it.quantity}</td>
-      </tr>
-    `).join("");
+    const rowsHtml = group.items.map((it, idx) => {
+      let finalImg = it.imageUrl;
+      if (!finalImg) {
+        const prod = (store.products || []).find(p => String(p.id) === String(it.productId))
+          || (store.products || []).find(p => p.name && it.productName && p.name.trim().toLowerCase() === it.productName.trim().toLowerCase());
+        const variant = prod?.variants?.find(v => String(v.id) === String(it.variantId));
+        finalImg = variant?.imageUrl || prod?.imageUrl || prod?.imagenes?.[0];
+      }
+
+      return `
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+          <td style="padding: 8px 6px; font-size: 11px; color: #64748b; font-family: monospace; text-align: center; vertical-align: middle;">${idx + 1}</td>
+          <td style="padding: 6px; text-align: center; vertical-align: middle;">
+            ${finalImg ? `
+              <img 
+                src="${finalImg}" 
+                alt="${it.productName}" 
+                crossorigin="anonymous" 
+                referrerpolicy="no-referrer" 
+                style="width: 48px; height: 48px; object-fit: cover; border-radius: 6px; border: 1px solid #cbd5e1; display: block; margin: 0 auto; background: #fff;"
+              />
+            ` : `
+              <div style="width: 48px; height: 48px; border-radius: 6px; background: #f1f5f9; border: 1px dashed #cbd5e1; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 9px; font-weight: 700; text-align: center; margin: 0 auto; line-height: 1.1;">Sin foto</div>
+            `}
+          </td>
+          <td style="padding: 8px 10px; font-size: 12px; font-weight: bold; color: #0f172a; vertical-align: middle;">
+            ${it.productName}
+            ${it.variantName ? `<br><span style="font-size: 10px; color: #4f46e5; font-weight: 700;">Variante: ${it.variantName}</span>` : ''}
+          </td>
+          <td style="padding: 8px 10px; font-size: 11px; font-family: monospace; color: #475569; vertical-align: middle;">${it.sku || '-'}</td>
+          <td style="padding: 8px 10px; font-size: 14px; font-weight: 900; text-align: center; color: #0f172a; font-family: monospace; vertical-align: middle;">${it.quantity}</td>
+        </tr>
+      `;
+    }).join("");
 
     const htmlContent = `
       <!DOCTYPE html>
@@ -2190,23 +2283,23 @@ export default function App() {
           <meta charset="utf-8">
           <title>Remito de Traslado ${group.transferCode}</title>
           <style>
-            @page { size: A4 portrait; margin: 12mm; }
+            @page { size: A4 portrait; margin: 10mm; }
             * { box-sizing: border-box; }
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 20px; background: #0f172a; color: #0f172a; line-height: 1.4; }
-            #pdf-container { width: 100%; max-width: 800px; margin: 0 auto; background: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3); }
-            .header { border-bottom: 3px solid #0f172a; padding-bottom: 16px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-end; }
-            .title { font-size: 20px; font-weight: 900; letter-spacing: -0.5px; text-transform: uppercase; margin: 0; color: #0f172a; }
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 16px; background: #0f172a; color: #0f172a; line-height: 1.4; }
+            #pdf-container { width: 100%; max-width: 800px; margin: 0 auto; background: #ffffff; padding: 26px 30px; border-radius: 8px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3); }
+            .header { border-bottom: 3px solid #0f172a; padding-bottom: 14px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: flex-end; }
+            .title { font-size: 19px; font-weight: 900; letter-spacing: -0.5px; text-transform: uppercase; margin: 0; color: #0f172a; }
             .subtitle { font-size: 11px; color: #64748b; margin-top: 3px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
-            .badge-code { font-family: monospace; font-size: 16px; font-weight: 800; background: #f8fafc; padding: 6px 14px; border-radius: 8px; border: 2px solid #cbd5e1; color: #0f172a; }
-            .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 24px; padding: 16px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; }
+            .badge-code { font-family: monospace; font-size: 15px; font-weight: 800; background: #f8fafc; padding: 5px 12px; border-radius: 8px; border: 2px solid #cbd5e1; color: #0f172a; }
+            .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; padding: 14px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; }
             .info-item { font-size: 12px; }
             .info-label { color: #64748b; font-weight: 700; text-transform: uppercase; font-size: 9px; letter-spacing: 0.5px; margin-bottom: 2px; }
             .info-val { font-weight: 800; font-size: 13px; color: #0f172a; }
-            table { width: 100%; border-collapse: collapse; margin-bottom: 25px; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 22px; }
             th { text-align: left; padding: 9px 8px; background: #f1f5f9; font-size: 10px; font-weight: 800; text-transform: uppercase; color: #475569; border-bottom: 2px solid #cbd5e1; }
-            .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 40px; padding-top: 20px; }
+            .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 35px; padding-top: 15px; }
             .sign-box { border-top: 1px solid #94a3b8; text-align: center; padding-top: 10px; font-size: 11px; font-weight: 700; color: #475569; }
-            .footer-notes { margin-top: 25px; font-size: 10px; color: #94a3b8; text-align: center; border-top: 1px dashed #e2e8f0; padding-top: 10px; }
+            .footer-notes { margin-top: 20px; font-size: 10px; color: #94a3b8; text-align: center; border-top: 1px dashed #e2e8f0; padding-top: 10px; }
           </style>
           <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
         </head>
@@ -2242,7 +2335,8 @@ export default function App() {
             <table>
               <thead>
                 <tr>
-                  <th style="width: 35px;">#</th>
+                  <th style="width: 35px; text-align: center;">#</th>
+                  <th style="width: 58px; text-align: center;">Foto</th>
                   <th>Artículo / Descripción</th>
                   <th style="width: 140px;">SKU / Código</th>
                   <th style="width: 110px; text-align: center;">Cant. Ingresada</th>
@@ -2253,7 +2347,7 @@ export default function App() {
               </tbody>
               <tfoot>
                 <tr style="background: #f8fafc; border-top: 2px solid #cbd5e1;">
-                  <td colspan="3" style="padding: 12px 8px; font-size: 12px; text-align: right; text-transform: uppercase; font-weight: 800;">Total Unidades Físicas Ingresadas:</td>
+                  <td colspan="4" style="padding: 12px 8px; font-size: 12px; text-align: right; text-transform: uppercase; font-weight: 800;">Total Unidades Físicas Ingresadas:</td>
                   <td style="padding: 12px 8px; font-size: 16px; text-align: center; color: #4f46e5; font-weight: 900; font-family: monospace;">+${group.totalQuantity} u.</td>
                 </tr>
               </tfoot>
@@ -2276,17 +2370,34 @@ export default function App() {
           </div>
 
           <script>
-            window.onload = function() {
+            function runPdfExport() {
               var element = document.getElementById('pdf-container');
               var opt = {
-                margin: 10,
+                margin: [8, 8, 8, 8],
                 filename: 'Remito_Traslado_${group.transferCode}.pdf',
                 image: { type: 'jpeg', quality: 0.98 },
-                html2canvas: { scale: 2.2, useCORS: true, logging: false },
+                html2canvas: { scale: 2.2, useCORS: true, logging: false, allowTaint: true },
                 jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
               };
 
+              html2pdf().set(opt).from(element).save().then(function() {
+                var overlay = document.getElementById('loading-overlay');
+                if (overlay) {
+                  overlay.innerHTML = '<div style="font-size: 20px; font-weight: 900; margin-bottom: 8px; color: #10b981;">¡PDF descargado con éxito!</div><div style="font-size: 13px; color: #94a3b8;">Cerrando esta ventana...</div>';
+                }
+                setTimeout(function() { window.close(); }, 1400);
+              }).catch(function(err) {
+                console.error('Error generating PDF:', err);
+                var overlay = document.getElementById('loading-overlay');
+                if (overlay) {
+                  overlay.innerHTML = '<div style="font-size: 18px; font-weight: 800; color: #ef4444; margin-bottom: 6px;">Error al generar el PDF automáticamente</div><div style="font-size: 13px; color: #cbd5e1; margin-bottom: 16px;">Puedes guardarlo pulsando Ctrl + P</div><button onclick="window.print()" style="padding: 10px 18px; background: #4f46e5; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">Imprimir / Guardar como PDF</button>';
+                }
+              });
+            }
+
+            window.onload = function() {
               var overlay = document.createElement('div');
+              overlay.id = 'loading-overlay';
               overlay.style.position = 'fixed';
               overlay.style.top = '0';
               overlay.style.left = '0';
@@ -2300,15 +2411,28 @@ export default function App() {
               overlay.style.fontFamily = 'system-ui, -apple-system, sans-serif';
               overlay.style.color = '#f8fafc';
               overlay.style.zIndex = '99999';
-              overlay.innerHTML = '<div style="font-size: 20px; font-weight: 900; margin-bottom: 8px; color: #E6BF76;">Generando archivo PDF del Traslado ${group.transferCode}...</div><div style="font-size: 13px; color: #94a3b8;">La descarga comenzará automáticamente en un instante.</div>';
+              overlay.innerHTML = '<div style="font-size: 20px; font-weight: 900; margin-bottom: 8px; color: #E6BF76;">Generando archivo PDF del Traslado ${group.transferCode}...</div><div style="font-size: 13px; color: #94a3b8;">Cargando imágenes y maquetando remito...</div>';
               document.body.appendChild(overlay);
 
-              html2pdf().set(opt).from(element).save().then(function() {
-                overlay.innerHTML = '<div style="font-size: 20px; font-weight: 900; margin-bottom: 8px; color: #10b981;">¡PDF descargado con éxito!</div><div style="font-size: 13px; color: #94a3b8;">Cerrando esta ventana...</div>';
-                setTimeout(function() { window.close(); }, 1400);
-              }).catch(function(err) {
-                console.error('Error generating PDF:', err);
-                overlay.innerHTML = '<div style="font-size: 20px; font-weight: 900; margin-bottom: 8px; color: #ef4444;">Error al generar el PDF</div><div style="font-size: 13px; color: #cbd5e1; margin-bottom: 16px;">Puedes guardarlo pulsando Ctrl + P</div><button onclick="window.print()" style="padding: 8px 16px; background: #4f46e5; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">Imprimir / Guardar como PDF</button>';
+              // Wait for all images to complete loading
+              var imgs = Array.from(document.querySelectorAll('#pdf-container img'));
+              if (imgs.length === 0) {
+                setTimeout(runPdfExport, 250);
+                return;
+              }
+
+              var promises = imgs.map(function(img) {
+                if (img.complete) return Promise.resolve();
+                return new Promise(function(resolve) {
+                  img.onload = resolve;
+                  img.onerror = resolve;
+                });
+              });
+
+              Promise.all(promises).then(function() {
+                setTimeout(runPdfExport, 350);
+              }).catch(function() {
+                setTimeout(runPdfExport, 350);
               });
             };
           </script>
@@ -2352,10 +2476,10 @@ export default function App() {
       
       const isLegacyFirstTransfer = 
         legacyIdList.includes(t.id) || 
-        (code && (code.startsWith('TRF-TRANS-') || code.includes('USRU') || code.includes('POYJ') || code.includes('USZC') || code.includes('9ZGY') || code.includes('95V4') || code.includes('RVMZ') || code.includes('IK46') || code.includes('9RIQ') || code.includes('YGUE') || code.includes('60KV')));
+        (code && (code === 'TRF-20260912-0001' || code.startsWith('TRF-TRANS-') || code.includes('USRU') || code.includes('POYJ') || code.includes('USZC') || code.includes('9ZGY') || code.includes('95V4') || code.includes('RVMZ') || code.includes('IK46') || code.includes('9RIQ') || code.includes('YGUE') || code.includes('60KV')));
 
       if (!code || isLegacyFirstTransfer) {
-        code = 'TRF-20260912-0001';
+        code = 'TRF-0001';
       }
 
       const timeMinute = t.createdAt ? t.createdAt.substring(0, 16) : 'batch-1';
@@ -2364,7 +2488,7 @@ export default function App() {
       if (!groups[groupKey]) {
         groups[groupKey] = {
           transferCode: code,
-          batchId: t.batchId || 'batch-20260912-0001',
+          batchId: t.batchId || (code ? `batch-${code.replace('TRF-', '')}` : 'batch-0001'),
           createdAt: t.createdAt,
           fromDeposito: t.fromDeposito,
           toDeposito: t.toDeposito,
@@ -2374,9 +2498,11 @@ export default function App() {
         };
       }
 
-      const pMatch = (store.products || []).find(p => String(p.id) === String(t.productId));
-      const skuVal = t.sku || pMatch?.codigo;
-      const imgVal = t.imageUrl || pMatch?.imageUrl;
+      const pMatch = (store.products || []).find(p => String(p.id) === String(t.productId))
+        || (store.products || []).find(p => p.name && t.productName && p.name.trim().toLowerCase() === t.productName.trim().toLowerCase());
+      const vMatch = (pMatch?.variants || []).find(v => String(v.id) === String(t.variantId));
+      const skuVal = t.sku || vMatch?.sku || pMatch?.codigo;
+      const imgVal = t.imageUrl || vMatch?.imageUrl || pMatch?.imageUrl || pMatch?.imagenes?.[0];
 
       groups[groupKey].items.push({
         id: t.id,
@@ -15880,6 +16006,11 @@ export default function App() {
                                         <button
                                           disabled={item.productObj?.isCombo}
                                           onClick={() => {
+                                            const totalStock = (item.stockPinamar || 0) + (item.stockMontevideo || 0);
+                                            if (totalStock <= 0) {
+                                              showToast(`Stock insuficiente: "${item.name}${item.variantName ? ` (${item.variantName})` : ''}" no tiene existencias en ningún depósito para transferir.`, "error");
+                                              return;
+                                            }
                                             setTransferProductId(String(item.productId));
                                             setTransferVariantId(item.variantId ? String(item.variantId) : "");
                                             setTransferQty(1);
@@ -16174,6 +16305,16 @@ export default function App() {
                                                     return;
                                                   }
                                                   const parsed = parseInt(valStr) || 0;
+                                                  if (parsed > item.maxAvailable) {
+                                                    showToast(`Stock insuficiente en ${transferFrom}: El stock disponible para "${item.productName}" es de ${item.maxAvailable}u.`, "error");
+                                                    setTransferItems(prev => prev.map(i => {
+                                                      if (i.id === item.id) {
+                                                        return { ...i, quantity: item.maxAvailable };
+                                                      }
+                                                      return i;
+                                                    }));
+                                                    return;
+                                                  }
                                                   const finalVal = Math.min(item.maxAvailable, parsed);
                                                   setTransferItems(prev => prev.map(i => {
                                                     if (i.id === item.id) {
@@ -16197,6 +16338,10 @@ export default function App() {
                                             <button
                                               type="button"
                                               onClick={() => {
+                                                if (item.quantity >= item.maxAvailable) {
+                                                  showToast(`Stock límite alcanzado: Ya tienes el máximo disponible en ${transferFrom} (${item.maxAvailable}u) para "${item.productName}".`, "error");
+                                                  return;
+                                                }
                                                 setTransferItems(prev => prev.map(i => {
                                                   if (i.id === item.id) {
                                                     return { ...i, quantity: Math.min(i.maxAvailable, i.quantity + 1) };
@@ -16204,8 +16349,10 @@ export default function App() {
                                                   return i;
                                                 }));
                                               }}
-                                              disabled={item.quantity >= item.maxAvailable}
-                                              className="w-6 h-6 flex items-center justify-center bg-white border border-slate-200 dark:bg-zinc-800 dark:border-zinc-700 rounded text-xs font-bold disabled:opacity-50"
+                                              className={`w-6 h-6 flex items-center justify-center bg-white border border-slate-200 dark:bg-zinc-800 dark:border-zinc-700 rounded text-xs font-bold transition cursor-pointer ${
+                                                item.quantity >= item.maxAvailable ? "text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-950/30" : "hover:bg-slate-100 dark:hover:bg-zinc-700"
+                                              }`}
+                                              title={item.quantity >= item.maxAvailable ? `Stock máximo alcanzado (${item.maxAvailable}u)` : "Aumentar cantidad"}
                                             >
                                               +
                                             </button>
@@ -16315,8 +16462,14 @@ export default function App() {
                                         <select
                                           value={transferVariantId}
                                           onChange={(e) => {
-                                            setTransferVariantId(e.target.value);
+                                            const newVarId = e.target.value;
+                                            setTransferVariantId(newVarId);
                                             setTransferQty(1);
+                                            const foundVar = selectedProduct.variants?.find(v => String(v.id) === String(newVarId));
+                                            const varSrcStock = foundVar ? (transferFrom === "Pinamar" ? (foundVar.stockPinamar || 0) : (foundVar.stockMontevideo || 0)) : 0;
+                                            if (varSrcStock <= 0) {
+                                              showToast(`Stock insuficiente: La variante "${foundVar?.size} / ${foundVar?.color}" no tiene existencias en ${transferFrom} (0u disponibles).`, "error");
+                                            }
                                           }}
                                           className="w-full px-3 py-1.5 text-xs bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-700 rounded-xl font-extrabold text-slate-900 dark:text-zinc-100 focus:ring-1 focus:ring-indigo-500"
                                         >
@@ -16337,8 +16490,21 @@ export default function App() {
                                       <span className="text-[10px] font-black uppercase text-slate-800 dark:text-zinc-200 block">Cantidad a Transferir</span>
                                       
                                       {sourceStock <= 0 ? (
-                                        <div className="text-center py-2 text-[11px] font-bold text-red-500 bg-red-500/5 rounded-lg border border-red-500/10">
-                                          No hay existencias disponibles de este artículo en {transferFrom} para poder transferir.
+                                        <div className="space-y-2">
+                                          <div className="text-center py-2 text-[11px] font-bold text-red-500 bg-red-500/5 rounded-lg border border-red-500/10 flex items-center justify-center gap-1.5">
+                                            <AlertTriangle className="h-4 w-4 shrink-0 text-red-500" />
+                                            <span>No hay existencias disponibles de este artículo en {transferFrom} para poder transferir.</span>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              showToast(`Stock insuficiente: No puedes agregar "${selectedProduct.name}" porque no hay existencias en ${transferFrom} (0 unidades disponibles).`, "error");
+                                            }}
+                                            className="w-full py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 font-black text-xs rounded-xl border border-red-500/30 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                                          >
+                                            <Plus className="h-4 w-4" />
+                                            <span>Agregar a la Transferencia (Sin Stock)</span>
+                                          </button>
                                         </div>
                                       ) : (
                                         <div className="flex items-center gap-4">
@@ -16346,7 +16512,7 @@ export default function App() {
                                             <button
                                               type="button"
                                               onClick={() => setTransferQty(prev => Math.max(1, prev - 1))}
-                                              className="w-8 h-8 flex items-center justify-center font-bold text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg"
+                                              className="w-8 h-8 flex items-center justify-center font-bold text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg cursor-pointer"
                                             >
                                               -
                                             </button>
@@ -16362,7 +16528,12 @@ export default function App() {
                                                   return;
                                                 }
                                                 const parsed = parseInt(valStr) || 0;
-                                                setTransferQty(Math.min(sourceStock, parsed));
+                                                if (parsed > sourceStock) {
+                                                  showToast(`Stock insuficiente: Solicitaste ${parsed}u pero solo dispones de ${sourceStock}u en ${transferFrom}.`, "error");
+                                                  setTransferQty(sourceStock);
+                                                  return;
+                                                }
+                                                setTransferQty(parsed);
                                               }}
                                               onBlur={() => {
                                                 if (transferQty < 1) {
@@ -16373,8 +16544,14 @@ export default function App() {
                                             />
                                             <button
                                               type="button"
-                                              onClick={() => setTransferQty(prev => Math.min(sourceStock, prev + 1))}
-                                              className="w-8 h-8 flex items-center justify-center font-bold text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg"
+                                              onClick={() => {
+                                                if (transferQty >= sourceStock) {
+                                                  showToast(`Stock límite alcanzado: Ya tienes el máximo disponible en ${transferFrom} (${sourceStock}u).`, "error");
+                                                  return;
+                                                }
+                                                setTransferQty(prev => Math.min(sourceStock, prev + 1));
+                                              }}
+                                              className="w-8 h-8 flex items-center justify-center font-bold text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg cursor-pointer"
                                             >
                                               +
                                             </button>
@@ -16387,6 +16564,21 @@ export default function App() {
                                           <button
                                             type="button"
                                             onClick={() => {
+                                              if (sourceStock <= 0) {
+                                                showToast(`Stock insuficiente: "${selectedProduct.name}" no cuenta con existencias en ${transferFrom}.`, "error");
+                                                return;
+                                              }
+
+                                              if (transferQty < 1) {
+                                                showToast("Ingresa una cantidad válida mayor a cero.", "error");
+                                                return;
+                                              }
+
+                                              if (transferQty > sourceStock) {
+                                                showToast(`Stock insuficiente: Quieres transferir ${transferQty}u pero solo dispones de ${sourceStock}u en ${transferFrom}.`, "error");
+                                                return;
+                                              }
+
                                               const itemKey = transferVariantId ? `${selectedProduct.id}-${transferVariantId}` : String(selectedProduct.id);
                                               
                                               const exists = transferItems.find(i => {
@@ -16395,15 +16587,20 @@ export default function App() {
                                               });
 
                                               if (exists) {
+                                                if (exists.quantity + transferQty > sourceStock) {
+                                                  const remaining = Math.max(0, sourceStock - exists.quantity);
+                                                  showToast(`Stock insuficiente en ${transferFrom}: Ya tienes ${exists.quantity}u en la lista. Solo puedes agregar hasta ${remaining}u más (Stock disponible: ${sourceStock}u).`, "error");
+                                                  return;
+                                                }
                                                 setTransferItems(prev => prev.map(i => {
                                                   const key = i.variantId ? `${i.productId}-${i.variantId}` : i.productId;
                                                   if (key === itemKey) {
-                                                    const newQty = Math.min(sourceStock, i.quantity + transferQty);
+                                                    const newQty = i.quantity + transferQty;
                                                     return { ...i, quantity: newQty };
                                                   }
                                                   return i;
                                                 }));
-                                                showToast(`Se actualizó la cantidad de "${selectedProduct.name}" en la lista.`, "success");
+                                                showToast(`Se sumaron +${transferQty}u a "${selectedProduct.name}" en la lista (Total: ${exists.quantity + transferQty}u).`, "success");
                                               } else {
                                                 setTransferItems(prev => [
                                                   ...prev,
@@ -16525,14 +16722,18 @@ export default function App() {
                                         return (
                                           <button
                                             key={item.id}
-                                            disabled={item.sourceStock <= 0}
+                                            type="button"
                                             onClick={() => {
+                                              if (item.sourceStock <= 0) {
+                                                showToast(`Stock insuficiente: No hay existencias disponibles de "${item.name}${item.variantName ? ` (${item.variantName})` : ''}" en ${transferFrom} para transferir.`, "error");
+                                                return;
+                                              }
                                               setTransferProductId(String(item.productId));
                                               setTransferVariantId(item.variantId ? String(item.variantId) : "");
                                               setTransferQty(1);
                                             }}
                                             className={`w-full p-3 text-left hover:bg-slate-50 dark:hover:bg-zinc-900/50 flex items-center justify-between transition group cursor-pointer ${
-                                              item.sourceStock <= 0 ? "opacity-45 cursor-not-allowed bg-slate-50/20" : ""
+                                              item.sourceStock <= 0 ? "opacity-75 bg-red-50/20 dark:bg-red-950/10 border-l-2 border-l-red-400" : ""
                                             }`}
                                           >
                                             <div className="flex items-center gap-3">
@@ -17482,7 +17683,12 @@ export default function App() {
                                                         <button
                                                           key={v.id}
                                                           type="button"
-                                                          onClick={() => setEditAddVariantId(String(v.id))}
+                                                          onClick={() => {
+                                                            setEditAddVariantId(String(v.id));
+                                                            if (vStock <= 0) {
+                                                              showToast(`Stock insuficiente: La variante "${vLabel}" no tiene existencias en ${selectedTransferGroup.fromDeposito} (0 unidades disponibles).`, "error");
+                                                            }
+                                                          }}
                                                           className={`p-2 rounded-xl text-left border transition flex items-center gap-2.5 cursor-pointer ${
                                                             isSelected
                                                               ? "bg-[#D4A55A]/25 border-[#D4A55A] text-[#F4EAD7] shadow-md ring-1 ring-[#D4A55A]"
@@ -17523,12 +17729,26 @@ export default function App() {
                                                       type="number"
                                                       min={1}
                                                       value={editAddQty}
-                                                      onChange={(e) => setEditAddQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                                                      onChange={(e) => {
+                                                        const parsed = parseInt(e.target.value, 10) || 1;
+                                                        if (originStock > 0 && parsed > originStock) {
+                                                          showToast(`Stock insuficiente en ${selectedTransferGroup.fromDeposito}: El máximo disponible es de ${originStock}u.`, "error");
+                                                          setEditAddQty(originStock);
+                                                          return;
+                                                        }
+                                                        setEditAddQty(Math.max(1, parsed));
+                                                      }}
                                                       className="w-14 text-center bg-transparent text-sm font-mono font-black text-[#F4EAD7] focus:outline-none"
                                                     />
                                                     <button
                                                       type="button"
-                                                      onClick={() => setEditAddQty(prev => prev + 1)}
+                                                      onClick={() => {
+                                                        if (originStock > 0 && editAddQty >= originStock) {
+                                                          showToast(`Stock límite alcanzado: Solo hay ${originStock}u disponibles en ${selectedTransferGroup.fromDeposito}.`, "error");
+                                                          return;
+                                                        }
+                                                        setEditAddQty(prev => prev + 1);
+                                                      }}
                                                       className="w-8 h-8 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-[#F4EAD7] font-bold text-sm flex items-center justify-center transition cursor-pointer"
                                                     >
                                                       +
@@ -17723,6 +17943,9 @@ export default function App() {
                                                               key={`suggest-prod-${p.id}`}
                                                               type="button"
                                                               onClick={() => {
+                                                                if (totalOriginStock <= 0) {
+                                                                  showToast(`Stock insuficiente: "${p.name}" no tiene existencias disponibles en ${selectedTransferGroup.fromDeposito} (0 unidades).`, "error");
+                                                                }
                                                                 setEditAddProductId(String(p.id));
                                                                 if (p.variants && p.variants.length === 1) {
                                                                   setEditAddVariantId(String(p.variants[0].id));
