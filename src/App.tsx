@@ -26,6 +26,7 @@ import {
   CheckCircle2,
   CheckSquare,
   AlertCircle,
+  AlertTriangle,
   Database,
   ArrowLeft,
   ShoppingCart,
@@ -584,6 +585,7 @@ export default function App() {
   const [editShowSuggestions, setEditShowSuggestions] = useState<boolean>(false);
   const [editFilterOnlyWithStock, setEditFilterOnlyWithStock] = useState<boolean>(false);
   const [isSavingTransferEdit, setIsSavingTransferEdit] = useState<boolean>(false);
+  const [hasUnsavedTransferEdits, setHasUnsavedTransferEdits] = useState<boolean>(false);
   
   // Direct Stock Adjustment Confirmation Modal States
   const [showStockAdjustmentModal, setShowStockAdjustmentModal] = useState<boolean>(false);
@@ -1835,11 +1837,13 @@ export default function App() {
     setEditAddVariantId("");
     setEditAddQty(1);
     setEditSearchProduct("");
+    setHasUnsavedTransferEdits(false);
     setIsEditingTransfer(true);
   };
 
   const handleCancelEditTransfer = () => {
     setIsEditingTransfer(false);
+    setHasUnsavedTransferEdits(false);
     setEditTransferItems([]);
     setEditAddProductId("");
     setEditAddVariantId("");
@@ -1849,6 +1853,7 @@ export default function App() {
 
   const handleUpdateItemQty = (index: number, newQty: number) => {
     if (newQty < 1) return;
+    setHasUnsavedTransferEdits(true);
     setEditTransferItems(prev => {
       const copy = [...prev];
       copy[index] = { ...copy[index], quantity: Math.floor(newQty) };
@@ -1861,6 +1866,7 @@ export default function App() {
       showToast("El traslado debe contener al menos un artículo. Si deseas anularlo por completo, usa 'Anular Traslado'.", "info");
       return;
     }
+    setHasUnsavedTransferEdits(true);
     setEditTransferItems(prev => prev.filter((_, i) => i !== index));
   };
 
@@ -1881,10 +1887,29 @@ export default function App() {
     const variantDisplayName = variant ? [variant.size, variant.color].filter(Boolean).join(" / ") : "";
     const qty = Math.max(1, Math.floor(Number(editAddQty) || 1));
 
+    // Validar disponibilidad de stock en el depósito de origen
+    const fromDep = selectedTransferGroup?.fromDeposito || "Pinamar";
+    const availableOriginStock = fromDep === "Pinamar"
+      ? (variant ? (variant.stockPinamar || 0) : (product.stockPinamar || 0))
+      : (variant ? (variant.stockMontevideo || 0) : (product.stockMontevideo || 0));
+
+    if (availableOriginStock <= 0) {
+      showToast(`No hay stock disponible en ${fromDep} para "${product.name}${variantDisplayName ? ` (${variantDisplayName})` : ''}". Stock actual en origen: 0u.`, "error");
+      return;
+    }
+
     // Check if identical item already in the transfer
     const existingIndex = editTransferItems.findIndex(
       it => String(it.productId) === String(editAddProductId) && String(it.variantId || "") === String(editAddVariantId || "")
     );
+    const existingQty = existingIndex >= 0 ? editTransferItems[existingIndex].quantity : 0;
+
+    if (existingQty + qty > availableOriginStock) {
+      showToast(`Stock insuficiente en ${fromDep}. Dispones de ${availableOriginStock}u y ya tienes ${existingQty}u en la orden.`, "error");
+      return;
+    }
+
+    setHasUnsavedTransferEdits(true);
 
     if (existingIndex >= 0) {
       setEditTransferItems(prev => {
@@ -1892,7 +1917,7 @@ export default function App() {
         copy[existingIndex] = { ...copy[existingIndex], quantity: copy[existingIndex].quantity + qty };
         return copy;
       });
-      showToast(`Se sumaron +${qty}u a "${product.name}${variantDisplayName ? ` (${variantDisplayName})` : ''}".`, "info");
+      showToast(`Se sumaron +${qty}u a "${product.name}${variantDisplayName ? ` (${variantDisplayName})` : ''}". ⚠️ Recuerda pulsar "Guardar Cambios y Actualizar Stock" para guardar en la base de datos.`, "info");
     } else {
       setEditTransferItems(prev => [
         ...prev,
@@ -1907,7 +1932,7 @@ export default function App() {
           quantity: qty
         }
       ]);
-      showToast(`"${product.name}${variantDisplayName ? ` (${variantDisplayName})` : ''}" agregado a la orden.`, "success");
+      showToast(`"${product.name}${variantDisplayName ? ` (${variantDisplayName})` : ''}" añadido a la lista. ⚠️ Recuerda pulsar "Guardar Cambios y Actualizar Stock" para aplicar en la base de datos.`, "success");
     }
 
     setEditAddProductId("");
@@ -1947,6 +1972,7 @@ export default function App() {
 
       const data = await res.json();
       if (data.success) {
+        setHasUnsavedTransferEdits(false);
         showToast(data.message || "¡Traslado modificado y stock actualizado con éxito!", "success");
         // Update local selectedTransferGroup
         const updatedItems = editTransferItems.map((it, idx) => ({
@@ -16902,6 +16928,11 @@ export default function App() {
                                 className="fixed inset-0 z-[999999] flex items-center justify-center p-2 sm:p-4 md:p-6 bg-black/85 backdrop-blur-md"
                                 onClick={(e) => {
                                   if (e.target === e.currentTarget) {
+                                    if (isEditingTransfer && hasUnsavedTransferEdits) {
+                                      if (!window.confirm("Tienes artículos o modificaciones sin guardar en esta orden. ¿Deseas descartarlos y cerrar?")) {
+                                        return;
+                                      }
+                                    }
                                     if (isEditingTransfer) handleCancelEditTransfer();
                                     setSelectedTransferGroup(null);
                                   }
@@ -16996,6 +17027,11 @@ export default function App() {
                                       <button
                                         type="button"
                                         onClick={() => {
+                                          if (isEditingTransfer && hasUnsavedTransferEdits) {
+                                            if (!window.confirm("Tienes artículos o modificaciones sin guardar en esta orden. ¿Deseas descartarlos y cerrar?")) {
+                                              return;
+                                            }
+                                          }
                                           if (isEditingTransfer) handleCancelEditTransfer();
                                           setSelectedTransferGroup(null);
                                         }}
@@ -17017,19 +17053,36 @@ export default function App() {
                                           <div>
                                             <div className="font-black text-white text-sm flex items-center gap-2">
                                               <span>Modo de Modificación Activo</span>
-                                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                                                En vivo
+                                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                                                hasUnsavedTransferEdits 
+                                                  ? "bg-amber-500/25 text-amber-300 border-amber-500/40 animate-pulse"
+                                                  : "bg-indigo-500/20 text-indigo-300 border-indigo-500/30"
+                                              }`}>
+                                                {hasUnsavedTransferEdits ? "⚠️ Cambios sin guardar" : "En vivo"}
                                               </span>
                                             </div>
                                             <div className="text-zinc-300 text-[11px] mt-1 leading-relaxed">
                                               Puedes subir o bajar la cantidad con <strong className="text-white font-mono">+</strong> y <strong className="text-white font-mono">-</strong>, quitar artículos con el icono de papelera o agregar nuevos artículos desde el catálogo. Al presionar <strong>Guardar Cambios</strong>, las existencias se actualizarán automáticamente en los depósitos de origen y destino.
                                             </div>
+                                            {hasUnsavedTransferEdits && (
+                                              <div className="flex items-center gap-2 text-amber-300 font-bold bg-amber-500/20 border border-amber-500/40 px-3 py-1.5 rounded-lg text-xs mt-2 animate-pulse shadow-sm">
+                                                <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
+                                                <span>Tienes artículos añadidos o modificados pendientes. Recuerda presionar "Guardar Cambios" para actualizar la base de datos.</span>
+                                              </div>
+                                            )}
                                           </div>
                                         </div>
                                         <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
                                           <button
                                             type="button"
-                                            onClick={handleCancelEditTransfer}
+                                            onClick={() => {
+                                              if (hasUnsavedTransferEdits) {
+                                                if (!window.confirm("¿Deseas descartar los cambios no guardados en el traslado?")) {
+                                                  return;
+                                                }
+                                              }
+                                              handleCancelEditTransfer();
+                                            }}
                                             className="px-3.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl text-xs font-bold transition cursor-pointer"
                                           >
                                             Cancelar
@@ -17038,10 +17091,14 @@ export default function App() {
                                             type="button"
                                             onClick={handleSaveTransferModifications}
                                             disabled={isSavingTransferEdit}
-                                            className="px-4 py-2 bg-[#D4A55A] hover:bg-[#E6BF76] text-slate-950 rounded-xl text-xs font-black transition flex items-center gap-2 cursor-pointer shadow-md disabled:opacity-50"
+                                            className={`px-4 py-2 text-slate-950 rounded-xl text-xs font-black transition flex items-center gap-2 cursor-pointer shadow-md disabled:opacity-50 ${
+                                              hasUnsavedTransferEdits 
+                                                ? "bg-amber-400 hover:bg-amber-300 ring-2 ring-amber-300 shadow-amber-500/30 animate-pulse" 
+                                                : "bg-[#D4A55A] hover:bg-[#E6BF76]"
+                                            }`}
                                           >
                                             {isSavingTransferEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                                            <span>Guardar Cambios</span>
+                                            <span>{hasUnsavedTransferEdits ? "Guardar Cambios (Pendientes)" : "Guardar Cambios"}</span>
                                           </button>
                                         </div>
                                       </div>
@@ -17756,7 +17813,14 @@ export default function App() {
                                         <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
                                           <button
                                             type="button"
-                                            onClick={handleCancelEditTransfer}
+                                            onClick={() => {
+                                              if (hasUnsavedTransferEdits) {
+                                                if (!window.confirm("¿Deseas descartar los cambios no guardados en el traslado?")) {
+                                                  return;
+                                                }
+                                              }
+                                              handleCancelEditTransfer();
+                                            }}
                                             className="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold rounded-xl transition cursor-pointer"
                                           >
                                             Cancelar
@@ -17766,10 +17830,14 @@ export default function App() {
                                             type="button"
                                             onClick={handleSaveTransferModifications}
                                             disabled={isSavingTransferEdit}
-                                            className="px-5 py-2.5 bg-[#D4A55A] hover:bg-[#E6BF76] text-slate-950 text-xs font-black rounded-xl shadow-md transition flex items-center gap-2 cursor-pointer hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+                                            className={`px-5 py-2.5 text-slate-950 text-xs font-black rounded-xl shadow-md transition flex items-center gap-2 cursor-pointer hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 ${
+                                              hasUnsavedTransferEdits 
+                                                ? "bg-amber-400 hover:bg-amber-300 ring-2 ring-amber-300 shadow-amber-500/30 animate-pulse" 
+                                                : "bg-[#D4A55A] hover:bg-[#E6BF76]"
+                                            }`}
                                           >
                                             {isSavingTransferEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                                            <span>Guardar Cambios y Actualizar Stock</span>
+                                            <span>{hasUnsavedTransferEdits ? "Guardar Cambios y Actualizar Stock (Pendiente)" : "Guardar Cambios y Actualizar Stock"}</span>
                                           </button>
                                         </div>
                                       </>

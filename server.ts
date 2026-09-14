@@ -4621,7 +4621,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         }
 
         // Force memory state reload
-        const dbState = await getDbState();
+        invalidateDbCache();
+        const dbState = await getDbState(true);
         currentStoreState = dbState;
       } else {
         // Fallback for file-based JSON store
@@ -4793,7 +4794,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
           client.release();
         }
 
-        const dbState = await getDbState();
+        invalidateDbCache();
+        const dbState = await getDbState(true);
         currentStoreState = dbState;
       } else {
         // Fallback for file-based JSON store
@@ -5042,7 +5044,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
           client.release();
         }
 
-        const dbState = await getDbState();
+        invalidateDbCache();
+        const dbState = await getDbState(true);
         currentStoreState = dbState;
       } else {
         // Fallback for file-based JSON store
