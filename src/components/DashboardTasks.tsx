@@ -206,9 +206,12 @@ export const DashboardTasks: React.FC<DashboardTasksProps> = ({ onRefreshStore, 
 
   // Delete task
   const handleDelete = async (id: string) => {
-    if (!confirm("¿Está seguro de que desea eliminar este recordatorio?")) return;
     const token = localStorage.getItem("apex_admin_token");
-    if (!token) return;
+    if (!token || !id) return;
+
+    const previous = [...tasks];
+    // Immediate UI removal
+    setTasks(prev => prev.filter(t => t.id !== id));
 
     try {
       const response = await fetch(`/api/admin-tasks/${id}`, {
@@ -227,11 +230,14 @@ export const DashboardTasks: React.FC<DashboardTasksProps> = ({ onRefreshStore, 
       }
 
       if (response.ok && data && data.success) {
-        setTasks(prev => prev.filter(t => t.id !== id));
         if (onRefreshStore) await onRefreshStore();
         if (onRefreshTasks) await onRefreshTasks();
+      } else {
+        // Rollback if server failed
+        setTasks(previous);
       }
     } catch (err) {
+      setTasks(previous);
       console.error("Error deleting task:", err);
     }
   };

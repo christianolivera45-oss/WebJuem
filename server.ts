@@ -2638,6 +2638,52 @@ async function initPostgresStore(): Promise<ShopState | null> {
         created_at TIMESTAMPTZ DEFAULT NOW(),
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
+
+      ALTER TABLE public.admin_tasks ADD COLUMN IF NOT EXISTS area VARCHAR(50) DEFAULT 'crecer';
+      ALTER TABLE public.admin_tasks ADD COLUMN IF NOT EXISTS is_priority_today BOOLEAN DEFAULT false;
+      ALTER TABLE public.admin_tasks ADD COLUMN IF NOT EXISTS goal_id VARCHAR(50);
+      ALTER TABLE public.admin_tasks ADD COLUMN IF NOT EXISTS due_time VARCHAR(10);
+
+      CREATE TABLE IF NOT EXISTS public.admin_goals (
+        id VARCHAR(50) PRIMARY KEY,
+        title TEXT NOT NULL,
+        description TEXT,
+        category VARCHAR(100) NOT NULL DEFAULT 'ventas',
+        area VARCHAR(50) NOT NULL DEFAULT 'crecer',
+        period_type VARCHAR(20) NOT NULL DEFAULT 'month',
+        period_value VARCHAR(50) NOT NULL,
+        due_date DATE,
+        target_value NUMERIC NOT NULL DEFAULT 0,
+        current_value NUMERIC NOT NULL DEFAULT 0,
+        unit VARCHAR(50) NOT NULL DEFAULT 'u',
+        status VARCHAR(50) NOT NULL DEFAULT 'en_progreso',
+        priority VARCHAR(50) NOT NULL DEFAULT 'medium',
+        is_automatic BOOLEAN NOT NULL DEFAULT false,
+        auto_metric VARCHAR(100),
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS public.admin_day_focus (
+        id VARCHAR(50) PRIMARY KEY,
+        day_name VARCHAR(50) NOT NULL,
+        focus_title TEXT NOT NULL,
+        color VARCHAR(50) DEFAULT 'indigo',
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS public.admin_reviews (
+        id VARCHAR(50) PRIMARY KEY,
+        type VARCHAR(20) NOT NULL,
+        period_value VARCHAR(50) NOT NULL,
+        what_worked TEXT,
+        what_didnt_work TEXT,
+        time_wasters TEXT,
+        what_to_change TEXT,
+        metrics_snapshot JSONB,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
     `);
 
     // --- CREATE OPTIMIZED INDEXES FOR HIGH-PERFORMANCE CATALOGUE FETCHES ---
@@ -2647,6 +2693,7 @@ async function initPostgresStore(): Promise<ShopState | null> {
       CREATE INDEX IF NOT EXISTS idx_variants_product ON public.product_variants (product_id, active);
       CREATE INDEX IF NOT EXISTS idx_stock_transfers_product ON public.stock_transfers (product_id);
       CREATE INDEX IF NOT EXISTS idx_admin_tasks_status ON public.admin_tasks (status);
+      CREATE INDEX IF NOT EXISTS idx_admin_goals_period ON public.admin_goals (period_type, period_value);
     `);
 
     // --- SEED TABLES IF EMPTY ---
@@ -2656,11 +2703,32 @@ async function initPostgresStore(): Promise<ShopState | null> {
     if (parseInt(taskCheck.rows[0].count) === 0) {
       console.log("Seeding admin_tasks Table...");
       await pool.query(`
-        INSERT INTO public.admin_tasks (id, title, description, type, priority, status, category) VALUES
-        ('task-1', 'Hablar con el encargado de Montevideo', 'Consultar si podemos enviar paquetes a las agencias en Tres Cruces (XXX) o definir en qué zonas podemos ofrecer envíos gratis en Montevideo.', 'task', 'high', 'pending', 'sucursal_mvd'),
-        ('task-2', 'Definir zonas con envío gratis', 'Estudiar rentabilidad y coordinar con el servicio de delivery para unificar tarifas planas según zonas de Pinamar.', 'idea', 'medium', 'pending', 'logistica'),
-        ('task-3', 'Revisar stock de bolsas con logo', 'Hacer pedido a imprenta antes del inicio de temporada para evitar demoras.', 'reminder', 'low', 'pending', 'otros');
+        INSERT INTO public.admin_tasks (id, title, description, type, priority, status, category, area, is_priority_today) VALUES
+        ('task-1', 'Hablar con el encargado de Montevideo', 'Consultar si podemos enviar paquetes a las agencias en Tres Cruces (XXX) o definir en qué zonas podemos ofrecer envíos gratis en Montevideo.', 'task', 'high', 'pending', 'sucursal_mvd', 'mantener', true),
+        ('task-2', 'Definir zonas con envío gratis', 'Estudiar rentabilidad y coordinar con el servicio de delivery para unificar tarifas planas según zonas de Pinamar.', 'idea', 'medium', 'pending', 'logistica', 'crecer', false),
+        ('task-3', 'Revisar stock de bolsas con logo', 'Hacer pedido a imprenta antes del inicio de temporada para evitar demoras.', 'reminder', 'low', 'pending', 'otros', 'mantener', false);
       `);
+    }
+
+    // Seed default day focuses if empty
+    const dayCheck = await pool.query("SELECT COUNT(*) FROM public.admin_day_focus;");
+    if (parseInt(dayCheck.rows[0].count) === 0) {
+      console.log("Seeding admin_day_focus Table...");
+      const days = [
+        { id: "lunes", name: "Lunes", focus: "Planificación + ventas", color: "indigo" },
+        { id: "martes", name: "Martes", focus: "Diseño 3D", color: "violet" },
+        { id: "miercoles", name: "Miércoles", focus: "Publicaciones", color: "sky" },
+        { id: "jueves", name: "Jueves", focus: "Investigación comercial", color: "amber" },
+        { id: "viernes", name: "Viernes", focus: "Producción + operativa", color: "emerald" },
+        { id: "sabado", name: "Sábado", focus: "Contenido + mejoras", color: "rose" },
+        { id: "domingo", name: "Domingo", focus: "Revisión semanal", color: "purple" }
+      ];
+      for (const d of days) {
+        await pool.query(
+          "INSERT INTO public.admin_day_focus (id, day_name, focus_title, color) VALUES ($1, $2, $3, $4);",
+          [d.id, d.name, d.focus, d.color]
+        );
+      }
     }
 
     // Seed categories
@@ -3666,6 +3734,38 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         success: false, 
         message: "Error al eliminar la carpeta en Cloudinary. Asegúrate de que esté vacía (sin subcarpetas ni archivos)." 
       });
+    }
+  });
+
+  // Helper API to convert external/Cloudinary images to Data URL base64 for rock-solid PDF printing & CORS bypass
+  app.post("/api/images-to-base64", async (req, res) => {
+    try {
+      const urls: string[] = req.body?.urls || [];
+      const result: Record<string, string> = {};
+
+      await Promise.all(urls.map(async (url) => {
+        if (!url || typeof url !== "string") return;
+        if (url.startsWith("data:")) {
+          result[url] = url;
+          return;
+        }
+        try {
+          const response = await fetch(url);
+          if (response.ok) {
+            const contentType = response.headers.get("content-type") || "image/jpeg";
+            const arrayBuffer = await response.arrayBuffer();
+            const base64 = Buffer.from(arrayBuffer).toString("base64");
+            result[url] = `data:${contentType};base64,${base64}`;
+          }
+        } catch (fetchErr) {
+          console.warn("Could not fetch image to base64:", url, fetchErr);
+        }
+      }));
+
+      res.json({ success: true, images: result });
+    } catch (err: any) {
+      console.error("Error converting images to base64:", err);
+      res.status(500).json({ success: false, error: err.message });
     }
   });
 
@@ -5503,9 +5603,10 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         const queryRes = await pool.query(`
           SELECT id, title, description, type, priority, status, category, 
                  to_char(due_date, 'YYYY-MM-DD') as due_date, 
+                 due_time, area, is_priority_today, goal_id,
                  created_at, updated_at 
           FROM public.admin_tasks 
-          ORDER BY created_at DESC;
+          ORDER BY is_priority_today DESC, due_date ASC NULLS LAST, created_at DESC;
         `);
         const tasks = queryRes.rows.map(row => ({
           id: row.id,
@@ -5516,6 +5617,10 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
           status: row.status || "pending",
           category: row.category || "otros",
           dueDate: row.due_date || "",
+          dueTime: row.due_time || "",
+          area: row.area || "crecer",
+          isPriorityToday: row.is_priority_today === true,
+          goalId: row.goal_id || null,
           createdAt: row.created_at,
           updatedAt: row.updated_at
         }));
@@ -5536,7 +5641,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       return res.status(403).json({ success: false, message: "Acceso denegado. Se requiere autenticación de administrador principal." });
     }
     try {
-      const { title, description, type, priority, status, category, dueDate } = req.body;
+      const { title, description, type, priority, status, category, dueDate, dueTime, area, isPriorityToday, goalId } = req.body;
       if (!title) {
         return res.status(400).json({ success: false, message: "El título es obligatorio." });
       }
@@ -5549,17 +5654,44 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       const st = sanitizeHtmlString(status || "pending").substring(0, 50);
       const cat = sanitizeHtmlString(category || "otros").substring(0, 100);
       const dDate = dueDate ? sanitizeHtmlString(dueDate).substring(0, 10) : null;
+      const dTime = dueTime ? sanitizeHtmlString(dueTime).substring(0, 10) : null;
+      const ar = sanitizeHtmlString(area || "crecer").substring(0, 50);
+      const isPrio = isPriorityToday === true;
+      const gId = goalId ? sanitizeHtmlString(goalId).substring(0, 50) : null;
 
       const pool = getDbPool();
       if (pool && !dbUnavailable) {
+        // Enforce max 3 priorities per date/day
+        if (isPrio) {
+          let countPrio;
+          if (dDate) {
+            countPrio = await pool.query("SELECT COUNT(*) FROM public.admin_tasks WHERE is_priority_today = true AND status != 'completed' AND due_date = $1;", [dDate]);
+          } else {
+            countPrio = await pool.query("SELECT COUNT(*) FROM public.admin_tasks WHERE is_priority_today = true AND status != 'completed' AND (due_date IS NULL OR due_date = CURRENT_DATE);");
+          }
+          if (parseInt(countPrio.rows[0].count) >= 3) {
+            return res.status(400).json({
+              success: false,
+              message: "Regla de las 3 Prioridades: Ya tienes 3 prioridades asignadas para esta fecha/día. Completa o desmarca una antes de añadir otra."
+            });
+          }
+        }
+
         await pool.query(`
-          INSERT INTO public.admin_tasks (id, title, description, type, priority, status, category, due_date)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
-        `, [id, t, desc, ty, pr, st, cat, dDate]);
+          INSERT INTO public.admin_tasks (id, title, description, type, priority, status, category, due_date, due_time, area, is_priority_today, goal_id)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12);
+        `, [id, t, desc, ty, pr, st, cat, dDate, dTime, ar, isPrio, gId]);
         
-        res.json({ success: true, task: { id, title: t, description: desc, type: ty, priority: pr, status: st, category: cat, dueDate: dDate || "" } });
+        res.json({ success: true, task: { id, title: t, description: desc, type: ty, priority: pr, status: st, category: cat, dueDate: dDate || "", dueTime: dTime || "", area: ar, isPriorityToday: isPrio, goalId: gId } });
       } else {
-        const newTask = { id, title: t, description: desc, type: ty, priority: pr, status: st, category: cat, dueDate: dDate || "", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+        if (isPrio) {
+          const targetD = dDate || new Date().toISOString().substring(0, 10);
+          const countP = fallbackAdminTasks.filter(tk => tk.isPriorityToday && tk.status !== 'completed' && (tk.dueDate === targetD || (!tk.dueDate && targetD === new Date().toISOString().substring(0, 10)))).length;
+          if (countP >= 3) {
+            return res.status(400).json({ success: false, message: "Regla de las 3 Prioridades: Ya tienes 3 prioridades para esta fecha/día." });
+          }
+        }
+        const newTask = { id, title: t, description: desc, type: ty, priority: pr, status: st, category: cat, dueDate: dDate || "", dueTime: dTime || "", area: ar, isPriorityToday: isPrio, goalId: gId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
         fallbackAdminTasks.unshift(newTask);
         res.json({ success: true, task: newTask });
       }
@@ -5577,7 +5709,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     }
     try {
       const { id } = req.params;
-      const { title, description, type, priority, status, category, dueDate } = req.body;
+      const { title, description, type, priority, status, category, dueDate, dueTime, area, isPriorityToday, goalId } = req.body;
       
       if (!title) {
         return res.status(400).json({ success: false, message: "El título es obligatorio." });
@@ -5590,17 +5722,44 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       const st = sanitizeHtmlString(status || "pending").substring(0, 50);
       const cat = sanitizeHtmlString(category || "otros").substring(0, 100);
       const dDate = dueDate ? sanitizeHtmlString(dueDate).substring(0, 10) : null;
+      const dTime = dueTime ? sanitizeHtmlString(dueTime).substring(0, 10) : null;
+      const ar = sanitizeHtmlString(area || "crecer").substring(0, 50);
+      const isPrio = isPriorityToday === true;
+      const gId = goalId ? sanitizeHtmlString(goalId).substring(0, 50) : null;
 
       const pool = getDbPool();
       if (pool && !dbUnavailable) {
+        if (isPrio) {
+          let countPrio;
+          if (dDate) {
+            countPrio = await pool.query("SELECT COUNT(*) FROM public.admin_tasks WHERE id != $1 AND is_priority_today = true AND status != 'completed' AND due_date = $2;", [id, dDate]);
+          } else {
+            countPrio = await pool.query("SELECT COUNT(*) FROM public.admin_tasks WHERE id != $1 AND is_priority_today = true AND status != 'completed' AND (due_date IS NULL OR due_date = CURRENT_DATE);", [id]);
+          }
+          if (parseInt(countPrio.rows[0].count) >= 3) {
+            return res.status(400).json({
+              success: false,
+              message: "Regla de las 3 Prioridades: Ya tienes 3 prioridades asignadas para esta fecha/día. Completa o desmarca una antes de añadir otra."
+            });
+          }
+        }
+
         await pool.query(`
           UPDATE public.admin_tasks
-          SET title = $1, description = $2, type = $3, priority = $4, status = $5, category = $6, due_date = $7, updated_at = NOW()
-          WHERE id = $8;
-        `, [t, desc, ty, pr, st, cat, dDate, id]);
+          SET title = $1, description = $2, type = $3, priority = $4, status = $5, category = $6, 
+              due_date = $7, due_time = $8, area = $9, is_priority_today = $10, goal_id = $11, updated_at = NOW()
+          WHERE id = $12;
+        `, [t, desc, ty, pr, st, cat, dDate, dTime, ar, isPrio, gId, id]);
         
-        res.json({ success: true, task: { id, title: t, description: desc, type: ty, priority: pr, status: st, category: cat, dueDate: dDate || "" } });
+        res.json({ success: true, task: { id, title: t, description: desc, type: ty, priority: pr, status: st, category: cat, dueDate: dDate || "", dueTime: dTime || "", area: ar, isPriorityToday: isPrio, goalId: gId } });
       } else {
+        if (isPrio) {
+          const targetD = dDate || new Date().toISOString().substring(0, 10);
+          const countP = fallbackAdminTasks.filter(tk => tk.id !== id && tk.isPriorityToday && tk.status !== 'completed' && (tk.dueDate === targetD || (!tk.dueDate && targetD === new Date().toISOString().substring(0, 10)))).length;
+          if (countP >= 3) {
+            return res.status(400).json({ success: false, message: "Regla de las 3 Prioridades: Ya tienes 3 prioridades para esta fecha/día." });
+          }
+        }
         const idx = fallbackAdminTasks.findIndex(tk => tk.id === id);
         if (idx !== -1) {
           fallbackAdminTasks[idx] = {
@@ -5612,6 +5771,10 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
             status: st,
             category: cat,
             dueDate: dDate || "",
+            dueTime: dTime || "",
+            area: ar,
+            isPriorityToday: isPrio,
+            goalId: gId,
             updatedAt: new Date().toISOString()
           };
           res.json({ success: true, task: fallbackAdminTasks[idx] });
@@ -5622,6 +5785,65 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     } catch (err: any) {
       console.error("Error updating admin task:", err);
       res.status(500).json({ success: false, message: "Error al actualizar la nota/tarea.", error: err.message });
+    }
+  });
+
+  // POST toggle priority today (rule of 3 priorities)
+  app.post("/api/admin-tasks/:id/toggle-priority", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!isValidToken(authHeader)) {
+      return res.status(403).json({ success: false, message: "Acceso denegado." });
+    }
+    try {
+      const { id } = req.params;
+      const pool = getDbPool();
+      if (pool && !dbUnavailable) {
+        const current = await pool.query("SELECT is_priority_today, to_char(due_date, 'YYYY-MM-DD') as due_date FROM public.admin_tasks WHERE id = $1;", [id]);
+        if (current.rows.length === 0) {
+          return res.status(404).json({ success: false, message: "Tarea no encontrada." });
+        }
+        const currentVal = current.rows[0].is_priority_today === true;
+        const taskDueDate = current.rows[0].due_date;
+        const nextVal = !currentVal;
+
+        if (nextVal) {
+          // Check how many priorities currently active for this day/date
+          let countRes;
+          if (taskDueDate) {
+            countRes = await pool.query(
+              "SELECT COUNT(*) FROM public.admin_tasks WHERE is_priority_today = true AND status != 'completed' AND due_date = $1;",
+              [taskDueDate]
+            );
+          } else {
+            countRes = await pool.query(
+              "SELECT COUNT(*) FROM public.admin_tasks WHERE is_priority_today = true AND status != 'completed' AND (due_date IS NULL OR due_date = CURRENT_DATE);"
+            );
+          }
+          if (parseInt(countRes.rows[0].count) >= 3) {
+            return res.status(400).json({ 
+              success: false, 
+              message: "Regla de las 3 Prioridades: Ya tienes 3 prioridades asignadas para esta fecha/día. Completa o desmarca una para agregar otra." 
+            });
+          }
+        }
+
+        await pool.query("UPDATE public.admin_tasks SET is_priority_today = $1, updated_at = NOW() WHERE id = $2;", [nextVal, id]);
+        res.json({ success: true, isPriorityToday: nextVal });
+      } else {
+        const task = fallbackAdminTasks.find(t => t.id === id);
+        if (!task) return res.status(404).json({ success: false, message: "No encontrada" });
+        if (!task.isPriorityToday) {
+          const targetD = task.dueDate || new Date().toISOString().substring(0, 10);
+          const countP = fallbackAdminTasks.filter(t => t.id !== id && t.isPriorityToday && t.status !== "completed" && (t.dueDate === targetD || (!t.dueDate && targetD === new Date().toISOString().substring(0, 10)))).length;
+          if (countP >= 3) {
+            return res.status(400).json({ success: false, message: "Regla de las 3 Prioridades: Ya tienes 3 prioridades asignadas para esta fecha/día." });
+          }
+        }
+        task.isPriorityToday = !task.isPriorityToday;
+        res.json({ success: true, isPriorityToday: task.isPriorityToday });
+      }
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
     }
   });
 
@@ -5649,6 +5871,713 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     } catch (err: any) {
       console.error("Error deleting admin task:", err);
       res.status(500).json({ success: false, message: "Error al eliminar la nota/tarea.", error: err.message });
+    }
+  });
+
+  // ==========================================
+  // PLANIFICACIÓN & OBJETIVOS MODULE ENDPOINTS
+  // ==========================================
+
+  // Helper to compute sales and profit for date range
+  async function computeSalesAndProfit(pool: any, startDate: string, endDate: string) {
+    const ordersRes = await pool.query(`
+      SELECT o.id, o.subtotal, o.discount_amount, o.total, o.created_at, o.canal, o.shipping_cost, o.deposito_origen
+      FROM public.orders o
+      WHERE o.current_status = 'pago_aprobado'
+        AND o.created_at >= $1 AND o.created_at < $2;
+    `, [startDate, endDate]);
+
+    const orderIds = ordersRes.rows.map((o: any) => o.id);
+    let orderItems: any[] = [];
+    if (orderIds.length > 0) {
+      const itemsRes = await pool.query(`
+        SELECT oi.order_id, oi.product_id, oi.quantity, oi.unit_price
+        FROM public.order_items oi
+        WHERE oi.order_id = ANY($1);
+      `, [orderIds]);
+      orderItems = itemsRes.rows;
+    }
+
+    const prodsRes = await pool.query(`
+      SELECT id, name, precio_compra, comision_ml, stock, is_3d, active, created_at, category, description
+      FROM public.products;
+    `);
+    const productsMap = new Map();
+    for (const p of prodsRes.rows) {
+      productsMap.set(String(p.id), p);
+    }
+
+    let totalFacturado = 0;
+    let totalCost = 0;
+    let totalComisionML = 0;
+    let itemsSold = 0;
+
+    for (const o of ordersRes.rows) {
+      const subtotal = parseFloat(o.subtotal) || 0;
+      const discount = parseFloat(o.discount_amount) || 0;
+      const priceProducts = subtotal - discount;
+      totalFacturado += priceProducts;
+
+      const items = orderItems.filter((i: any) => i.order_id === o.id);
+      for (const it of items) {
+        const q = parseInt(it.quantity) || 1;
+        itemsSold += q;
+        const prod = productsMap.get(String(it.product_id));
+        const cost = parseFloat(prod?.precio_compra) || 0;
+        totalCost += q * cost;
+        if (o.canal && o.canal.toLowerCase() === "mercado libre") {
+          const comm = parseFloat(prod?.comision_ml) || 0;
+          totalComisionML += q * comm;
+        }
+      }
+    }
+
+    const gananciaNeta = totalFacturado - totalCost - totalComisionML;
+    return {
+      salesCount: ordersRes.rows.length,
+      facturado: Math.round(totalFacturado),
+      gananciaNeta: Math.round(gananciaNeta),
+      itemsSold
+    };
+  }
+
+  // GET /api/planning/overview
+  app.get("/api/planning/overview", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!isValidToken(authHeader)) {
+      return res.status(403).json({ success: false, message: "Acceso denegado. Se requiere autenticación de administrador principal." });
+    }
+
+    try {
+      const pool = getDbPool();
+      if (!pool || dbUnavailable) {
+        return res.status(503).json({ success: false, message: "Base de datos no disponible temporalmente." });
+      }
+
+      // Selected month or current (e.g. "2026-09")
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      const currentMonthNum = now.getMonth() + 1;
+      const currentMonthStr = `${currentYear}-${String(currentMonthNum).padStart(2, "0")}`;
+      const monthParam = (req.query.month as string) || currentMonthStr;
+
+      // Determine date ranges for requested month
+      const [mYear, mMonth] = monthParam.split("-").map(Number);
+      const startOfMonth = new Date(Date.UTC(mYear, mMonth - 1, 1)).toISOString();
+      const nextMYear = mMonth === 12 ? mYear + 1 : mYear;
+      const nextMMonth = mMonth === 12 ? 1 : mMonth + 1;
+      const endOfMonth = new Date(Date.UTC(nextMYear, nextMMonth - 1, 1)).toISOString();
+
+      // Previous month range
+      const prevMYear = mMonth === 1 ? mYear - 1 : mYear;
+      const prevMMonth = mMonth === 1 ? 12 : mMonth - 1;
+      const startOfPrevMonth = new Date(Date.UTC(prevMYear, prevMMonth - 1, 1)).toISOString();
+      const endOfPrevMonth = startOfMonth;
+
+      // Current week range (Monday 00:00:00 to Sunday 23:59:59 UTC, with weekOffset support)
+      const dayOfWeek = now.getUTCDay(); // 0 is Sunday, 1 is Monday...
+      const diffToMonday = (dayOfWeek === 0 ? -6 : 1) - dayOfWeek;
+      const monday = new Date(now);
+      monday.setUTCDate(now.getUTCDate() + diffToMonday);
+      monday.setUTCHours(0, 0, 0, 0);
+
+      const weekOffsetParam = parseInt(req.query.weekOffset as string) || 0;
+      if (weekOffsetParam !== 0) {
+        monday.setUTCDate(monday.getUTCDate() + weekOffsetParam * 7);
+      }
+
+      const nextMonday = new Date(monday);
+      nextMonday.setUTCDate(monday.getUTCDate() + 7);
+
+      const startOfWeek = monday.toISOString();
+      const endOfWeek = nextMonday.toISOString();
+
+      // Today string
+      const todayStr = (req.query.date as string) || now.toISOString().substring(0, 10);
+
+      // Compute metrics in parallel
+      const [monthMetrics, prevMonthMetrics, weekMetrics] = await Promise.all([
+        computeSalesAndProfit(pool, startOfMonth, endOfMonth),
+        computeSalesAndProfit(pool, startOfPrevMonth, endOfPrevMonth),
+        computeSalesAndProfit(pool, startOfWeek, endOfWeek)
+      ]);
+
+      // Catalog metrics
+      const prodsCountRes = await pool.query(`
+        SELECT 
+          COUNT(*) as total_prods,
+          SUM(CASE WHEN active = true THEN 1 ELSE 0 END) as active_prods,
+          SUM(CASE WHEN is_3d = true OR LOWER(name) LIKE '%3d%' OR LOWER(category) LIKE '%3d%' THEN 1 ELSE 0 END) as prods_3d,
+          SUM(COALESCE(stock, 0)) as total_stock,
+          SUM(CASE WHEN stock <= 5 AND active = true THEN 1 ELSE 0 END) as low_stock_count,
+          SUM(CASE WHEN stock = 0 AND active = true THEN 1 ELSE 0 END) as out_of_stock_count
+        FROM public.products;
+      `);
+      const row = prodsCountRes.rows[0];
+      const catalogMetrics = {
+        totalProducts: parseInt(row.total_prods) || 0,
+        activeProducts: parseInt(row.active_prods) || 0,
+        products3D: parseInt(row.prods_3d) || 0,
+        totalStock: parseInt(row.total_stock) || 0,
+        lowStockCount: parseInt(row.low_stock_count) || 0,
+        outOfStockCount: parseInt(row.out_of_stock_count) || 0
+      };
+
+      // Fetch goals & dynamically synchronize automatic goals
+      const goalsRes = await pool.query(`
+        SELECT id, title, description, category, area, period_type, period_value, 
+               to_char(due_date, 'YYYY-MM-DD') as due_date, 
+               target_value, current_value, unit, status, priority, is_automatic, auto_metric,
+               created_at, updated_at
+        FROM public.admin_goals
+        ORDER BY priority DESC, created_at ASC;
+      `);
+
+      const goals = [];
+      for (const g of goalsRes.rows) {
+        let curVal = parseFloat(g.current_value) || 0;
+        let stat = g.status;
+        const target = parseFloat(g.target_value) || 0;
+
+        if (g.is_automatic && g.auto_metric) {
+          switch (g.auto_metric) {
+            case "ventas_mes":
+              curVal = monthMetrics.salesCount;
+              break;
+            case "facturacion_mes":
+              curVal = monthMetrics.facturado;
+              break;
+            case "ganancia_mes":
+              curVal = monthMetrics.gananciaNeta;
+              break;
+            case "productos_vendidos_mes":
+              curVal = monthMetrics.itemsSold;
+              break;
+            case "productos_publicados":
+              curVal = catalogMetrics.activeProducts;
+              break;
+            case "productos_3d":
+              curVal = catalogMetrics.products3D;
+              break;
+            case "stock_total":
+              curVal = catalogMetrics.totalStock;
+              break;
+            case "stock_quiebre":
+              curVal = catalogMetrics.outOfStockCount;
+              break;
+            case "ventas_semana":
+              curVal = weekMetrics.salesCount;
+              break;
+            case "facturacion_semana":
+              curVal = weekMetrics.facturado;
+              break;
+            case "ganancia_semana":
+              curVal = weekMetrics.gananciaNeta;
+              break;
+          }
+
+          if (stat !== "cancelado") {
+            if (g.auto_metric === "stock_quiebre") {
+              stat = curVal === 0 ? "cumplido" : "en_progreso";
+            } else {
+              stat = curVal >= target ? "cumplido" : "en_progreso";
+            }
+          }
+
+          // Sync back to db quietly
+          await pool.query(
+            "UPDATE public.admin_goals SET current_value = $1, status = $2, updated_at = NOW() WHERE id = $3;",
+            [curVal, stat, g.id]
+          );
+        }
+
+        goals.push({
+          id: g.id,
+          title: g.title,
+          description: g.description || "",
+          category: g.category,
+          area: g.area || "crecer",
+          periodType: g.period_type,
+          periodValue: g.period_value,
+          dueDate: g.due_date || "",
+          targetValue: target,
+          currentValue: curVal,
+          unit: g.unit || "u",
+          status: stat,
+          priority: g.priority,
+          isAutomatic: g.is_automatic,
+          autoMetric: g.auto_metric || null,
+          createdAt: g.created_at,
+          updatedAt: g.updated_at
+        });
+      }
+
+      // Fetch tasks
+      const tasksRes = await pool.query(`
+        SELECT id, title, description, type, priority, status, category, 
+               to_char(due_date, 'YYYY-MM-DD') as due_date, 
+               due_time, area, is_priority_today, goal_id,
+               created_at, updated_at 
+        FROM public.admin_tasks 
+        ORDER BY is_priority_today DESC, due_date ASC NULLS LAST, created_at DESC;
+      `);
+      const tasks = tasksRes.rows.map(r => ({
+        id: r.id,
+        title: r.title,
+        description: r.description || "",
+        type: r.type || "task",
+        priority: r.priority || "medium",
+        status: r.status || "pending",
+        category: r.category || "otros",
+        dueDate: r.due_date || "",
+        dueTime: r.due_time || "",
+        area: r.area || "crecer",
+        isPriorityToday: r.is_priority_today === true,
+        goalId: r.goal_id || null,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at
+      }));
+
+      // Filter tasks for today
+      const tasksToday = tasks.filter(t => !t.dueDate || t.dueDate === todayStr);
+      const prioritiesToday = tasks.filter(t => t.isPriorityToday && (!t.dueDate || t.dueDate === todayStr));
+
+      // Month goals vs week goals
+      const monthGoals = goals.filter(g => g.periodType === "month");
+      const weekGoals = goals.filter(g => g.periodType === "week");
+
+      // Monthly sales goal target (find goal with auto_metric = 'facturacion_mes' or category = 'facturacion')
+      const salesGoal = monthGoals.find(g => g.autoMetric === "facturacion_mes" || g.category === "facturacion") || {
+        targetValue: 50000,
+        currentValue: monthMetrics.facturado
+      };
+
+      // Day focuses
+      const dayFocusRes = await pool.query("SELECT id, day_name, focus_title, color FROM public.admin_day_focus ORDER BY id;");
+      const dayFocus = dayFocusRes.rows.map(r => ({
+        id: r.id,
+        dayName: r.day_name,
+        focusTitle: r.focus_title,
+        color: r.color || "indigo"
+      }));
+
+      // Intelligent non-invasive alerts
+      const alerts = [];
+      const todayDate = new Date(todayStr);
+
+      // Check overdue and nearing deadline goals
+      for (const g of monthGoals) {
+        if (g.status !== "cumplido" && g.status !== "cancelado" && g.dueDate) {
+          const dDate = new Date(g.dueDate);
+          const diffDays = Math.ceil((dDate.getTime() - todayDate.getTime()) / (1000 * 60 * 60 * 24));
+          if (diffDays < 0) {
+            alerts.push({
+              id: `alert-overdue-${g.id}`,
+              type: "danger",
+              title: "Objetivo Atrasado",
+              message: `El objetivo "${g.title}" venció el ${g.dueDate} y aún está en ${Math.round((g.currentValue / (g.targetValue || 1)) * 100)}%.`
+            });
+          } else if (diffDays <= 3) {
+            alerts.push({
+              id: `alert-near-${g.id}`,
+              type: "warning",
+              title: "Objetivo por Vencer",
+              message: `"${g.title}" vence en ${diffDays === 0 ? "hoy" : `${diffDays} día(s)`}. Falta ${Math.max(0, g.targetValue - g.currentValue)} ${g.unit}.`
+            });
+          }
+        }
+      }
+
+      // Check high priority pending tasks
+      const highPending = tasks.filter(t => t.status === "pending" && t.priority === "high");
+      if (highPending.length > 0) {
+        alerts.push({
+          id: "alert-high-tasks",
+          type: "warning",
+          title: "Tareas de Alta Prioridad",
+          message: `Tienes ${highPending.length} tarea(s) de alta prioridad pendiente(s).`
+        });
+      }
+
+      // Check if too many pending tasks (> 10)
+      const totalPendingTasks = tasks.filter(t => t.status === "pending").length;
+      if (totalPendingTasks >= 10) {
+        alerts.push({
+          id: "alert-many-pending",
+          type: "info",
+          title: "Carga de Tareas",
+          message: `Tienes ${totalPendingTasks} tareas pendientes acumuladas. Considera priorizar las 3 de hoy.`
+        });
+      }
+
+      // Pacing alert (if day > 15 and sales progress < 35%)
+      const dayOfMonth = now.getDate();
+      if (dayOfMonth >= 15 && salesGoal.targetValue > 0) {
+        const pct = (salesGoal.currentValue / salesGoal.targetValue) * 100;
+        if (pct < 35) {
+          alerts.push({
+            id: "alert-pacing-sales",
+            type: "warning",
+            title: "Ritmo de Ventas del Mes",
+            message: `Estamos a día ${dayOfMonth} y el avance de facturación es del ${Math.round(pct)}% ($${salesGoal.currentValue.toLocaleString("es-AR")} de $${salesGoal.targetValue.toLocaleString("es-AR")}).`
+          });
+        }
+      }
+
+      res.json({
+        success: true,
+        month: monthParam,
+        today: todayStr,
+        metrics: {
+          month: monthMetrics,
+          prevMonth: prevMonthMetrics,
+          week: weekMetrics,
+          catalog: catalogMetrics
+        },
+        salesGoal: {
+          target: salesGoal.targetValue,
+          current: salesGoal.currentValue,
+          percent: salesGoal.targetValue > 0 ? Math.min(100, Math.round((salesGoal.currentValue / salesGoal.targetValue) * 100)) : 0
+        },
+        goals,
+        monthGoals,
+        weekGoals,
+        tasks,
+        tasksToday,
+        prioritiesToday,
+        dayFocus,
+        alerts
+      });
+    } catch (err: any) {
+      console.error("Error in /api/planning/overview:", err);
+      res.status(500).json({ success: false, message: "Error al cargar la planificación.", error: err.message });
+    }
+  });
+
+  // GET /api/planning/goals
+  app.get("/api/planning/goals", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!isValidToken(authHeader)) {
+      return res.status(403).json({ success: false, message: "Acceso denegado." });
+    }
+    try {
+      const pool = getDbPool();
+      if (!pool || dbUnavailable) return res.status(503).json({ success: false, message: "DB no disponible" });
+
+      const periodType = req.query.periodType as string;
+      const periodValue = req.query.periodValue as string;
+
+      let sql = `
+        SELECT id, title, description, category, area, period_type, period_value, 
+               to_char(due_date, 'YYYY-MM-DD') as due_date, 
+               target_value, current_value, unit, status, priority, is_automatic, auto_metric,
+               created_at, updated_at
+        FROM public.admin_goals
+      `;
+      const params: any[] = [];
+      const where: string[] = [];
+
+      if (periodType) {
+        params.push(periodType);
+        where.push(`period_type = $${params.length}`);
+      }
+      if (periodValue) {
+        params.push(periodValue);
+        where.push(`period_value = $${params.length}`);
+      }
+
+      if (where.length > 0) {
+        sql += " WHERE " + where.join(" AND ");
+      }
+      sql += " ORDER BY priority DESC, created_at ASC;";
+
+      const queryRes = await pool.query(sql, params);
+      const goals = queryRes.rows.map(r => ({
+        id: r.id,
+        title: r.title,
+        description: r.description || "",
+        category: r.category,
+        area: r.area || "crecer",
+        periodType: r.period_type,
+        periodValue: r.period_value,
+        dueDate: r.due_date || "",
+        targetValue: parseFloat(r.target_value) || 0,
+        currentValue: parseFloat(r.current_value) || 0,
+        unit: r.unit || "u",
+        status: r.status,
+        priority: r.priority,
+        isAutomatic: r.is_automatic === true,
+        autoMetric: r.auto_metric || null,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at
+      }));
+
+      res.json({ success: true, goals });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // POST /api/planning/goals
+  app.post("/api/planning/goals", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!isValidToken(authHeader)) {
+      return res.status(403).json({ success: false, message: "Acceso denegado." });
+    }
+    try {
+      const pool = getDbPool();
+      if (!pool || dbUnavailable) return res.status(503).json({ success: false, message: "DB no disponible" });
+
+      const {
+        title, description, category, area, periodType, periodValue,
+        dueDate, targetValue, currentValue, unit, status, priority,
+        isAutomatic, autoMetric
+      } = req.body;
+
+      if (!title) {
+        return res.status(400).json({ success: false, message: "El título del objetivo es obligatorio." });
+      }
+
+      const id = `goal-${Date.now()}`;
+      const t = sanitizeHtmlString(title).substring(0, 500);
+      const desc = sanitizeHtmlString(description || "");
+      const cat = sanitizeHtmlString(category || "otros").substring(0, 100);
+      const ar = sanitizeHtmlString(area || "crecer").substring(0, 50);
+      const pType = sanitizeHtmlString(periodType || "month").substring(0, 20);
+      const pVal = sanitizeHtmlString(periodValue || new Date().toISOString().substring(0, 7)).substring(0, 50);
+      const dDate = dueDate ? sanitizeHtmlString(dueDate).substring(0, 10) : null;
+      const target = parseFloat(targetValue) || 0;
+      const current = parseFloat(currentValue) || 0;
+      const un = sanitizeHtmlString(unit || "u").substring(0, 50);
+      const st = sanitizeHtmlString(status || "en_progreso").substring(0, 50);
+      const pr = sanitizeHtmlString(priority || "medium").substring(0, 50);
+      const isAuto = isAutomatic === true;
+      const aMetric = autoMetric ? sanitizeHtmlString(autoMetric).substring(0, 100) : null;
+
+      await pool.query(`
+        INSERT INTO public.admin_goals (
+          id, title, description, category, area, period_type, period_value,
+          due_date, target_value, current_value, unit, status, priority,
+          is_automatic, auto_metric
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15);
+      `, [id, t, desc, cat, ar, pType, pVal, dDate, target, current, un, st, pr, isAuto, aMetric]);
+
+      res.json({
+        success: true,
+        goal: {
+          id, title: t, description: desc, category: cat, area: ar,
+          periodType: pType, periodValue: pVal, dueDate: dDate || "",
+          targetValue: target, currentValue: current, unit: un,
+          status: st, priority: pr, isAutomatic: isAuto, autoMetric: aMetric
+        }
+      });
+    } catch (err: any) {
+      console.error("Error creating goal:", err);
+      res.status(500).json({ success: false, message: "Error al crear el objetivo.", error: err.message });
+    }
+  });
+
+  // PUT /api/planning/goals/:id
+  app.put("/api/planning/goals/:id", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!isValidToken(authHeader)) {
+      return res.status(403).json({ success: false, message: "Acceso denegado." });
+    }
+    try {
+      const pool = getDbPool();
+      if (!pool || dbUnavailable) return res.status(503).json({ success: false, message: "DB no disponible" });
+
+      const { id } = req.params;
+      const {
+        title, description, category, area, periodType, periodValue,
+        dueDate, targetValue, currentValue, unit, status, priority,
+        isAutomatic, autoMetric
+      } = req.body;
+
+      if (!title) {
+        return res.status(400).json({ success: false, message: "El título es obligatorio." });
+      }
+
+      const t = sanitizeHtmlString(title).substring(0, 500);
+      const desc = sanitizeHtmlString(description || "");
+      const cat = sanitizeHtmlString(category || "otros").substring(0, 100);
+      const ar = sanitizeHtmlString(area || "crecer").substring(0, 50);
+      const pType = sanitizeHtmlString(periodType || "month").substring(0, 20);
+      const pVal = sanitizeHtmlString(periodValue || "").substring(0, 50);
+      const dDate = dueDate ? sanitizeHtmlString(dueDate).substring(0, 10) : null;
+      const target = parseFloat(targetValue) || 0;
+      const current = parseFloat(currentValue) || 0;
+      const un = sanitizeHtmlString(unit || "u").substring(0, 50);
+      const st = sanitizeHtmlString(status || "en_progreso").substring(0, 50);
+      const pr = sanitizeHtmlString(priority || "medium").substring(0, 50);
+      const isAuto = isAutomatic === true;
+      const aMetric = autoMetric ? sanitizeHtmlString(autoMetric).substring(0, 100) : null;
+
+      await pool.query(`
+        UPDATE public.admin_goals
+        SET title = $1, description = $2, category = $3, area = $4, period_type = $5, period_value = $6,
+            due_date = $7, target_value = $8, current_value = $9, unit = $10, status = $11, priority = $12,
+            is_automatic = $13, auto_metric = $14, updated_at = NOW()
+        WHERE id = $15;
+      `, [t, desc, cat, ar, pType, pVal, dDate, target, current, un, st, pr, isAuto, aMetric, id]);
+
+      res.json({
+        success: true,
+        goal: {
+          id, title: t, description: desc, category: cat, area: ar,
+          periodType: pType, periodValue: pVal, dueDate: dDate || "",
+          targetValue: target, currentValue: current, unit: un,
+          status: st, priority: pr, isAutomatic: isAuto, autoMetric: aMetric
+        }
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: "Error al actualizar objetivo.", error: err.message });
+    }
+  });
+
+  // DELETE /api/planning/goals/:id
+  app.delete("/api/planning/goals/:id", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!isValidToken(authHeader)) {
+      return res.status(403).json({ success: false, message: "Acceso denegado." });
+    }
+    try {
+      const pool = getDbPool();
+      if (!pool || dbUnavailable) return res.status(503).json({ success: false, message: "DB no disponible" });
+
+      const { id } = req.params;
+      await pool.query("DELETE FROM public.admin_goals WHERE id = $1;", [id]);
+      res.json({ success: true, message: "Objetivo eliminado correctamente." });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // GET /api/planning/day-focus
+  app.get("/api/planning/day-focus", async (req, res) => {
+    try {
+      const pool = getDbPool();
+      if (!pool || dbUnavailable) return res.status(503).json({ success: false, message: "DB no disponible" });
+
+      const result = await pool.query("SELECT id, day_name, focus_title, color FROM public.admin_day_focus ORDER BY id;");
+      res.json({ success: true, dayFocus: result.rows });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // PUT /api/planning/day-focus/:id
+  app.put("/api/planning/day-focus/:id", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!isValidToken(authHeader)) {
+      return res.status(403).json({ success: false, message: "Acceso denegado." });
+    }
+    try {
+      const pool = getDbPool();
+      if (!pool || dbUnavailable) return res.status(503).json({ success: false, message: "DB no disponible" });
+
+      const { id } = req.params;
+      const { focusTitle, color } = req.body;
+      const fTitle = sanitizeHtmlString(focusTitle || "").substring(0, 200);
+      const c = sanitizeHtmlString(color || "indigo").substring(0, 50);
+
+      await pool.query(
+        "UPDATE public.admin_day_focus SET focus_title = $1, color = $2, updated_at = NOW() WHERE id = $3;",
+        [fTitle, c, id]
+      );
+      res.json({ success: true, message: "Foco de día actualizado." });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // GET /api/planning/reviews
+  app.get("/api/planning/reviews", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!isValidToken(authHeader)) {
+      return res.status(403).json({ success: false, message: "Acceso denegado." });
+    }
+    try {
+      const pool = getDbPool();
+      if (!pool || dbUnavailable) return res.status(503).json({ success: false, message: "DB no disponible" });
+
+      const type = req.query.type as string;
+      const periodValue = req.query.periodValue as string;
+
+      let sql = "SELECT id, type, period_value, what_worked, what_didnt_work, time_wasters, what_to_change, metrics_snapshot, created_at, updated_at FROM public.admin_reviews";
+      const params: any[] = [];
+      const where: string[] = [];
+
+      if (type) {
+        params.push(type);
+        where.push(`type = $${params.length}`);
+      }
+      if (periodValue) {
+        params.push(periodValue);
+        where.push(`period_value = $${params.length}`);
+      }
+      if (where.length > 0) {
+        sql += " WHERE " + where.join(" AND ");
+      }
+      sql += " ORDER BY created_at DESC;";
+
+      const result = await pool.query(sql, params);
+      const reviews = result.rows.map(r => ({
+        id: r.id,
+        type: r.type,
+        periodValue: r.period_value,
+        whatWorked: r.what_worked || "",
+        whatDidntWork: r.what_didnt_work || "",
+        timeWasters: r.time_wasters || "",
+        whatToChange: r.what_to_change || "",
+        metricsSnapshot: r.metrics_snapshot || null,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at
+      }));
+
+      res.json({ success: true, reviews });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // POST /api/planning/reviews
+  app.post("/api/planning/reviews", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!isValidToken(authHeader)) {
+      return res.status(403).json({ success: false, message: "Acceso denegado." });
+    }
+    try {
+      const pool = getDbPool();
+      if (!pool || dbUnavailable) return res.status(503).json({ success: false, message: "DB no disponible" });
+
+      const { type, periodValue, whatWorked, whatDidntWork, timeWasters, whatToChange, metricsSnapshot } = req.body;
+      if (!type || !periodValue) {
+        return res.status(400).json({ success: false, message: "Tipo y período son requeridos." });
+      }
+
+      const id = `rev-${type}-${periodValue}`;
+      const ww = sanitizeHtmlString(whatWorked || "");
+      const wdw = sanitizeHtmlString(whatDidntWork || "");
+      const tw = sanitizeHtmlString(timeWasters || "");
+      const wtc = sanitizeHtmlString(whatToChange || "");
+
+      await pool.query(`
+        INSERT INTO public.admin_reviews (id, type, period_value, what_worked, what_didnt_work, time_wasters, what_to_change, metrics_snapshot, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+        ON CONFLICT (id) DO UPDATE
+        SET what_worked = EXCLUDED.what_worked,
+            what_didnt_work = EXCLUDED.what_didnt_work,
+            time_wasters = EXCLUDED.time_wasters,
+            what_to_change = EXCLUDED.what_to_change,
+            metrics_snapshot = EXCLUDED.metrics_snapshot,
+            updated_at = NOW();
+      `, [id, type, periodValue, ww, wdw, tw, wtc, metricsSnapshot ? JSON.stringify(metricsSnapshot) : null]);
+
+      res.json({ success: true, message: "Revisión guardada con éxito.", review: { id, type, periodValue, whatWorked: ww, whatDidntWork: wdw, timeWasters: tw, whatToChange: wtc } });
+    } catch (err: any) {
+      console.error("Error saving review:", err);
+      res.status(500).json({ success: false, message: "Error al guardar la revisión.", error: err.message });
     }
   });
 

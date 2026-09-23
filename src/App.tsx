@@ -107,7 +107,8 @@ import {
   Scale,
   Moon,
   Accessibility,
-  GripVertical
+  GripVertical,
+  Target
 } from "lucide-react";
 import { Product, SiteSettings, ShopState, CartItem, Category, Subcategory, ProductVariant, is3DProduct, isGenericSize, isGenericColor, Shipping, ShippingOrigin, StockTransfer, StockAdjustment, AdminTask, Coupon } from "./types";
 import ThemeStyles from "./components/ThemeStyles";
@@ -124,6 +125,7 @@ import { DashboardBills } from "./components/DashboardBills";
 import { DashboardResumenGeneral } from "./components/DashboardResumenGeneral";
 import { DashboardShippings } from "./components/DashboardShippings";
 import { DashboardTasks } from "./components/DashboardTasks";
+import { DashboardPlanning } from "./components/DashboardPlanning";
 import AIAssistant from "./components/AIAssistant";
 import WhatsAppWidget from "./components/WhatsAppWidget";
 import A11yAssistant from "./components/A11yAssistant";
@@ -613,6 +615,7 @@ export default function App() {
     quantity: number;
     maxAvailable: number;
   }>>([]);
+  const [transferStockAlert, setTransferStockAlert] = useState<{ title: string; message: string; type: "error" | "warning" } | null>(null);
 
   const toggleSort = (field: string) => {
     if (sortField === field) {
@@ -1741,13 +1744,14 @@ export default function App() {
       const activeToken = localStorage.getItem("apex_admin_token") || authToken;
       const itemsPayload = items.map(item => {
         const prod = (store.products || []).find(p => String(p.id) === String(item.productId));
+        const variant = prod?.variants?.find(v => String(v.id) === String(item.variantId));
         return {
           productId: item.productId,
           productName: item.productName,
           variantId: item.variantId,
           variantName: item.variantName,
-          sku: prod?.codigo,
-          imageUrl: prod?.imageUrl,
+          sku: variant?.sku || prod?.codigo,
+          imageUrl: variant?.imageUrl || prod?.imageUrl || prod?.imagenes?.[0],
           quantity: item.quantity
         };
       });
@@ -2031,7 +2035,28 @@ export default function App() {
     }
   };
 
-  const handlePrintTransferReceipt = (group: {
+  const fetchImagesAsBase64 = async (urls: string[]): Promise<Record<string, string>> => {
+    const validUrls = Array.from(new Set(urls.filter(u => typeof u === "string" && u.trim().length > 0)));
+    if (validUrls.length === 0) return {};
+    try {
+      const res = await fetch("/api/images-to-base64", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ urls: validUrls })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.images) {
+          return data.images;
+        }
+      }
+    } catch (err) {
+      console.warn("Could not fetch base64 images from server:", err);
+    }
+    return {};
+  };
+
+  const handlePrintTransferReceipt = async (group: {
     transferCode: string;
     createdAt: string;
     fromDeposito: string;
@@ -2054,6 +2079,44 @@ export default function App() {
       return;
     }
 
+    try {
+      printWindow.document.open();
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="utf-8">
+            <title>Cargando Remito ${group.transferCode}...</title>
+            <style>
+              body { background: #0f172a; color: #f8fafc; font-family: system-ui, -apple-system, sans-serif; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+              .spinner { width: 40px; height: 40px; border: 4px solid rgba(230, 191, 118, 0.2); border-top-color: #E6BF76; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 16px; }
+              @keyframes spin { to { transform: rotate(360deg); } }
+            </style>
+          </head>
+          <body>
+            <div class="spinner"></div>
+            <div style="font-size: 18px; font-weight: 800; color: #E6BF76;">Preparando Remito ${group.transferCode}...</div>
+            <div style="font-size: 12px; color: #94a3b8; margin-top: 6px;">Cargando imágenes de los artículos...</div>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+    } catch (_) {}
+
+    const rawUrls: string[] = [];
+    group.items.forEach(it => {
+      let finalImg = it.imageUrl;
+      if (!finalImg) {
+        const prod = (store.products || []).find(p => String(p.id) === String(it.productId))
+          || (store.products || []).find(p => p.name && it.productName && p.name.trim().toLowerCase() === it.productName.trim().toLowerCase());
+        const variant = prod?.variants?.find(v => String(v.id) === String(it.variantId));
+        finalImg = variant?.imageUrl || prod?.imageUrl || prod?.imagenes?.[0];
+      }
+      if (finalImg) rawUrls.push(finalImg);
+    });
+
+    const base64Map = await fetchImagesAsBase64(rawUrls);
+
     const formattedDate = new Date(group.createdAt).toLocaleString("es-UY", {
       day: "2-digit",
       month: "2-digit",
@@ -2071,17 +2134,16 @@ export default function App() {
         const variant = prod?.variants?.find(v => String(v.id) === String(it.variantId));
         finalImg = variant?.imageUrl || prod?.imageUrl || prod?.imagenes?.[0];
       }
+      const base64Src = (finalImg && base64Map[finalImg]) ? base64Map[finalImg] : finalImg;
 
       return `
         <tr style="border-bottom: 1px solid #e2e8f0;">
           <td style="padding: 8px 6px; font-size: 11px; color: #64748b; font-family: monospace; text-align: center; vertical-align: middle;">${idx + 1}</td>
           <td style="padding: 6px; text-align: center; vertical-align: middle;">
-            ${finalImg ? `
+            ${base64Src ? `
               <img 
-                src="${finalImg}" 
+                src="${base64Src}" 
                 alt="${it.productName}" 
-                crossorigin="anonymous" 
-                referrerpolicy="no-referrer" 
                 style="width: 46px; height: 46px; object-fit: cover; border-radius: 6px; border: 1px solid #cbd5e1; display: block; margin: 0 auto; background: #fff;"
               />
             ` : `
@@ -2098,6 +2160,7 @@ export default function App() {
       `;
     }).join("");
 
+    printWindow.document.open();
     printWindow.document.write(`
       <!DOCTYPE html>
       <html lang="es">
@@ -2209,7 +2272,7 @@ export default function App() {
     printWindow.document.close();
   };
 
-  const handleDownloadTransferPDF = (group: {
+  const handleDownloadTransferPDF = async (group: {
     transferCode: string;
     createdAt: string;
     fromDeposito: string;
@@ -2232,6 +2295,44 @@ export default function App() {
       return;
     }
 
+    try {
+      printWindow.document.open();
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="utf-8">
+            <title>Generando PDF ${group.transferCode}...</title>
+            <style>
+              body { background: #0f172a; color: #f8fafc; font-family: system-ui, -apple-system, sans-serif; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+              .spinner { width: 44px; height: 44px; border: 4px solid rgba(230, 191, 118, 0.2); border-top-color: #E6BF76; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 16px; }
+              @keyframes spin { to { transform: rotate(360deg); } }
+            </style>
+          </head>
+          <body>
+            <div class="spinner"></div>
+            <div style="font-size: 20px; font-weight: 900; margin-bottom: 8px; color: #E6BF76;">Preparando Remito de Traslado ${group.transferCode}...</div>
+            <div style="font-size: 13px; color: #94a3b8;">Cargando fotos de los artículos en alta resolución...</div>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+    } catch (_) {}
+
+    const rawUrls: string[] = [];
+    group.items.forEach(it => {
+      let finalImg = it.imageUrl;
+      if (!finalImg) {
+        const prod = (store.products || []).find(p => String(p.id) === String(it.productId))
+          || (store.products || []).find(p => p.name && it.productName && p.name.trim().toLowerCase() === it.productName.trim().toLowerCase());
+        const variant = prod?.variants?.find(v => String(v.id) === String(it.variantId));
+        finalImg = variant?.imageUrl || prod?.imageUrl || prod?.imagenes?.[0];
+      }
+      if (finalImg) rawUrls.push(finalImg);
+    });
+
+    const base64Map = await fetchImagesAsBase64(rawUrls);
+
     const formattedDate = new Date(group.createdAt).toLocaleString("es-UY", {
       day: "2-digit",
       month: "2-digit",
@@ -2249,17 +2350,16 @@ export default function App() {
         const variant = prod?.variants?.find(v => String(v.id) === String(it.variantId));
         finalImg = variant?.imageUrl || prod?.imageUrl || prod?.imagenes?.[0];
       }
+      const base64Src = (finalImg && base64Map[finalImg]) ? base64Map[finalImg] : finalImg;
 
       return `
         <tr style="border-bottom: 1px solid #e2e8f0;">
           <td style="padding: 8px 6px; font-size: 11px; color: #64748b; font-family: monospace; text-align: center; vertical-align: middle;">${idx + 1}</td>
           <td style="padding: 6px; text-align: center; vertical-align: middle;">
-            ${finalImg ? `
+            ${base64Src ? `
               <img 
-                src="${finalImg}" 
+                src="${base64Src}" 
                 alt="${it.productName}" 
-                crossorigin="anonymous" 
-                referrerpolicy="no-referrer" 
                 style="width: 48px; height: 48px; object-fit: cover; border-radius: 6px; border: 1px solid #cbd5e1; display: block; margin: 0 auto; background: #fff;"
               />
             ` : `
@@ -2376,7 +2476,7 @@ export default function App() {
                 margin: [8, 8, 8, 8],
                 filename: 'Remito_Traslado_${group.transferCode}.pdf',
                 image: { type: 'jpeg', quality: 0.98 },
-                html2canvas: { scale: 2.2, useCORS: true, logging: false, allowTaint: true },
+                html2canvas: { scale: 2.2, useCORS: true, logging: false, allowTaint: false },
                 jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
               };
 
@@ -6936,8 +7036,8 @@ export default function App() {
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        <Sparkles className={`h-4 w-4 ${adminSection === "assistant" ? "text-indigo-400" : "text-zinc-400"}`} />
-                        <span>Notas y Asistente</span>
+                        <Target className={`h-4 w-4 ${adminSection === "assistant" ? "text-indigo-400" : "text-zinc-400"}`} />
+                        <span>Planificación</span>
                       </div>
                       {(() => {
                         const pendingCount = adminTasks.filter(t => t.status === "pending").length;
@@ -7258,7 +7358,7 @@ export default function App() {
                       {adminSection === "stock" && "Nivel de Inventario y Alertas de Stock"}
                       {adminSection === "payments" && "Administración de Métodos de Pago"}
                       {adminSection === "reviews" && "Sincronización con Google e Integraciones"}
-                      {adminSection === "assistant" && "Asistente y Notas de Gestión"}
+                      {adminSection === "assistant" && "Planificación y Objetivos"}
                     </span>
                   </h2>
                 </div>
@@ -16163,6 +16263,38 @@ export default function App() {
                         {/* PASO 1: SELECCIÓN DE RUTA Y AGREGAR ARTÍCULOS */}
                         {transferStep === 1 && (
                           <div className="space-y-6">
+                            {/* ALERTA VISIBLE DE STOCK INSUFICIENTE O EXCEDIDO */}
+                            {transferStockAlert && (
+                              <div className={`p-4 rounded-2xl border-2 flex items-start justify-between gap-3 shadow-md animate-fade-in ${
+                                transferStockAlert.type === "error"
+                                  ? "bg-red-50 dark:bg-red-950/40 border-red-500/50 text-red-900 dark:text-red-200"
+                                  : "bg-amber-50 dark:bg-amber-950/40 border-amber-500/50 text-amber-900 dark:text-amber-200"
+                              }`}>
+                                <div className="flex items-start gap-3">
+                                  <div className={`p-2 rounded-xl text-white shadow shrink-0 mt-0.5 ${
+                                    transferStockAlert.type === "error" ? "bg-red-600" : "bg-amber-600"
+                                  }`}>
+                                    <AlertTriangle className="h-5 w-5" />
+                                  </div>
+                                  <div>
+                                    <h4 className="text-xs font-black uppercase tracking-wider">
+                                      {transferStockAlert.title}
+                                    </h4>
+                                    <p className="text-xs font-bold mt-1 leading-relaxed opacity-90">
+                                      {transferStockAlert.message}
+                                    </p>
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setTransferStockAlert(null)}
+                                  className="px-2.5 py-1 bg-black/5 hover:bg-black/10 dark:bg-white/10 dark:hover:bg-white/20 rounded-lg font-black text-xs cursor-pointer transition shrink-0"
+                                >
+                                  ✕ Cerrar
+                                </button>
+                              </div>
+                            )}
+
                             {/* MASTER ROUTE CONFIG */}
                             <div className="bg-white dark:bg-zinc-950 rounded-2xl border border-slate-200 dark:border-zinc-800 shadow-sm p-6 space-y-4">
                               <div className="flex justify-between items-center">
@@ -16306,7 +16438,13 @@ export default function App() {
                                                   }
                                                   const parsed = parseInt(valStr) || 0;
                                                   if (parsed > item.maxAvailable) {
-                                                    showToast(`Stock insuficiente en ${transferFrom}: El stock disponible para "${item.productName}" es de ${item.maxAvailable}u.`, "error");
+                                                    const alertMsg = `Stock insuficiente en ${transferFrom}: El stock disponible para "${item.productName}" es de ${item.maxAvailable}u.`;
+                                                    setTransferStockAlert({
+                                                      title: `⚠️ Stock Excedido en ${transferFrom}`,
+                                                      message: alertMsg,
+                                                      type: "error"
+                                                    });
+                                                    showToast(alertMsg, "error");
                                                     setTransferItems(prev => prev.map(i => {
                                                       if (i.id === item.id) {
                                                         return { ...i, quantity: item.maxAvailable };
@@ -16339,7 +16477,13 @@ export default function App() {
                                               type="button"
                                               onClick={() => {
                                                 if (item.quantity >= item.maxAvailable) {
-                                                  showToast(`Stock límite alcanzado: Ya tienes el máximo disponible en ${transferFrom} (${item.maxAvailable}u) para "${item.productName}".`, "error");
+                                                  const alertMsg = `Stock límite alcanzado: Ya tienes el máximo disponible en ${transferFrom} (${item.maxAvailable}u) para "${item.productName}".`;
+                                                  setTransferStockAlert({
+                                                    title: `⚠️ Límite de Stock Alcanzado`,
+                                                    message: alertMsg,
+                                                    type: "warning"
+                                                  });
+                                                  showToast(alertMsg, "error");
                                                   return;
                                                 }
                                                 setTransferItems(prev => prev.map(i => {
@@ -16468,7 +16612,15 @@ export default function App() {
                                             const foundVar = selectedProduct.variants?.find(v => String(v.id) === String(newVarId));
                                             const varSrcStock = foundVar ? (transferFrom === "Pinamar" ? (foundVar.stockPinamar || 0) : (foundVar.stockMontevideo || 0)) : 0;
                                             if (varSrcStock <= 0) {
-                                              showToast(`Stock insuficiente: La variante "${foundVar?.size} / ${foundVar?.color}" no tiene existencias en ${transferFrom} (0u disponibles).`, "error");
+                                              const alertMsg = `La variante "${foundVar?.size} / ${foundVar?.color}" no tiene existencias en ${transferFrom} (0u disponibles).`;
+                                              setTransferStockAlert({
+                                                title: `⚠️ Stock Insuficiente en ${transferFrom}`,
+                                                message: alertMsg,
+                                                type: "error"
+                                              });
+                                              showToast(`Stock insuficiente: ${alertMsg}`, "error");
+                                            } else {
+                                              setTransferStockAlert(null);
                                             }
                                           }}
                                           className="w-full px-3 py-1.5 text-xs bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-700 rounded-xl font-extrabold text-slate-900 dark:text-zinc-100 focus:ring-1 focus:ring-indigo-500"
@@ -16498,7 +16650,13 @@ export default function App() {
                                           <button
                                             type="button"
                                             onClick={() => {
-                                              showToast(`Stock insuficiente: No puedes agregar "${selectedProduct.name}" porque no hay existencias en ${transferFrom} (0 unidades disponibles).`, "error");
+                                              const alertMsg = `No puedes agregar "${selectedProduct.name}" porque no hay existencias en ${transferFrom} (0 unidades disponibles).`;
+                                              setTransferStockAlert({
+                                                title: `⚠️ Stock Insuficiente en ${transferFrom}`,
+                                                message: alertMsg,
+                                                type: "error"
+                                              });
+                                              showToast(`Stock insuficiente: ${alertMsg}`, "error");
                                             }}
                                             className="w-full py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 font-black text-xs rounded-xl border border-red-500/30 transition flex items-center justify-center gap-1.5 cursor-pointer"
                                           >
@@ -16529,7 +16687,13 @@ export default function App() {
                                                 }
                                                 const parsed = parseInt(valStr) || 0;
                                                 if (parsed > sourceStock) {
-                                                  showToast(`Stock insuficiente: Solicitaste ${parsed}u pero solo dispones de ${sourceStock}u en ${transferFrom}.`, "error");
+                                                  const alertMsg = `Solicitaste ${parsed}u de "${selectedProduct.name}" pero solo dispones de ${sourceStock}u en ${transferFrom}.`;
+                                                  setTransferStockAlert({
+                                                    title: `⚠️ Stock Excedido en ${transferFrom}`,
+                                                    message: alertMsg,
+                                                    type: "error"
+                                                  });
+                                                  showToast(`Stock insuficiente: ${alertMsg}`, "error");
                                                   setTransferQty(sourceStock);
                                                   return;
                                                 }
@@ -16546,7 +16710,13 @@ export default function App() {
                                               type="button"
                                               onClick={() => {
                                                 if (transferQty >= sourceStock) {
-                                                  showToast(`Stock límite alcanzado: Ya tienes el máximo disponible en ${transferFrom} (${sourceStock}u).`, "error");
+                                                  const alertMsg = `Ya tienes el máximo disponible en ${transferFrom} (${sourceStock}u) para "${selectedProduct.name}".`;
+                                                  setTransferStockAlert({
+                                                    title: `⚠️ Límite de Stock Alcanzado`,
+                                                    message: alertMsg,
+                                                    type: "warning"
+                                                  });
+                                                  showToast(`Stock límite alcanzado: ${alertMsg}`, "error");
                                                   return;
                                                 }
                                                 setTransferQty(prev => Math.min(sourceStock, prev + 1));
@@ -16565,7 +16735,13 @@ export default function App() {
                                             type="button"
                                             onClick={() => {
                                               if (sourceStock <= 0) {
-                                                showToast(`Stock insuficiente: "${selectedProduct.name}" no cuenta con existencias en ${transferFrom}.`, "error");
+                                                const alertMsg = `"${selectedProduct.name}" no cuenta con existencias en ${transferFrom} (0 unidades). No es posible agregarlo al traslado.`;
+                                                setTransferStockAlert({
+                                                  title: `⚠️ Stock Insuficiente en ${transferFrom}`,
+                                                  message: alertMsg,
+                                                  type: "error"
+                                                });
+                                                showToast(`Stock insuficiente: ${alertMsg}`, "error");
                                                 return;
                                               }
 
@@ -16575,7 +16751,13 @@ export default function App() {
                                               }
 
                                               if (transferQty > sourceStock) {
-                                                showToast(`Stock insuficiente: Quieres transferir ${transferQty}u pero solo dispones de ${sourceStock}u en ${transferFrom}.`, "error");
+                                                const alertMsg = `Quieres transferir ${transferQty}u pero solo dispones de ${sourceStock}u en ${transferFrom}.`;
+                                                setTransferStockAlert({
+                                                  title: `⚠️ Stock Excedido en ${transferFrom}`,
+                                                  message: alertMsg,
+                                                  type: "error"
+                                                });
+                                                showToast(`Stock insuficiente: ${alertMsg}`, "error");
                                                 return;
                                               }
 
@@ -16589,9 +16771,16 @@ export default function App() {
                                               if (exists) {
                                                 if (exists.quantity + transferQty > sourceStock) {
                                                   const remaining = Math.max(0, sourceStock - exists.quantity);
-                                                  showToast(`Stock insuficiente en ${transferFrom}: Ya tienes ${exists.quantity}u en la lista. Solo puedes agregar hasta ${remaining}u más (Stock disponible: ${sourceStock}u).`, "error");
+                                                  const alertMsg = `Ya tienes ${exists.quantity}u de "${selectedProduct.name}" en la lista. Solo puedes agregar hasta ${remaining}u más (Stock disponible: ${sourceStock}u en ${transferFrom}).`;
+                                                  setTransferStockAlert({
+                                                    title: `⚠️ Límite de Stock Superado en ${transferFrom}`,
+                                                    message: alertMsg,
+                                                    type: "error"
+                                                  });
+                                                  showToast(`Stock insuficiente: ${alertMsg}`, "error");
                                                   return;
                                                 }
+                                                setTransferStockAlert(null);
                                                 setTransferItems(prev => prev.map(i => {
                                                   const key = i.variantId ? `${i.productId}-${i.variantId}` : i.productId;
                                                   if (key === itemKey) {
@@ -16602,6 +16791,7 @@ export default function App() {
                                                 }));
                                                 showToast(`Se sumaron +${transferQty}u a "${selectedProduct.name}" en la lista (Total: ${exists.quantity + transferQty}u).`, "success");
                                               } else {
+                                                setTransferStockAlert(null);
                                                 setTransferItems(prev => [
                                                   ...prev,
                                                   {
@@ -16725,9 +16915,16 @@ export default function App() {
                                             type="button"
                                             onClick={() => {
                                               if (item.sourceStock <= 0) {
-                                                showToast(`Stock insuficiente: No hay existencias disponibles de "${item.name}${item.variantName ? ` (${item.variantName})` : ''}" en ${transferFrom} para transferir.`, "error");
+                                                const alertMsg = `No hay existencias disponibles de "${item.name}${item.variantName ? ` (${item.variantName})` : ''}" en ${transferFrom} (0 unidades). No es posible transferirlo.`;
+                                                setTransferStockAlert({
+                                                  title: `⚠️ Stock Insuficiente en ${transferFrom}`,
+                                                  message: alertMsg,
+                                                  type: "error"
+                                                });
+                                                showToast(`Stock insuficiente: ${alertMsg}`, "error");
                                                 return;
                                               }
+                                              setTransferStockAlert(null);
                                               setTransferProductId(String(item.productId));
                                               setTransferVariantId(item.variantId ? String(item.variantId) : "");
                                               setTransferQty(1);
@@ -18257,10 +18454,12 @@ export default function App() {
                 );
                 })()}
 
-                {/* Asistente, Notas de Gestión e Ideas */}
+                {/* Planificación y Objetivos */}
                 {adminSection === "assistant" && (
-                  <DashboardTasks 
-                    onRefreshStore={async () => { await fetchStoreData(true); }} 
+                  <DashboardPlanning 
+                    store={store}
+                    authToken={authToken}
+                    onNavigateSection={(sec) => navigateAdminSection(sec as any)}
                     onRefreshTasks={fetchAdminTasks}
                   />
                 )}

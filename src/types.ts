@@ -380,15 +380,78 @@ export interface CartItem {
   selectedColor?: string;
 }
 
+export type WorkArea = "crecer" | "mantener" | "mejorar";
+
+export type GoalCategory = 
+  | "ventas"
+  | "facturacion"
+  | "ganancia"
+  | "productos_3d"
+  | "publicaciones"
+  | "mercado_libre"
+  | "redes_sociales"
+  | "investigacion"
+  | "stock"
+  | "organizacion"
+  | "otros";
+
+export type GoalStatus = "pendiente" | "en_progreso" | "cumplido" | "cancelado";
+export type GoalPriority = "high" | "medium" | "low";
+
+export interface AdminGoal {
+  id: string;
+  title: string;
+  description?: string;
+  category: GoalCategory;
+  area: WorkArea;
+  periodType: "month" | "week";
+  periodValue: string; // e.g. "2026-09" or "2026-W38"
+  dueDate?: string;
+  targetValue: number;
+  currentValue: number;
+  unit: string;
+  status: GoalStatus;
+  priority: GoalPriority;
+  isAutomatic: boolean;
+  autoMetric?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface DayFocus {
+  id: string; // "lunes", "martes", etc.
+  dayName: string;
+  focusTitle: string;
+  color?: string;
+  updatedAt?: string;
+}
+
+export interface AdminReview {
+  id: string;
+  type: "weekly" | "monthly";
+  periodValue: string; // e.g. "2026-W38" or "2026-09"
+  whatWorked?: string;
+  whatDidntWork?: string;
+  timeWasters?: string;
+  whatToChange?: string;
+  metricsSnapshot?: any;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface AdminTask {
   id: string;
   title: string;
   description?: string;
-  type: "task" | "idea" | "reminder";
+  type?: "task" | "idea" | "reminder";
   priority: "high" | "medium" | "low";
-  status: "pending" | "completed";
+  status: "pending" | "in_progress" | "completed" | "cancelled";
   category?: string;
   dueDate?: string;
+  dueTime?: string;
+  area?: WorkArea;
+  isPriorityToday?: boolean;
+  goalId?: string;
   createdAt?: string;
   updatedAt?: string;
 }
