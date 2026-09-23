@@ -499,3 +499,124 @@ export function isGenericColor(col?: string): boolean {
     "sin colores", "varios", "surtido", "color general"
   ].includes(norm);
 }
+
+// ==========================================
+// 3D CALCULATOR & MANUFACTURING INTERFACES
+// ==========================================
+
+export interface Printer3D {
+  id: string;
+  name: string;
+  brand: string;
+  model: string;
+  purchasePrice: number;
+  currency: "USD" | "UYU";
+  lifespanHours: number;
+  powerWatts: number;
+  maintenanceCostPerHour: number;
+  failureRatePercent: number;
+  buildVolumeX: number;
+  buildVolumeY: number;
+  buildVolumeZ: number;
+  status: "active" | "inactive";
+  purchaseDate?: string;
+  notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface Filament3D {
+  id: string;
+  brand: string;
+  material: string;
+  color: string;
+  spoolWeightGrams: number;
+  spoolPrice: number;
+  costPerGram: number;
+  currency: "UYU" | "USD";
+  purchaseDate?: string;
+  status: "active" | "exhausted" | "inactive";
+  notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface Settings3D {
+  id: string;
+  electricityKwhPrice: number;
+  laborHourlyRate: number;
+  defaultFailureRatePercent: number;
+  targetMarginPercent: number;
+  defaultMarkupPercent: number;
+  pricingMode: "margin" | "markup";
+  defaultPackagingCost: number;
+  currency: string;
+  exchangeRateUsdUyu: number;
+  updatedAt?: string;
+}
+
+export interface SalesChannel3D {
+  id: string;
+  name: string;
+  feePercent: number;
+  fixedFee: number;
+  otherCost: number;
+  description?: string;
+  active: boolean;
+  createdAt?: string;
+}
+
+export interface QuoteExtra3D {
+  id: string;
+  quoteId?: string;
+  name: string;
+  unitCost: number;
+  quantity: number;
+  totalCost: number;
+}
+
+export interface Quote3D {
+  id: string;
+  productName: string;
+  sku?: string;
+  printerId?: string;
+  filamentId?: string;
+  channelId?: string;
+  quantity: number;
+  filamentWeightGrams: number;
+  printTimeHours: number;
+  printTimeMinutes: number;
+  prepTimeMinutes: number;
+  postProcessTimeMinutes: number;
+  packagingCost: number;
+  extrasTotalCost: number;
+  pricingMode: "margin" | "markup";
+  targetRatePercent: number;
+  costFilament: number;
+  costElectricity: number;
+  costMachineDepreciation: number;
+  costMaintenance: number;
+  costFailures: number;
+  costLabor: number;
+  costPackaging: number;
+  totalRealCost: number;
+  unitRealCost: number;
+  channelCommissionCost: number;
+  minPrice: number;
+  recommendedPrice: number;
+  targetPrice: number;
+  finalPrice: number;
+  profit: number;
+  marginPercent: number;
+  status: "draft" | "quoted" | "approved" | "in_production" | "completed" | "rejected";
+  productId?: string;
+  calculationSnapshot: Record<string, any>;
+  notes?: string;
+  extras?: QuoteExtra3D[];
+  printerName?: string;
+  filamentName?: string;
+  channelName?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+

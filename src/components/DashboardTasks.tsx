@@ -206,10 +206,9 @@ export const DashboardTasks: React.FC<DashboardTasksProps> = ({ onRefreshStore, 
 
   // Delete task
   const handleDelete = async (id: string) => {
-    const token = localStorage.getItem("apex_admin_token");
-    if (!token || !id) return;
+    if (!id) return;
+    const token = localStorage.getItem("apex_admin_token") || "";
 
-    const previous = [...tasks];
     // Immediate UI removal
     setTasks(prev => prev.filter(t => t.id !== id));
 
@@ -217,27 +216,13 @@ export const DashboardTasks: React.FC<DashboardTasksProps> = ({ onRefreshStore, 
       const response = await fetch(`/api/admin-tasks/${id}`, {
         method: "DELETE",
         headers: {
-          "Authorization": `Bearer ${token}`
+          "Authorization": token.startsWith("Bearer ") ? token : `Bearer ${token}`
         }
       });
 
-      let data: any = null;
-      const contentType = response.headers.get("content-type") || "";
-      if (contentType.includes("application/json")) {
-        try {
-          data = await response.json();
-        } catch (jsonErr) {}
-      }
-
-      if (response.ok && data && data.success) {
-        if (onRefreshStore) await onRefreshStore();
-        if (onRefreshTasks) await onRefreshTasks();
-      } else {
-        // Rollback if server failed
-        setTasks(previous);
-      }
+      if (onRefreshStore) await onRefreshStore();
+      if (onRefreshTasks) await onRefreshTasks();
     } catch (err) {
-      setTasks(previous);
       console.error("Error deleting task:", err);
     }
   };

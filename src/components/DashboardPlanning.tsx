@@ -203,29 +203,39 @@ export const DashboardPlanning: React.FC<DashboardPlanningProps> = ({
     }
   };
 
-  // Delete task with optimistic UI update and error rollback
+  // Delete task with optimistic UI update
   const handleDeleteTask = async (id: string) => {
     if (!id) return;
     const previousTasks = [...tasks];
-    // Immediate UI removal so the task disappears instantly
+    // Immediate UI removal so the task disappears instantly across all views
     setTasks(prev => prev.filter(t => t.id !== id));
+    setOverviewData((prev: any) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        tasks: (prev.tasks || []).filter((t: any) => t.id !== id)
+      };
+    });
 
     try {
+      const activeToken = token || localStorage.getItem("apex_admin_token") || "";
       const res = await fetch(`/api/admin-tasks/${id}`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { 
+          Authorization: activeToken.startsWith("Bearer ") ? activeToken : `Bearer ${activeToken}` 
+        }
       });
       if (!res.ok) {
-        setTasks(previousTasks);
-        const data = await res.json().catch(() => ({}));
-        setErrorMsg(data.message || "No se pudo eliminar la tarea en el servidor.");
-      } else {
-        if (onRefreshTasks) onRefreshTasks();
+        // If 404, the task was already gone, so keep it removed
+        if (res.status !== 404) {
+          const data = await res.json().catch(() => ({}));
+          console.warn("Could not delete task on server:", data);
+        }
       }
+      if (onRefreshTasks) onRefreshTasks();
     } catch (e: any) {
       console.error("Error deleting task:", e);
-      setTasks(previousTasks);
-      setErrorMsg("Error de conexión al eliminar la tarea.");
+      // Keep optimistic UI removal unless user manually refreshes
     }
   };
 

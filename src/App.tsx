@@ -23,6 +23,8 @@ import {
   List,
   Sparkles,
   Smartphone,
+  Printer,
+  Calculator,
   CheckCircle2,
   CheckSquare,
   AlertCircle,
@@ -79,7 +81,6 @@ import {
   Flame,
   Lightbulb,
   Smile,
-  Printer,
   Maximize2,
   Minimize2,
   Minus,
@@ -126,6 +127,7 @@ import { DashboardResumenGeneral } from "./components/DashboardResumenGeneral";
 import { DashboardShippings } from "./components/DashboardShippings";
 import { DashboardTasks } from "./components/DashboardTasks";
 import { DashboardPlanning } from "./components/DashboardPlanning";
+import { Dashboard3DCalculator } from "./components/Dashboard3DCalculator";
 import AIAssistant from "./components/AIAssistant";
 import WhatsAppWidget from "./components/WhatsAppWidget";
 import A11yAssistant from "./components/A11yAssistant";
@@ -475,7 +477,7 @@ export default function App() {
 
   // Search & Navigation
   const [activeTab, setActiveTab] = useState<"storefront" | "admin" | "checkout">("storefront");
-  const [adminSection, setAdminSection] = useState<"general" | "products" | "categories" | "promos" | "security" | "stock" | "dashboard" | "banner" | "footer" | "payments" | "checkout_config" | "sales" | "reviews" | "bills" | "finances" | "shippings" | "assistant" | "cloudinary_explorer">("dashboard");
+  const [adminSection, setAdminSection] = useState<"general" | "products" | "categories" | "promos" | "security" | "stock" | "dashboard" | "banner" | "footer" | "payments" | "checkout_config" | "sales" | "reviews" | "bills" | "finances" | "shippings" | "assistant" | "calculator_3d" | "cloudinary_explorer">("dashboard");
   const [showAIAssistantSidebar, setShowAIAssistantSidebar] = useState(false);
   const [showAdminDevicePreview, setShowAdminDevicePreview] = useState(true);
   const [mobileAdminMenuOpen, setMobileAdminMenuOpen] = useState(false);
@@ -711,7 +713,7 @@ export default function App() {
     }
   };
 
-  const navigateAdminSection = (section: "general" | "products" | "categories" | "promos" | "security" | "stock" | "dashboard" | "banner" | "footer" | "payments" | "checkout_config" | "sales" | "reviews" | "emails" | "bills" | "finances" | "shippings" | "assistant" | "cloudinary_explorer") => {
+  const navigateAdminSection = (section: "general" | "products" | "categories" | "promos" | "security" | "stock" | "dashboard" | "banner" | "footer" | "payments" | "checkout_config" | "sales" | "reviews" | "emails" | "bills" | "finances" | "shippings" | "assistant" | "cloudinary_explorer" | "calculator_3d") => {
     setAdminSection(section);
     setEditingProduct(null);
     setIsNewProductMode(false);
@@ -7056,6 +7058,23 @@ export default function App() {
                     </button>
 
                     <button
+                      onClick={() => navigateAdminSection("calculator_3d")}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-xs font-bold tracking-wide transition-all duration-300 hover:translate-x-0.5 cursor-pointer ${
+                        adminSection === "calculator_3d"
+                          ? "bg-[#D4A55A]/20 text-[#E6BF76] border border-[#D4A55A]/40 shadow-[0_4px_20px_rgba(212,165,90,0.2)]"
+                          : "hover:bg-zinc-900/50 text-zinc-400 hover:text-zinc-200 border border-transparent"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Printer className={`h-4 w-4 ${adminSection === "calculator_3d" ? "text-[#E6BF76]" : "text-zinc-400"}`} />
+                        <span>Calculadora 3D</span>
+                      </div>
+                      <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-[#D4A55A]/20 text-[#E6BF76] border border-[#D4A55A]/30">
+                        Áurea Pro
+                      </span>
+                    </button>
+
+                    <button
                       onClick={() => {
                         navigateAdminSection("stock");
                         setStockSubSection("list");
@@ -7359,6 +7378,7 @@ export default function App() {
                       {adminSection === "payments" && "Administración de Métodos de Pago"}
                       {adminSection === "reviews" && "Sincronización con Google e Integraciones"}
                       {adminSection === "assistant" && "Planificación y Objetivos"}
+                      {adminSection === "calculator_3d" && "Calculadora 3D y Costeo de Fabricación"}
                     </span>
                   </h2>
                 </div>
@@ -18461,6 +18481,17 @@ export default function App() {
                     authToken={authToken}
                     onNavigateSection={(sec) => navigateAdminSection(sec as any)}
                     onRefreshTasks={fetchAdminTasks}
+                  />
+                )}
+
+                {/* Calculadora 3D */}
+                {adminSection === "calculator_3d" && (
+                  <Dashboard3DCalculator
+                    authToken={authToken}
+                    onNavigateSection={(sec) => navigateAdminSection(sec as any)}
+                    onProductCreated={() => {
+                      fetchStoreData(true);
+                    }}
                   />
                 )}
 
