@@ -714,7 +714,7 @@ export default function App() {
   };
 
   const navigateAdminSection = (section: "general" | "products" | "categories" | "promos" | "security" | "stock" | "dashboard" | "banner" | "footer" | "payments" | "checkout_config" | "sales" | "reviews" | "emails" | "bills" | "finances" | "shippings" | "assistant" | "cloudinary_explorer" | "calculator_3d") => {
-    setAdminSection(section);
+    setAdminSection(section as any);
     setEditingProduct(null);
     setIsNewProductMode(false);
     setMobileAdminMenuOpen(false);
@@ -5781,41 +5781,37 @@ export default function App() {
           ) : (
             <>
               {/* Active Synchronization state panel from design HTML */}
-              <div className="flex items-center gap-2 px-2.5 py-1 bg-green-500/10 text-green-400 rounded-full border border-green-500/20">
-                <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
-                <span className="text-[10px] font-semibold uppercase tracking-wider hidden md:inline">Base de Datos Sincronizada</span>
-                <span className="text-[10px] font-semibold uppercase tracking-wider md:hidden">Sincronizado</span>
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 text-emerald-400 rounded-full border border-emerald-500/25 shadow-[0_0_12px_rgba(16,185,129,0.15)]">
+                <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse shadow-[0_0_8px_#34d399]"></div>
+                <span className="text-[10px] font-bold uppercase tracking-wider hidden md:inline text-emerald-300">Base de Datos Sincronizada</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider md:hidden text-emerald-300">Sincronizado</span>
               </div>
 
               {/* Session Security and Activity Indicator */}
-              <div className="flex items-center gap-1.5 px-2.5 py-1 bg-indigo-500/10 text-indigo-400 rounded-full border border-indigo-500/20 transition-all duration-300" title="Su sesión de 1 hora se renueva automáticamente con el movimiento o clics.">
-                <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
-                <span className="text-[10px] font-semibold uppercase tracking-wider hidden md:inline">Sesión Protegida (Auto-renovación)</span>
-                <span className="text-[10px] font-semibold uppercase tracking-wider md:hidden">Sesión Protegida</span>
+              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#D4AF37]/12 text-[#F3E5AB] rounded-full border border-[#D4AF37]/30 shadow-[0_0_12px_rgba(212,175,55,0.12)] transition-all duration-300" title="Su sesión se renueva automáticamente con el movimiento o clics.">
+                <ShieldCheck className="w-3.5 h-3.5 text-[#E6BF76]" />
+                <span className="text-[10px] font-bold uppercase tracking-wider hidden md:inline text-[#F3E5AB]">Sesión Protegida (Áurea)</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider md:hidden text-[#F3E5AB]">Sesión Protegida</span>
               </div>
 
               {/* View Store button */}
               <button
                 onClick={() => setActiveTab("storefront")}
-                className={`flex items-center gap-1.5 text-xs font-bold py-1.5 px-3 rounded-lg transition ${
-                  store.settings.themeMode === "dark" 
-                    ? "bg-zinc-800 hover:bg-zinc-700 text-zinc-300" 
-                    : "bg-slate-100 hover:bg-slate-200 text-slate-700"
-                }`}
+                className="flex items-center gap-1.5 text-xs font-bold py-1.5 px-3.5 rounded-xl bg-gradient-to-r from-[#D4AF37]/20 via-[#D4A55A]/15 to-transparent hover:from-[#D4AF37]/30 hover:to-[#B89628]/25 text-[#F3E5AB] border border-[#D4AF37]/35 transition-all shadow-[0_2px_12px_rgba(212,175,55,0.15)] cursor-pointer"
               >
-                <ArrowLeft className="h-3.5 w-3.5" />
+                <ArrowLeft className="h-3.5 w-3.5 text-[#E6BF76]" />
                 <span>Ver Tienda</span>
               </button>
 
               {/* Active account details (Juem) */}
-              <div className="flex items-center gap-2 pl-3 border-l border-zinc-700/50">
+              <div className="flex items-center gap-2.5 pl-3 border-l border-[#D4AF37]/25">
                 <div className="hidden md:block text-right">
-                  <p className="text-xs font-bold leading-none">Juem</p>
-                  <p className="text-[9px] text-zinc-500">Administrador Principal</p>
+                  <p className="text-xs font-bold leading-none text-[#F3E5AB]">Juem</p>
+                  <p className="text-[9px] text-[#D4A55A]/80 font-medium">Administrador Principal</p>
                 </div>
                 <button
                   onClick={handleLogout}
-                  className="p-1 text-red-400 hover:bg-red-400/15 rounded transition"
+                  className="p-1.5 text-rose-400 hover:bg-rose-500/15 rounded-lg border border-rose-500/20 transition cursor-pointer"
                   title="Cerrar sesión"
                 >
                   <LogOut className="h-4 w-4" />
@@ -6853,56 +6849,59 @@ export default function App() {
 
       {/* RENDER ADMIN DASHBOARD - SECURE ACCESS GUARD WHEN NOT AUTHENTICATED */}
       {activeTab === "admin" && !authToken && (
-        <div className="flex-grow flex items-center justify-center p-6 bg-slate-100 dark:bg-zinc-950 min-h-[70vh]">
-          <div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-3xl p-8 w-full max-w-sm text-center shadow-2xl space-y-6">
-            <div className="w-16 h-16 bg-red-500/10 dark:bg-red-500/5 text-red-500 rounded-2xl flex items-center justify-center mx-auto border border-red-500/20">
-              <AlertCircle className="h-8 w-8 text-red-500" />
+        <div className="flex-grow flex items-center justify-center p-6 bg-[#060A12] min-h-[70vh] relative overflow-hidden">
+          {/* Subtle Áurea ambient glow */}
+          <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-[#D4AF37]/10 rounded-full blur-[140px] pointer-events-none" />
+          
+          <div className="bg-[#0B1120]/90 backdrop-blur-xl border border-[#D4AF37]/30 rounded-3xl p-8 w-full max-w-sm text-center shadow-[0_20px_60px_rgba(0,0,0,0.8)] space-y-6 relative z-10">
+            <div className="w-16 h-16 bg-[#D4AF37]/15 text-[#E6BF76] rounded-2xl flex items-center justify-center mx-auto border border-[#D4AF37]/30 shadow-[0_0_20px_rgba(212,175,55,0.25)]">
+              <Lock className="h-8 w-8 text-[#E6BF76]" />
             </div>
             
             <div className="space-y-2">
-              <span className="text-[10px] font-extrabold uppercase tracking-widest text-red-500 bg-red-500/10 px-2.5 py-1 rounded-full border border-red-500/20 inline-block">
-                Acceso Restringido - Ruta Protegida
+              <span className="text-[10px] font-black uppercase tracking-widest text-[#F3E5AB] bg-[#D4AF37]/20 px-3 py-1 rounded-full border border-[#D4AF37]/35 inline-block shadow-sm">
+                Consola Administrativa Áurea
               </span>
-              <h3 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
-                Ruta Administrativa Protegida
+              <h3 className="text-xl font-black tracking-tight text-white font-sans">
+                Acceso Exclusivo JUEM
               </h3>
-              <p className="text-slate-500 dark:text-zinc-400 text-xs max-w-sm mx-auto leading-relaxed">
-                No tienes autorización para acceder a este panel. Inicia sesión con tus credenciales de administrador para continuar. El acceso manual por URL está estrictamente restringido.
+              <p className="text-slate-400 text-xs max-w-sm mx-auto leading-relaxed">
+                Inicia sesión con tus credenciales de administrador para gestionar cotizaciones, inventario y catálogo.
               </p>
             </div>
 
             <form onSubmit={handleLoginSubmit} className="space-y-3.5 text-left">
               <div className="space-y-1">
-                <label className="text-[10px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-zinc-400">Nombre de Usuario</label>
+                <label className="text-[10px] font-black uppercase tracking-widest text-[#E6BF76]">Nombre de Usuario</label>
                 <input
                   required
                   type="text"
                   placeholder="ej. Juem"
                   value={usernameInput}
                   onChange={(e) => setUsernameInput(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl text-xs text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-indigo-500 transition-all"
+                  className="w-full px-3.5 py-2.5 bg-[#060A13] border border-[#D4AF37]/25 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37]/30 transition-all"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-zinc-400">Contraseña Segura</label>
+                <label className="text-[10px] font-black uppercase tracking-widest text-[#E6BF76]">Contraseña Segura</label>
                 <input
                   required
                   type="password"
                   placeholder="••••••••"
                   value={passwordInput}
                   onChange={(e) => setPasswordInput(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl text-xs text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-indigo-500 transition-all"
+                  className="w-full px-3.5 py-2.5 bg-[#060A13] border border-[#D4AF37]/25 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37]/30 transition-all"
                 />
               </div>
 
               {loginError && (
-                <p className="text-xs text-red-500 text-center font-bold">❌ {loginError}</p>
+                <p className="text-xs text-rose-400 text-center font-bold">❌ {loginError}</p>
               )}
 
               <button
                 type="submit"
-                className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold tracking-wider uppercase mt-4 cursor-pointer flex items-center justify-center gap-1.5"
+                className="w-full py-3 px-4 bg-gradient-to-r from-[#D4AF37] via-[#E6BF76] to-[#B89628] hover:brightness-110 active:scale-[0.98] text-slate-950 rounded-xl text-xs font-black tracking-wider uppercase mt-4 cursor-pointer flex items-center justify-center gap-1.5 shadow-[0_4px_20px_rgba(212,175,55,0.3)] transition-all"
               >
                 <span>Acceder al Panel Admin</span>
               </button>
@@ -6911,7 +6910,7 @@ export default function App() {
             <div className="pt-2">
               <button
                 onClick={() => navigateToProductRoute("todos", "all")}
-                className="text-xs font-bold text-slate-500 dark:text-zinc-500 hover:text-slate-800 dark:hover:text-zinc-300 underline cursor-pointer"
+                className="text-xs font-bold text-slate-400 hover:text-[#E6BF76] transition underline cursor-pointer"
               >
                 Volver a la Tienda Pública
               </button>
@@ -6922,45 +6921,45 @@ export default function App() {
 
       {/* RENDER ADMIN DASHBOARD - PRIVATE CONTROL PANEL */}
       {activeTab === "admin" && authToken && (
-        <div className="dark flex-grow flex flex-col md:flex-row min-h-0 bg-zinc-950 text-zinc-100 relative overflow-hidden font-sans">
+        <div className="dark flex-grow flex flex-col md:flex-row min-h-0 bg-[#060A12] text-slate-100 relative overflow-hidden font-sans">
           
-          {/* Ambient Lighting Orbs - "Luz" backdrop effect for premium tech vibe */}
-          <div className="absolute top-[-10%] left-[-10%] w-[45%] h-[45%] rounded-full bg-indigo-500/10 blur-[120px] pointer-events-none" />
-          <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-indigo-600/5 blur-[150px] pointer-events-none" />
-          <div className="absolute top-[30%] left-[60%] w-[35%] h-[35%] rounded-full bg-emerald-500/5 blur-[130px] pointer-events-none" />
+          {/* Ambient Lighting Orbs - Áurea Pro Celestial and Warm Gold glow */}
+          <div className="absolute top-[-10%] left-[-10%] w-[45%] h-[45%] rounded-full bg-[#D4AF37]/8 blur-[140px] pointer-events-none" />
+          <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-[#1E293B]/45 blur-[160px] pointer-events-none" />
+          <div className="absolute top-[30%] left-[60%] w-[35%] h-[35%] rounded-full bg-[#996515]/6 blur-[150px] pointer-events-none" />
 
-          {/* Left sidebar nav with Glassmorphism aesthetic and rich lighting details */}
-          <aside className="w-full md:w-66 bg-zinc-950/85 backdrop-blur-md text-zinc-200 flex flex-col shrink-0 border-r border-zinc-800/40 shadow-[5px_0_30px_rgba(0,0,0,0.35)] select-none z-10 relative">
+          {/* Left sidebar nav with Áurea Pro Glassmorphism aesthetic and rich gold details */}
+          <aside className="w-full md:w-66 bg-[#070D1A]/95 backdrop-blur-xl text-slate-200 flex flex-col shrink-0 border-r border-[#D4AF37]/15 shadow-[5px_0_35px_rgba(0,0,0,0.6)] select-none z-10 relative">
             
             {/* Header de menú móvil visible sólo en pantallas chicas */}
-            <div className="flex md:hidden items-center justify-between p-4 bg-zinc-950/90 border-b border-zinc-800/60 select-none">
+            <div className="flex md:hidden items-center justify-between p-4 bg-[#080E1B]/95 border-b border-[#D4AF37]/15 select-none">
               <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse shadow-[0_0_8px_#6366f1]" />
-                <span className="text-xs font-black uppercase tracking-widest text-zinc-100">Control Panel</span>
+                <div className="w-2 h-2 rounded-full bg-[#D4AF37] animate-pulse shadow-[0_0_8px_#D4AF37]" />
+                <span className="text-xs font-black uppercase tracking-widest text-[#F3E5AB]">Control Panel</span>
               </div>
               <button
                 type="button"
                 onClick={() => setMobileAdminMenuOpen(!mobileAdminMenuOpen)}
-                className="p-1.5 focus:outline-none hover:bg-zinc-900 rounded-lg transition-colors text-zinc-300 hover:text-white flex items-center justify-center border border-zinc-800"
+                className="p-1.5 focus:outline-none hover:bg-[#0F172A] rounded-lg transition-colors text-slate-300 hover:text-white flex items-center justify-center border border-[#D4AF37]/20 cursor-pointer"
                 id="admin-mobile-menu-toggle"
               >
-                {mobileAdminMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+                {mobileAdminMenuOpen ? <X className="h-4 w-4 text-[#E6BF76]" /> : <Menu className="h-4 w-4 text-[#E6BF76]" />}
               </button>
             </div>
 
             {/* Desktop Brand Header for elegant visual hierarchy */}
-            <div className="hidden md:flex flex-col p-5 border-b border-zinc-900/60 bg-zinc-950/50">
-              <div className="flex items-center gap-2">
+            <div className="hidden md:flex flex-col p-5 border-b border-[#D4AF37]/15 bg-gradient-to-b from-[#0A101E] to-[#070D1A]">
+              <div className="flex items-center gap-2.5">
                 <div className="relative">
-                  <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.8)] animate-pulse" />
-                  <div className="absolute inset-0 rounded-full bg-indigo-500/30 scale-150 animate-ping" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-[#D4AF37] to-[#F3E5AB] shadow-[0_0_12px_rgba(212,175,55,0.8)] animate-pulse" />
+                  <div className="absolute inset-0 rounded-full bg-[#D4AF37]/30 scale-150 animate-ping" />
                 </div>
-                <span className="text-xs font-black uppercase tracking-widest text-zinc-100 font-sans">
-                  SISTEMA DE CONTROL
+                <span className="text-xs font-black uppercase tracking-widest text-[#F3E5AB] font-sans">
+                  SISTEMA DE CONTROL JUEM
                 </span>
               </div>
-              <p className="text-[10px] text-zinc-500 mt-1 font-semibold">
-                Consola de Gestión v2.8.5
+              <p className="text-[10px] text-[#D4A55A]/70 mt-1 font-semibold">
+                Consola Áurea Pro • v2.9
               </p>
             </div>
 
@@ -6970,8 +6969,8 @@ export default function App() {
                 
                 {/* Grupo 0 - Operaciones Principales */}
                 <div>
-                  <div className="text-[9.5px] uppercase tracking-widest text-zinc-500 font-extrabold mb-2.5 px-3 select-none flex items-center gap-1.5">
-                    <span className="w-1 h-1 rounded-full bg-zinc-600" />
+                  <div className="text-[9.5px] uppercase tracking-widest text-[#E6BF76]/85 font-black mb-2.5 px-3 select-none flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-[#D4AF37] to-[#F3E5AB] shadow-[0_0_6px_rgba(212,175,55,0.6)]" />
                     <span>Métricas Generales</span>
                   </div>
                   <div className="space-y-1">
@@ -6979,11 +6978,11 @@ export default function App() {
                       onClick={() => navigateAdminSection("dashboard")}
                       className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left text-xs font-bold tracking-wide transition-all duration-300 hover:translate-x-0.5 cursor-pointer ${
                         adminSection === "dashboard"
-                          ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/30 shadow-[0_4px_20px_rgba(99,102,241,0.15)]"
-                          : "hover:bg-zinc-900/50 text-zinc-400 hover:text-zinc-200 border border-transparent"
+                          ? "bg-gradient-to-r from-[#D4AF37]/20 via-[#D4A55A]/12 to-transparent text-[#F3E5AB] border border-[#D4AF37]/45 shadow-[0_4px_20px_rgba(212,175,55,0.18)]"
+                          : "hover:bg-[#0F172A]/70 text-slate-400 hover:text-[#F3E5AB] border border-transparent hover:border-[#D4AF37]/15"
                       }`}
                     >
-                      <TrendingUp className={`h-4 w-4 transition-transform duration-300 ${adminSection === "dashboard" ? "scale-110 text-indigo-400" : "text-zinc-400"}`} />
+                      <TrendingUp className={`h-4 w-4 transition-transform duration-300 ${adminSection === "dashboard" ? "scale-110 text-[#E6BF76] drop-shadow-[0_0_8px_rgba(212,175,55,0.5)]" : "text-slate-400"}`} />
                       <span>Dashboard y Finanzas</span>
                     </button>
                   </div>
@@ -6991,8 +6990,8 @@ export default function App() {
 
                 {/* Category Group 1 - Ventas */}
                 <div>
-                  <div className="text-[9.5px] uppercase tracking-widest text-zinc-500 font-extrabold mb-2.5 px-3 select-none flex items-center gap-1.5">
-                    <span className="w-1 h-1 rounded-full bg-indigo-500/40" />
+                  <div className="text-[9.5px] uppercase tracking-widest text-[#E6BF76]/85 font-black mb-2.5 px-3 select-none flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-[#D4AF37] to-[#F3E5AB] shadow-[0_0_6px_rgba(212,175,55,0.6)]" />
                     <span>Operaciones de Venta</span>
                   </div>
                   <div className="space-y-1">
@@ -7000,16 +6999,16 @@ export default function App() {
                       onClick={() => navigateAdminSection("sales")}
                       className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-xs font-bold tracking-wide transition-all duration-300 hover:translate-x-0.5 cursor-pointer ${
                         adminSection === "sales"
-                          ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/30 shadow-[0_4px_20px_rgba(99,102,241,0.15)]"
-                          : "hover:bg-zinc-900/50 text-zinc-400 hover:text-zinc-200 border border-transparent"
+                          ? "bg-gradient-to-r from-[#D4AF37]/20 via-[#D4A55A]/12 to-transparent text-[#F3E5AB] border border-[#D4AF37]/45 shadow-[0_4px_20px_rgba(212,175,55,0.18)]"
+                          : "hover:bg-[#0F172A]/70 text-slate-400 hover:text-[#F3E5AB] border border-transparent hover:border-[#D4AF37]/15"
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        <CartIcon className={`h-4 w-4 ${adminSection === "sales" ? "text-indigo-400" : "text-zinc-400"}`} />
+                        <CartIcon className={`h-4 w-4 ${adminSection === "sales" ? "text-[#E6BF76] drop-shadow-[0_0_8px_rgba(212,175,55,0.5)]" : "text-slate-400"}`} />
                         <span>Venta de Artículos</span>
                       </div>
                       {store.orders && store.orders.filter(o => o.status === "pedido_iniciado" || o.status === "pago_pendiente").length > 0 && (
-                        <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-indigo-600 text-white animate-pulse shadow-[0_0_10px_rgba(99,102,241,0.5)]">
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-[#D4AF37]/25 text-[#F3E5AB] border border-[#D4AF37]/40 shadow-[0_0_10px_rgba(212,175,55,0.3)] animate-pulse">
                           {store.orders.filter(o => o.status === "pedido_iniciado" || o.status === "pago_pendiente").length}
                         </span>
                       )}
@@ -7019,12 +7018,12 @@ export default function App() {
                       onClick={() => navigateAdminSection("shippings")}
                       className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-xs font-bold tracking-wide transition-all duration-300 hover:translate-x-0.5 cursor-pointer ${
                         adminSection === "shippings"
-                          ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/30 shadow-[0_4px_20px_rgba(99,102,241,0.15)]"
-                          : "hover:bg-zinc-900/50 text-zinc-400 hover:text-zinc-200 border border-transparent"
+                          ? "bg-gradient-to-r from-[#D4AF37]/20 via-[#D4A55A]/12 to-transparent text-[#F3E5AB] border border-[#D4AF37]/45 shadow-[0_4px_20px_rgba(212,175,55,0.18)]"
+                          : "hover:bg-[#0F172A]/70 text-slate-400 hover:text-[#F3E5AB] border border-transparent hover:border-[#D4AF37]/15"
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        <Truck className={`h-4 w-4 ${adminSection === "shippings" ? "text-indigo-400" : "text-zinc-400"}`} />
+                        <Truck className={`h-4 w-4 ${adminSection === "shippings" ? "text-[#E6BF76] drop-shadow-[0_0_8px_rgba(212,175,55,0.5)]" : "text-slate-400"}`} />
                         <span>Planificación Envíos</span>
                       </div>
                     </button>
@@ -7033,12 +7032,12 @@ export default function App() {
                       onClick={() => navigateAdminSection("assistant")}
                       className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-xs font-bold tracking-wide transition-all duration-300 hover:translate-x-0.5 cursor-pointer ${
                         adminSection === "assistant"
-                          ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/30 shadow-[0_4px_20px_rgba(99,102,241,0.15)]"
-                          : "hover:bg-zinc-900/50 text-zinc-400 hover:text-zinc-200 border border-transparent"
+                          ? "bg-gradient-to-r from-[#D4AF37]/20 via-[#D4A55A]/12 to-transparent text-[#F3E5AB] border border-[#D4AF37]/45 shadow-[0_4px_20px_rgba(212,175,55,0.18)]"
+                          : "hover:bg-[#0F172A]/70 text-slate-400 hover:text-[#F3E5AB] border border-transparent hover:border-[#D4AF37]/15"
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        <Target className={`h-4 w-4 ${adminSection === "assistant" ? "text-indigo-400" : "text-zinc-400"}`} />
+                        <Target className={`h-4 w-4 ${adminSection === "assistant" ? "text-[#E6BF76] drop-shadow-[0_0_8px_rgba(212,175,55,0.5)]" : "text-slate-400"}`} />
                         <span>Planificación</span>
                       </div>
                       {(() => {
@@ -7048,8 +7047,8 @@ export default function App() {
                         return (
                           <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black shadow-sm ${
                             hasHigh 
-                              ? "bg-rose-500 text-white animate-pulse" 
-                              : "bg-amber-500 text-zinc-950"
+                              ? "bg-rose-500/25 text-rose-300 border border-rose-500/40 animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.3)]" 
+                              : "bg-[#D4AF37]/25 text-[#F3E5AB] border border-[#D4AF37]/40 shadow-[0_0_8px_rgba(212,175,55,0.3)]"
                           }`}>
                             {pendingCount}
                           </span>
@@ -7061,17 +7060,14 @@ export default function App() {
                       onClick={() => navigateAdminSection("calculator_3d")}
                       className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-xs font-bold tracking-wide transition-all duration-300 hover:translate-x-0.5 cursor-pointer ${
                         adminSection === "calculator_3d"
-                          ? "bg-[#D4A55A]/20 text-[#E6BF76] border border-[#D4A55A]/40 shadow-[0_4px_20px_rgba(212,165,90,0.2)]"
-                          : "hover:bg-zinc-900/50 text-zinc-400 hover:text-zinc-200 border border-transparent"
+                          ? "bg-gradient-to-r from-[#D4AF37]/20 via-[#D4A55A]/12 to-transparent text-[#F3E5AB] border border-[#D4AF37]/45 shadow-[0_4px_20px_rgba(212,175,55,0.18)]"
+                          : "hover:bg-[#0F172A]/70 text-slate-400 hover:text-[#F3E5AB] border border-transparent hover:border-[#D4AF37]/15"
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        <Printer className={`h-4 w-4 ${adminSection === "calculator_3d" ? "text-[#E6BF76]" : "text-zinc-400"}`} />
+                        <Printer className={`h-4 w-4 ${adminSection === "calculator_3d" ? "text-[#E6BF76] drop-shadow-[0_0_8px_rgba(212,175,55,0.5)]" : "text-slate-400"}`} />
                         <span>Calculadora 3D</span>
                       </div>
-                      <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-[#D4A55A]/20 text-[#E6BF76] border border-[#D4A55A]/30">
-                        Áurea Pro
-                      </span>
                     </button>
 
                     <button
@@ -7081,19 +7077,19 @@ export default function App() {
                       }}
                       className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-xs font-bold tracking-wide transition-all duration-300 hover:translate-x-0.5 cursor-pointer ${
                         adminSection === "stock" && stockSubSection !== "transfer"
-                          ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/30 shadow-[0_4px_20px_rgba(99,102,241,0.15)]"
-                          : "hover:bg-zinc-900/50 text-zinc-400 hover:text-zinc-200 border border-transparent"
+                          ? "bg-gradient-to-r from-[#D4AF37]/20 via-[#D4A55A]/12 to-transparent text-[#F3E5AB] border border-[#D4AF37]/45 shadow-[0_4px_20px_rgba(212,175,55,0.18)]"
+                          : "hover:bg-[#0F172A]/70 text-slate-400 hover:text-[#F3E5AB] border border-transparent hover:border-[#D4AF37]/15"
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        <Box className={`h-4 w-4 ${adminSection === "stock" && stockSubSection !== "transfer" ? "text-indigo-400" : "text-zinc-400"}`} />
+                        <Box className={`h-4 w-4 ${adminSection === "stock" && stockSubSection !== "transfer" ? "text-[#E6BF76] drop-shadow-[0_0_8px_rgba(212,175,55,0.5)]" : "text-slate-400"}`} />
                         <span>Stock Almacén</span>
                       </div>
                       {totalStockAlerts > 0 && (
-                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold shrink-0 shadow-[0_0_8px_rgba(239,68,68,0.3)] ${
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold shrink-0 shadow-[0_0_8px_rgba(212,175,55,0.3)] ${
                           outOfStockProducts.length > 0
-                            ? "bg-red-500 text-white"
-                            : "bg-amber-500 text-zinc-950"
+                            ? "bg-rose-500/25 text-rose-300 border border-rose-500/40"
+                            : "bg-[#D4AF37]/25 text-[#F3E5AB] border border-[#D4AF37]/40"
                         }`}>
                           {totalStockAlerts}
                         </span>
@@ -7107,12 +7103,12 @@ export default function App() {
                       }}
                       className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-xs font-bold tracking-wide transition-all duration-300 hover:translate-x-0.5 cursor-pointer ${
                         adminSection === "stock" && stockSubSection === "transfer"
-                          ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/30 shadow-[0_4px_20px_rgba(99,102,241,0.15)]"
-                          : "hover:bg-zinc-900/50 text-zinc-400 hover:text-zinc-200 border border-transparent"
+                          ? "bg-gradient-to-r from-[#D4AF37]/20 via-[#D4A55A]/12 to-transparent text-[#F3E5AB] border border-[#D4AF37]/45 shadow-[0_4px_20px_rgba(212,175,55,0.18)]"
+                          : "hover:bg-[#0F172A]/70 text-slate-400 hover:text-[#F3E5AB] border border-transparent hover:border-[#D4AF37]/15"
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        <ArrowLeftRight className={`h-4 w-4 ${adminSection === "stock" && stockSubSection === "transfer" ? "text-indigo-400" : "text-zinc-400"}`} />
+                        <ArrowLeftRight className={`h-4 w-4 ${adminSection === "stock" && stockSubSection === "transfer" ? "text-[#E6BF76] drop-shadow-[0_0_8px_rgba(212,175,55,0.5)]" : "text-slate-400"}`} />
                         <span>Transferencia de Artículos</span>
                       </div>
                     </button>
@@ -7121,12 +7117,12 @@ export default function App() {
                       onClick={() => navigateAdminSection("bills")}
                       className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-xs font-bold tracking-wide transition-all duration-300 hover:translate-x-0.5 cursor-pointer ${
                         adminSection === "bills"
-                          ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/30 shadow-[0_4px_20px_rgba(99,102,241,0.15)]"
-                          : "hover:bg-zinc-900/50 text-zinc-400 hover:text-zinc-200 border border-transparent"
+                          ? "bg-gradient-to-r from-[#D4AF37]/20 via-[#D4A55A]/12 to-transparent text-[#F3E5AB] border border-[#D4AF37]/45 shadow-[0_4px_20px_rgba(212,175,55,0.18)]"
+                          : "hover:bg-[#0F172A]/70 text-slate-400 hover:text-[#F3E5AB] border border-transparent hover:border-[#D4AF37]/15"
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        <Receipt className={`h-4 w-4 ${adminSection === "bills" ? "text-indigo-400" : "text-zinc-400"}`} />
+                        <Receipt className={`h-4 w-4 ${adminSection === "bills" ? "text-[#E6BF76] drop-shadow-[0_0_8px_rgba(212,175,55,0.5)]" : "text-slate-400"}`} />
                         <span>Ingresar Boletas</span>
                       </div>
                     </button>
@@ -7135,8 +7131,8 @@ export default function App() {
                 
                 {/* Category Group 2 - Catálogo */}
                 <div>
-                  <div className="text-[9.5px] uppercase tracking-widest text-zinc-500 font-extrabold mb-2.5 px-3 select-none flex items-center gap-1.5">
-                    <span className="w-1 h-1 rounded-full bg-emerald-500/40" />
+                  <div className="text-[9.5px] uppercase tracking-widest text-[#E6BF76]/85 font-black mb-2.5 px-3 select-none flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-[#D4AF37] to-[#F3E5AB] shadow-[0_0_6px_rgba(212,175,55,0.6)]" />
                     <span>Catálogo de Tienda</span>
                   </div>
                   <div className="space-y-1">
@@ -7144,15 +7140,15 @@ export default function App() {
                       onClick={() => navigateAdminSection("products")}
                       className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-xs font-bold tracking-wide transition-all duration-300 hover:translate-x-0.5 cursor-pointer ${
                         adminSection === "products"
-                          ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/30 shadow-[0_4px_20px_rgba(99,102,241,0.15)]"
-                          : "hover:bg-zinc-900/50 text-zinc-400 hover:text-zinc-200 border border-transparent"
+                          ? "bg-gradient-to-r from-[#D4AF37]/20 via-[#D4A55A]/12 to-transparent text-[#F3E5AB] border border-[#D4AF37]/45 shadow-[0_4px_20px_rgba(212,175,55,0.18)]"
+                          : "hover:bg-[#0F172A]/70 text-slate-400 hover:text-[#F3E5AB] border border-transparent hover:border-[#D4AF37]/15"
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        <Grid className={`h-4 w-4 ${adminSection === "products" ? "text-indigo-400" : "text-zinc-400"}`} />
+                        <Grid className={`h-4 w-4 ${adminSection === "products" ? "text-[#E6BF76] drop-shadow-[0_0_8px_rgba(212,175,55,0.5)]" : "text-slate-400"}`} />
                         <span>Mis Productos</span>
                       </div>
-                      <span className="text-[10px] font-mono font-bold text-indigo-450 bg-indigo-950 border border-indigo-900/50 px-2 py-0.5 rounded-lg">
+                      <span className="text-[10px] font-mono font-bold text-[#F3E5AB] bg-[#D4AF37]/20 border border-[#D4AF37]/35 px-2 py-0.5 rounded-lg shadow-sm">
                         {store.products.length}
                       </span>
                     </button>
@@ -7161,11 +7157,11 @@ export default function App() {
                       onClick={() => navigateAdminSection("categories")}
                       className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left text-xs font-bold tracking-wide transition-all duration-300 hover:translate-x-0.5 cursor-pointer ${
                         adminSection === "categories"
-                          ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/30 shadow-[0_4px_20px_rgba(99,102,241,0.15)]"
-                          : "hover:bg-zinc-900/50 text-zinc-400 hover:text-zinc-200 border border-transparent"
+                          ? "bg-gradient-to-r from-[#D4AF37]/20 via-[#D4A55A]/12 to-transparent text-[#F3E5AB] border border-[#D4AF37]/45 shadow-[0_4px_20px_rgba(212,175,55,0.18)]"
+                          : "hover:bg-[#0F172A]/70 text-slate-400 hover:text-[#F3E5AB] border border-transparent hover:border-[#D4AF37]/15"
                       }`}
                     >
-                      <Sliders className={`h-4 w-4 ${adminSection === "categories" ? "text-indigo-400" : "text-zinc-400"}`} />
+                      <Sliders className={`h-4 w-4 ${adminSection === "categories" ? "text-[#E6BF76] drop-shadow-[0_0_8px_rgba(212,175,55,0.5)]" : "text-slate-400"}`} />
                       <span>Categorías & Menús</span>
                     </button>
 
@@ -7173,11 +7169,11 @@ export default function App() {
                       onClick={() => navigateAdminSection("promos")}
                       className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left text-xs font-bold tracking-wide transition-all duration-300 hover:translate-x-0.5 cursor-pointer ${
                         adminSection === "promos"
-                          ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/30 shadow-[0_4px_20px_rgba(99,102,241,0.15)]"
-                          : "hover:bg-zinc-900/50 text-zinc-400 hover:text-zinc-200 border border-transparent"
+                          ? "bg-gradient-to-r from-[#D4AF37]/20 via-[#D4A55A]/12 to-transparent text-[#F3E5AB] border border-[#D4AF37]/45 shadow-[0_4px_20px_rgba(212,175,55,0.18)]"
+                          : "hover:bg-[#0F172A]/70 text-slate-400 hover:text-[#F3E5AB] border border-transparent hover:border-[#D4AF37]/15"
                       }`}
                     >
-                      <Tag className={`h-4 w-4 ${adminSection === "promos" ? "text-indigo-400" : "text-zinc-400"}`} />
+                      <Tag className={`h-4 w-4 ${adminSection === "promos" ? "text-[#E6BF76] drop-shadow-[0_0_8px_rgba(212,175,55,0.5)]" : "text-slate-400"}`} />
                       <span>Cupones & Descuentos</span>
                     </button>
                   </div>
@@ -7185,8 +7181,8 @@ export default function App() {
 
                 {/* Category Group 3 - Personalización */}
                 <div>
-                  <div className="text-[9.5px] uppercase tracking-widest text-zinc-500 font-extrabold mb-2.5 px-3 select-none flex items-center gap-1.5">
-                    <span className="w-1 h-1 rounded-full bg-amber-500/40" />
+                  <div className="text-[9.5px] uppercase tracking-widest text-[#E6BF76]/85 font-black mb-2.5 px-3 select-none flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-[#D4AF37] to-[#F3E5AB] shadow-[0_0_6px_rgba(212,175,55,0.6)]" />
                     <span>Visuales y Portada</span>
                   </div>
                   <div className="space-y-1">
@@ -7194,11 +7190,11 @@ export default function App() {
                       onClick={() => navigateAdminSection("general")}
                       className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left text-xs font-bold tracking-wide transition-all duration-300 hover:translate-x-0.5 cursor-pointer ${
                         adminSection === "general"
-                          ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/30 shadow-[0_4px_20px_rgba(99,102,241,0.15)]"
-                          : "hover:bg-zinc-900/50 text-zinc-400 hover:text-zinc-200 border border-transparent"
+                          ? "bg-gradient-to-r from-[#D4AF37]/20 via-[#D4A55A]/12 to-transparent text-[#F3E5AB] border border-[#D4AF37]/45 shadow-[0_4px_20px_rgba(212,175,55,0.18)]"
+                          : "hover:bg-[#0F172A]/70 text-slate-400 hover:text-[#F3E5AB] border border-transparent hover:border-[#D4AF37]/15"
                       }`}
                     >
-                      <Palette className={`h-4 w-4 ${adminSection === "general" ? "text-indigo-400" : "text-zinc-400"}`} />
+                      <Palette className={`h-4 w-4 ${adminSection === "general" ? "text-[#E6BF76] drop-shadow-[0_0_8px_rgba(212,175,55,0.5)]" : "text-slate-400"}`} />
                       <span>Marca & Identidad</span>
                     </button>
 
@@ -7206,11 +7202,11 @@ export default function App() {
                       onClick={() => navigateAdminSection("banner")}
                       className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left text-xs font-bold tracking-wide transition-all duration-300 hover:translate-x-0.5 cursor-pointer ${
                         adminSection === "banner"
-                          ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/30 shadow-[0_4px_20px_rgba(99,102,241,0.15)]"
-                          : "hover:bg-zinc-900/50 text-zinc-400 hover:text-zinc-200 border border-transparent"
+                          ? "bg-gradient-to-r from-[#D4AF37]/20 via-[#D4A55A]/12 to-transparent text-[#F3E5AB] border border-[#D4AF37]/45 shadow-[0_4px_20px_rgba(212,175,55,0.18)]"
+                          : "hover:bg-[#0F172A]/70 text-slate-400 hover:text-[#F3E5AB] border border-transparent hover:border-[#D4AF37]/15"
                       }`}
                     >
-                      <Image className={`h-4 w-4 ${adminSection === "banner" ? "text-indigo-400" : "text-zinc-400"}`} />
+                      <Image className={`h-4 w-4 ${adminSection === "banner" ? "text-[#E6BF76] drop-shadow-[0_0_8px_rgba(212,175,55,0.5)]" : "text-slate-400"}`} />
                       <span>Banners & Carrusel</span>
                     </button>
 
@@ -7218,11 +7214,11 @@ export default function App() {
                       onClick={() => navigateAdminSection("footer")}
                       className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left text-xs font-bold tracking-wide transition-all duration-300 hover:translate-x-0.5 cursor-pointer ${
                         adminSection === "footer"
-                          ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/30 shadow-[0_4px_20px_rgba(99,102,241,0.15)]"
-                          : "hover:bg-zinc-900/50 text-zinc-400 hover:text-zinc-200 border border-transparent"
+                          ? "bg-gradient-to-r from-[#D4AF37]/20 via-[#D4A55A]/12 to-transparent text-[#F3E5AB] border border-[#D4AF37]/45 shadow-[0_4px_20px_rgba(212,175,55,0.18)]"
+                          : "hover:bg-[#0F172A]/70 text-slate-400 hover:text-[#F3E5AB] border border-transparent hover:border-[#D4AF37]/15"
                       }`}
                     >
-                      <Layout className={`h-4 w-4 ${adminSection === "footer" ? "text-indigo-400" : "text-zinc-400"}`} />
+                      <Layout className={`h-4 w-4 ${adminSection === "footer" ? "text-[#E6BF76] drop-shadow-[0_0_8px_rgba(212,175,55,0.5)]" : "text-slate-400"}`} />
                       <span>Pie de Página (Footer)</span>
                     </button>
 
@@ -7230,11 +7226,11 @@ export default function App() {
                       onClick={() => navigateAdminSection("cloudinary_explorer")}
                       className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left text-xs font-bold tracking-wide transition-all duration-300 hover:translate-x-0.5 cursor-pointer ${
                         adminSection === "cloudinary_explorer"
-                          ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/30 shadow-[0_4px_20px_rgba(99,102,241,0.15)]"
-                          : "hover:bg-zinc-900/50 text-zinc-400 hover:text-zinc-200 border border-transparent"
+                          ? "bg-gradient-to-r from-[#D4AF37]/20 via-[#D4A55A]/12 to-transparent text-[#F3E5AB] border border-[#D4AF37]/45 shadow-[0_4px_20px_rgba(212,175,55,0.18)]"
+                          : "hover:bg-[#0F172A]/70 text-slate-400 hover:text-[#F3E5AB] border border-transparent hover:border-[#D4AF37]/15"
                       }`}
                     >
-                      <FolderOpen className={`h-4 w-4 ${adminSection === "cloudinary_explorer" ? "text-amber-400" : "text-zinc-450"}`} />
+                      <FolderOpen className={`h-4 w-4 ${adminSection === "cloudinary_explorer" ? "text-[#E6BF76] drop-shadow-[0_0_8px_rgba(212,175,55,0.5)]" : "text-slate-400"}`} />
                       <span>Explorador Cloudinary</span>
                     </button>
                   </div>
@@ -7242,8 +7238,8 @@ export default function App() {
 
                 {/* Category Group 4 - Configuración */}
                 <div>
-                  <div className="text-[9.5px] uppercase tracking-widest text-zinc-500 font-extrabold mb-2.5 px-3 select-none flex items-center gap-1.5">
-                    <span className="w-1 h-1 rounded-full bg-violet-500/40" />
+                  <div className="text-[9.5px] uppercase tracking-widest text-[#E6BF76]/85 font-black mb-2.5 px-3 select-none flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-[#D4AF37] to-[#F3E5AB] shadow-[0_0_6px_rgba(212,175,55,0.6)]" />
                     <span>Configuración Central</span>
                   </div>
                   <div className="space-y-1">
@@ -7251,11 +7247,11 @@ export default function App() {
                       onClick={() => navigateAdminSection("checkout_config")}
                       className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left text-xs font-bold tracking-wide transition-all duration-300 hover:translate-x-0.5 cursor-pointer ${
                         adminSection === "checkout_config"
-                          ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/30 shadow-[0_4px_20px_rgba(99,102,241,0.15)]"
-                          : "hover:bg-zinc-900/50 text-zinc-400 hover:text-zinc-200 border border-transparent"
+                          ? "bg-gradient-to-r from-[#D4AF37]/20 via-[#D4A55A]/12 to-transparent text-[#F3E5AB] border border-[#D4AF37]/45 shadow-[0_4px_20px_rgba(212,175,55,0.18)]"
+                          : "hover:bg-[#0F172A]/70 text-slate-400 hover:text-[#F3E5AB] border border-transparent hover:border-[#D4AF37]/15"
                       }`}
                     >
-                      <ShoppingCart className={`h-4 w-4 ${adminSection === "checkout_config" ? "text-indigo-400" : "text-zinc-400"}`} />
+                      <ShoppingCart className={`h-4 w-4 ${adminSection === "checkout_config" ? "text-[#E6BF76] drop-shadow-[0_0_8px_rgba(212,175,55,0.5)]" : "text-slate-400"}`} />
                       <span>Carrito & Envíos</span>
                     </button>
 
@@ -7263,11 +7259,11 @@ export default function App() {
                       onClick={() => navigateAdminSection("payments")}
                       className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left text-xs font-bold tracking-wide transition-all duration-300 hover:translate-x-0.5 cursor-pointer ${
                         adminSection === "payments"
-                          ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/30 shadow-[0_4px_20px_rgba(99,102,241,0.15)]"
-                          : "hover:bg-zinc-900/50 text-zinc-400 hover:text-zinc-200 border border-transparent"
+                          ? "bg-gradient-to-r from-[#D4AF37]/20 via-[#D4A55A]/12 to-transparent text-[#F3E5AB] border border-[#D4AF37]/45 shadow-[0_4px_20px_rgba(212,175,55,0.18)]"
+                          : "hover:bg-[#0F172A]/70 text-slate-400 hover:text-[#F3E5AB] border border-transparent hover:border-[#D4AF37]/15"
                       }`}
                     >
-                      <CreditCard className={`h-4 w-4 ${adminSection === "payments" ? "text-indigo-400" : "text-zinc-400"}`} />
+                      <CreditCard className={`h-4 w-4 ${adminSection === "payments" ? "text-[#E6BF76] drop-shadow-[0_0_8px_rgba(212,175,55,0.5)]" : "text-slate-400"}`} />
                       <span>Métodos de Pago</span>
                     </button>
 
@@ -7275,11 +7271,11 @@ export default function App() {
                       onClick={() => navigateAdminSection("reviews")}
                       className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left text-xs font-bold tracking-wide transition-all duration-300 hover:translate-x-0.5 cursor-pointer ${
                         adminSection === "reviews"
-                          ? "bg-blue-600/15 text-blue-400 border border-blue-500/30 shadow-[0_4px_20px_rgba(59,130,246,0.15)]"
-                          : "hover:bg-zinc-900/50 text-zinc-400 hover:text-zinc-200 border border-transparent"
+                          ? "bg-gradient-to-r from-[#D4AF37]/20 via-[#D4A55A]/12 to-transparent text-[#F3E5AB] border border-[#D4AF37]/45 shadow-[0_4px_20px_rgba(212,175,55,0.18)]"
+                          : "hover:bg-[#0F172A]/70 text-slate-400 hover:text-[#F3E5AB] border border-transparent hover:border-[#D4AF37]/15"
                       }`}
                     >
-                      <Globe className={`h-4 w-4 ${adminSection === "reviews" ? "text-blue-400 animate-pulse" : "text-[#4285F4]"}`} />
+                      <Globe className={`h-4 w-4 ${adminSection === "reviews" ? "text-[#E6BF76] animate-pulse drop-shadow-[0_0_8px_rgba(212,175,55,0.5)]" : "text-slate-400"}`} />
                       <span>Google Integraciones</span>
                     </button>
                   </div>
@@ -7287,8 +7283,8 @@ export default function App() {
 
                 {/* Category Group 5 - Soporte y Seguridad */}
                 <div>
-                  <div className="text-[9.5px] uppercase tracking-widest text-zinc-500 font-extrabold mb-2.5 px-3 select-none flex items-center gap-1.5">
-                    <span className="w-1 h-1 rounded-full bg-red-500/40" />
+                  <div className="text-[9.5px] uppercase tracking-widest text-[#E6BF76]/85 font-black mb-2.5 px-3 select-none flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-[#D4AF37] to-[#F3E5AB] shadow-[0_0_6px_rgba(212,175,55,0.6)]" />
                     <span>Soporte y Seguridad</span>
                   </div>
                   <div className="space-y-1">
@@ -7296,11 +7292,11 @@ export default function App() {
                       onClick={() => navigateAdminSection("emails")}
                       className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left text-xs font-bold tracking-wide transition-all duration-300 hover:translate-x-0.5 cursor-pointer ${
                         adminSection === "emails"
-                          ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/30 shadow-[0_4px_20px_rgba(99,102,241,0.15)]"
-                          : "hover:bg-zinc-900/50 text-zinc-400 hover:text-zinc-200 border border-transparent"
+                          ? "bg-gradient-to-r from-[#D4AF37]/20 via-[#D4A55A]/12 to-transparent text-[#F3E5AB] border border-[#D4AF37]/45 shadow-[0_4px_20px_rgba(212,175,55,0.18)]"
+                          : "hover:bg-[#0F172A]/70 text-slate-400 hover:text-[#F3E5AB] border border-transparent hover:border-[#D4AF37]/15"
                       }`}
                     >
-                      <Mail className={`h-4 w-4 ${adminSection === "emails" ? "text-indigo-400" : "text-zinc-400"}`} />
+                      <Mail className={`h-4 w-4 ${adminSection === "emails" ? "text-[#E6BF76] drop-shadow-[0_0_8px_rgba(212,175,55,0.5)]" : "text-slate-400"}`} />
                       <span>Emails de Soporte</span>
                     </button>
 
@@ -7308,11 +7304,11 @@ export default function App() {
                       onClick={() => navigateAdminSection("security")}
                       className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left text-xs font-bold tracking-wide transition-all duration-300 hover:translate-x-0.5 cursor-pointer ${
                         adminSection === "security"
-                          ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/30 shadow-[0_4px_20px_rgba(99,102,241,0.15)]"
-                          : "hover:bg-zinc-900/50 text-zinc-400 hover:text-zinc-200 border border-transparent"
+                          ? "bg-gradient-to-r from-[#D4AF37]/20 via-[#D4A55A]/12 to-transparent text-[#F3E5AB] border border-[#D4AF37]/45 shadow-[0_4px_20px_rgba(212,175,55,0.18)]"
+                          : "hover:bg-[#0F172A]/70 text-slate-400 hover:text-[#F3E5AB] border border-transparent hover:border-[#D4AF37]/15"
                       }`}
                     >
-                      <Lock className={`h-4 w-4 ${adminSection === "security" ? "text-indigo-400" : "text-zinc-400"}`} />
+                      <Lock className={`h-4 w-4 ${adminSection === "security" ? "text-[#E6BF76] drop-shadow-[0_0_8px_rgba(212,175,55,0.5)]" : "text-slate-400"}`} />
                       <span>Seguridad de Acceso</span>
                     </button>
                   </div>
@@ -7320,34 +7316,34 @@ export default function App() {
 
               </nav>
 
-              {/* Support Terminal Status Card - Super high quality terminal status */}
-              <div className="mt-auto p-4 border-t border-zinc-900/60 bg-zinc-950/40 relative">
-                <div className="p-3.5 bg-zinc-900/40 backdrop-blur-sm rounded-xl border border-zinc-800/60 shadow-[0_4px_20px_rgba(0,0,0,0.2)] space-y-3.5">
+              {/* Support Terminal Status Card - Super high quality Áurea Pro terminal status */}
+              <div className="mt-auto p-4 border-t border-[#D4AF37]/15 bg-[#080E1B]/80 relative">
+                <div className="p-3.5 bg-[#0B1220]/90 backdrop-blur-md rounded-xl border border-[#D4AF37]/20 shadow-[0_4px_25px_rgba(0,0,0,0.5)] space-y-3.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-[8.5px] font-black uppercase tracking-widest text-zinc-400 flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                    <span className="text-[8.5px] font-black uppercase tracking-widest text-[#F3E5AB]/80 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
                       <span>Terminal Activo</span>
                     </span>
-                    <span className="text-[9px] font-mono text-emerald-400 font-bold bg-emerald-950/50 border border-emerald-900/30 px-1.5 py-0.2 rounded-md">ONLINE</span>
+                    <span className="text-[9px] font-mono text-emerald-300 font-bold bg-emerald-950/60 border border-emerald-500/30 px-1.5 py-0.5 rounded-md">ONLINE</span>
                   </div>
                   <div className="flex items-center gap-2.5">
-                    <div className="w-7 h-7 rounded-full bg-indigo-950/85 border border-indigo-850 flex items-center justify-center text-[10px] text-indigo-300 font-black font-sans shadow-[0_0_8px_rgba(99,102,241,0.25)]">
+                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#D4AF37] via-[#B89628] to-[#8C6D1F] text-slate-950 flex items-center justify-center text-[10px] font-black font-sans shadow-[0_0_12px_rgba(212,175,55,0.4)]">
                       JU
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-[10.5px] text-zinc-150 truncate font-bold font-sans">Admin Principal</p>
-                      <p className="text-[9px] text-zinc-500 truncate font-semibold">Sincronización segura</p>
+                      <p className="text-[10.5px] text-[#F3E5AB] truncate font-bold font-sans">Admin Principal</p>
+                      <p className="text-[9px] text-[#D4A55A]/70 truncate font-semibold">Consola Áurea Pro</p>
                     </div>
                   </div>
-                  <div className="border-t border-zinc-800/50 pt-2.5 shrink-0">
-                    <div className="flex items-center justify-between text-[9.5px] text-zinc-500 mb-1 font-mono font-bold">
+                  <div className="border-t border-[#D4AF37]/15 pt-2.5 shrink-0">
+                    <div className="flex items-center justify-between text-[9.5px] text-slate-400 mb-1 font-mono font-bold">
                       <span>Espacio de Datos</span>
-                      <span className="text-[9.5px] font-extrabold text-indigo-400 uppercase">100% ACTIVO</span>
+                      <span className="text-[9.5px] font-extrabold text-[#E6BF76] uppercase">100% ACTIVO</span>
                     </div>
-                    <div className="w-full h-1 bg-zinc-800/80 rounded-full overflow-hidden">
-                      <div className="w-1/3 h-full bg-gradient-to-r from-indigo-500 to-indigo-400 rounded-full"></div>
+                    <div className="w-full h-1 bg-[#060A13] rounded-full overflow-hidden border border-[#D4AF37]/20">
+                      <div className="w-1/3 h-full bg-gradient-to-r from-[#D4AF37] via-[#E6BF76] to-[#F3E5AB] rounded-full shadow-[0_0_8px_rgba(212,175,55,0.5)]"></div>
                     </div>
-                    <p className="text-[9px] text-zinc-500 mt-1 font-mono">
+                    <p className="text-[9px] text-slate-400 mt-1 font-mono">
                       14.5 KB / 1.0 GB Utilizado
                     </p>
                   </div>
@@ -7357,14 +7353,14 @@ export default function App() {
           </aside>
 
           {/* Main admin Workspace workspace */}
-          <main id="admin-main-scroll" className="flex-1 flex flex-col p-6 gap-6 bg-zinc-950 text-zinc-100 overflow-y-auto z-10">
+          <main id="admin-main-scroll" className="flex-1 flex flex-col p-6 gap-6 bg-gradient-to-b from-[#060A12] via-[#070D1B] to-[#0A1122] text-slate-100 overflow-y-auto z-10 custom-scrollbar">
             
             {/* Header control summary */}
             {adminSection !== "stock" && adminSection !== "dashboard" && adminSection !== "sales" && (
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-3 shrink-0 p-5 bg-zinc-900/20 backdrop-blur-md rounded-2xl border border-zinc-850/60 shadow-[0_8px_30px_rgba(0,0,0,0.12)]">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-3 shrink-0 p-5 md:p-6 bg-[#0B1120]/85 backdrop-blur-xl rounded-3xl border border-[#D4AF37]/25 shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
                 <div>
                   <h2 className="text-xl md:text-2xl font-black font-sans text-white tracking-tight flex items-center gap-2">
-                    <span className="w-1.5 h-6 bg-indigo-500 rounded-full shadow-[0_0_8px_#6366f1]" />
+                    <span className="w-1.5 h-6 bg-gradient-to-b from-[#F3E5AB] via-[#D4AF37] to-[#996515] rounded-full shadow-[0_0_12px_rgba(212,175,55,0.6)]" />
                     <span>
                       {adminSection === "dashboard" && "Dashboard General y Métricas"}
                       {adminSection === "general" && "Diseño, Tipos y Colores de Marca"}
@@ -7378,7 +7374,7 @@ export default function App() {
                       {adminSection === "payments" && "Administración de Métodos de Pago"}
                       {adminSection === "reviews" && "Sincronización con Google e Integraciones"}
                       {adminSection === "assistant" && "Planificación y Objetivos"}
-                      {adminSection === "calculator_3d" && "Calculadora 3D y Costeo de Fabricación"}
+                      {adminSection === "calculator_3d" && "Calculadora 3D y Cotizaciones Profesionales"}
                     </span>
                   </h2>
                 </div>
@@ -7416,7 +7412,7 @@ export default function App() {
                         });
                         setIsNewProductMode(true);
                       }}
-                      className="px-5 py-2 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 hover:scale-[1.01] active:scale-[0.99] transition-all flex items-center gap-1.5 text-xs shadow-md shadow-blue-500/10 cursor-pointer"
+                      className="px-5 py-2.5 bg-gradient-to-r from-[#D4AF37] via-[#E6BF76] to-[#C59B27] text-slate-950 rounded-xl font-black hover:brightness-110 active:scale-[0.98] transition-all flex items-center gap-1.5 text-xs shadow-[0_4px_20px_rgba(212,175,55,0.3)] cursor-pointer"
                     >
                       <Plus className="h-4 w-4" />
                       <span>Crea Nuevo Producto</span>

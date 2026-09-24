@@ -585,7 +585,7 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#D4A55A]/15 border border-[#D4A55A]/30 text-[#E6BF76] text-xs font-mono font-bold tracking-wider uppercase">
               <Sparkles className="h-3.5 w-3.5 animate-pulse text-[#E6BF76]" />
-              <span>Calculadora 3D • Sistema Áurea Nocturna Pro</span>
+              <span>Calculadora 3D</span>
             </div>
             <h2 className="text-2xl md:text-3xl font-serif font-black tracking-tight text-[#F4EAD7] flex items-center gap-3">
               <span>Cálculo de Pieza Impresa 3D</span>

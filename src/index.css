@@ -107,24 +107,41 @@
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: rgba(120, 120, 120, 0.05);
+  background: rgba(11, 17, 32, 0.6);
   border-radius: 9999px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(83, 70, 255, 0.45);
+  background: rgba(212, 175, 55, 0.4);
   border-radius: 9999px;
   transition: all 0.2s ease;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(83, 70, 255, 0.7);
+  background: rgba(212, 175, 55, 0.7);
 }
 
 /* Firefox compatibility */
 .custom-scrollbar {
   scrollbar-width: thin;
-  scrollbar-color: rgba(83, 70, 255, 0.45) rgba(120, 120, 120, 0.05);
+  scrollbar-color: rgba(212, 175, 55, 0.4) rgba(11, 17, 32, 0.6);
+}
+
+/* Sistema Áurea Pro - Clases para Administración */
+.admin-aurea-glow {
+  box-shadow: 0 0 25px rgba(212, 175, 55, 0.15), 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.admin-aurea-card {
+  background: rgba(11, 17, 32, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(212, 175, 55, 0.18);
+  border-radius: 1.25rem;
+}
+
+.admin-aurea-card:hover {
+  border-color: rgba(212, 175, 55, 0.32);
 }
 
 /* 
