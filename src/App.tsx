@@ -9736,7 +9736,7 @@ export default function App() {
                                       </span>
                                     );
                                   })}
-                                  <span>PVP: <strong className="text-[#E6BF76]">${p.price.toFixed(2)}</strong></span>
+                                  <span>PVP: <strong className="text-[#E6BF76]">${Number(p.price || 0).toFixed(2)}</strong></span>
                                   {(() => {
                                     const actStock = getProductActualStock(p);
                                     return (

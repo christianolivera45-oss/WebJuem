@@ -2803,6 +2803,64 @@ async function initPostgresStore(): Promise<ShopState | null> {
       ALTER TABLE public.products ADD COLUMN IF NOT EXISTS filament_id VARCHAR(50);
       ALTER TABLE public.products ADD COLUMN IF NOT EXISTS filament_weight_grams NUMERIC(10, 2);
       ALTER TABLE public.products ADD COLUMN IF NOT EXISTS quote_id_3d VARCHAR(50);
+
+      -- Commercial multi-item PDF quotes tables
+      CREATE TABLE IF NOT EXISTS public.commercial_quotes_3d (
+        id VARCHAR(50) PRIMARY KEY,
+        quote_number VARCHAR(50) UNIQUE NOT NULL,
+        correlative_seq INTEGER NOT NULL,
+        year INTEGER NOT NULL,
+        customer_name VARCHAR(200) NOT NULL,
+        customer_phone VARCHAR(100),
+        customer_email VARCHAR(200),
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        valid_until TIMESTAMPTZ,
+        validity_days INTEGER DEFAULT 15,
+        status VARCHAR(30) NOT NULL DEFAULT 'borrador',
+        subtotal NUMERIC(12,2) NOT NULL DEFAULT 0,
+        discount_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+        shipping_cost NUMERIC(12,2) NOT NULL DEFAULT 0,
+        total_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+        notes TEXT,
+        conditions TEXT,
+        show_technical_details JSONB NOT NULL DEFAULT '{"showMaterial":false,"showColor":false,"showWeight":false,"showPrintTime":false}'::jsonb,
+        company_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+        converted_order_id UUID,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS public.commercial_quote_items_3d (
+        id VARCHAR(50) PRIMARY KEY,
+        quote_id VARCHAR(50) NOT NULL REFERENCES public.commercial_quotes_3d(id) ON DELETE CASCADE,
+        item_index INTEGER NOT NULL DEFAULT 1,
+        piece_name VARCHAR(200) NOT NULL,
+        internal_code VARCHAR(100),
+        quantity INTEGER NOT NULL DEFAULT 1,
+        material VARCHAR(100),
+        color VARCHAR(100),
+        weight_per_unit_grams NUMERIC(10,2) DEFAULT 0,
+        total_weight_grams NUMERIC(10,2) DEFAULT 0,
+        print_time_hours NUMERIC(10,2) DEFAULT 0,
+        total_print_time_hours NUMERIC(10,2) DEFAULT 0,
+        unit_price NUMERIC(12,2) NOT NULL DEFAULT 0,
+        subtotal_price NUMERIC(12,2) NOT NULL DEFAULT 0,
+        internal_cost_breakdown JSONB DEFAULT '{}'::jsonb
+      );
+
+      CREATE TABLE IF NOT EXISTS public.company_quote_settings (
+        id VARCHAR(50) PRIMARY KEY DEFAULT 'default',
+        company_name VARCHAR(150) NOT NULL DEFAULT 'JUEM',
+        trade_name VARCHAR(150) NOT NULL DEFAULT 'JUEM 3D Studio & Fabricación Digital',
+        phone VARCHAR(50) DEFAULT '+598 99 234 567',
+        whatsapp VARCHAR(50) DEFAULT '+598 99 234 567',
+        email VARCHAR(150) DEFAULT 'contacto@juem.com.uy',
+        website VARCHAR(150) DEFAULT 'juem.com.uy',
+        address VARCHAR(200) DEFAULT 'Montevideo / Canelones, Uruguay',
+        logo_url TEXT,
+        default_validity_days INTEGER DEFAULT 15,
+        default_conditions TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
     `);
 
     // --- CREATE OPTIMIZED INDEXES FOR HIGH-PERFORMANCE CATALOGUE FETCHES ---
@@ -2986,7 +3044,9 @@ async function initPostgresStore(): Promise<ShopState | null> {
 
 async function startServer() {
   const app = express();
-  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+  const portArgIndex = process.argv.indexOf("--port");
+  const cliPort = portArgIndex !== -1 && process.argv[portArgIndex + 1] ? parseInt(process.argv[portArgIndex + 1], 10) : null;
+  const PORT = cliPort || (process.env.NODE_ENV === "production" && process.env.PORT ? parseInt(process.env.PORT, 10) : 3000);
 
   // Verify mandatory credentials/secrets. In production, we generate secure runtime defaults to prevent container crashes while logging clear recommendations.
   if (!process.env.JWT_SECRET) {
@@ -7675,6 +7735,751 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     }
   });
 
+  // --- COMMERCIAL MULTI-ITEM 3D PDF QUOTES SYSTEM (JUEM) ---
+
+  const mapCommercialQuoteItemRow = (row: any) => ({
+    id: row.id,
+    quoteId: row.quote_id || row.quoteId,
+    itemIndex: Number(row.item_index || row.itemIndex || 1),
+    pieceName: row.piece_name || row.pieceName || "Pieza 3D",
+    internalCode: row.internal_code || row.internalCode || undefined,
+    quantity: Number(row.quantity || 1),
+    material: row.material || undefined,
+    color: row.color || undefined,
+    weightPerUnitGrams: parseFloat(row.weight_per_unit_grams ?? row.weightPerUnitGrams) || 0,
+    totalWeightGrams: parseFloat(row.total_weight_grams ?? row.totalWeightGrams) || 0,
+    printTimeHours: parseFloat(row.print_time_hours ?? row.printTimeHours) || 0,
+    totalPrintTimeHours: parseFloat(row.total_print_time_hours ?? row.totalPrintTimeHours) || 0,
+    unitPrice: parseFloat(row.unit_price ?? row.unitPrice) || 0,
+    subtotalPrice: parseFloat(row.subtotal_price ?? row.subtotalPrice) || 0,
+    internalCostBreakdown: typeof (row.internal_cost_breakdown || row.internalCostBreakdown) === "object" ? (row.internal_cost_breakdown || row.internalCostBreakdown) : {}
+  });
+
+  const mapCommercialQuoteRow = (row: any, items: any[] = []) => ({
+    id: row.id,
+    quoteNumber: row.quote_number,
+    correlativeSeq: Number(row.correlative_seq || 1),
+    year: Number(row.year || new Date().getFullYear()),
+    customerName: row.customer_name,
+    customerPhone: row.customer_phone || undefined,
+    customerEmail: row.customer_email || undefined,
+    createdAt: row.created_at,
+    validUntil: row.valid_until,
+    validityDays: Number(row.validity_days || 15),
+    status: row.status || "borrador",
+    subtotal: parseFloat(row.subtotal) || 0,
+    discountAmount: parseFloat(row.discount_amount) || 0,
+    shippingCost: parseFloat(row.shipping_cost) || 0,
+    totalAmount: parseFloat(row.total_amount) || 0,
+    notes: row.notes || "",
+    conditions: row.conditions || "",
+    showTechnicalDetails: typeof row.show_technical_details === "object" ? row.show_technical_details : {
+      showMaterial: false,
+      showColor: false,
+      showWeight: false,
+      showPrintTime: false
+    },
+    companySnapshot: typeof row.company_snapshot === "object" ? row.company_snapshot : {},
+    convertedOrderId: row.converted_order_id || undefined,
+    itemCount: Number(row.item_count || items.length || 0),
+    totalPieces: Number(row.total_pieces || items.reduce((acc: number, it: any) => acc + (Number(it.quantity) || 1), 0)),
+    items: items.map(mapCommercialQuoteItemRow),
+    updatedAt: row.updated_at
+  });
+
+  // GET /api/3d/commercial-quotes - List all commercial quotes
+  app.get("/api/3d/commercial-quotes", async (req, res) => {
+    try {
+      const pool = getDbPool();
+      if (!pool || dbUnavailable) return res.status(503).json({ success: false, message: "DB no disponible" });
+
+      const search = (req.query.search as string) || "";
+      const status = (req.query.status as string) || "";
+
+      let query = `
+        SELECT q.*, 
+               COALESCE(COUNT(i.id), 0)::integer as item_count,
+               COALESCE(SUM(i.quantity), 0)::integer as total_pieces
+        FROM public.commercial_quotes_3d q
+        LEFT JOIN public.commercial_quote_items_3d i ON q.id = i.quote_id
+        WHERE 1=1
+      `;
+      const params: any[] = [];
+      let pIdx = 1;
+
+      if (search.trim()) {
+        query += ` AND (LOWER(q.quote_number) LIKE $${pIdx} OR LOWER(q.customer_name) LIKE $${pIdx} OR LOWER(COALESCE(q.customer_phone, '')) LIKE $${pIdx} OR LOWER(COALESCE(q.customer_email, '')) LIKE $${pIdx})`;
+        params.push(`%${search.trim().toLowerCase()}%`);
+        pIdx++;
+      }
+
+      if (status && status !== "todos") {
+        query += ` AND q.status = $${pIdx}`;
+        params.push(status);
+        pIdx++;
+      }
+
+      query += ` GROUP BY q.id ORDER BY q.created_at DESC LIMIT 200;`;
+
+      const result = await pool.query(query, params);
+      res.json({
+        success: true,
+        quotes: result.rows.map(r => mapCommercialQuoteRow(r, []))
+      });
+    } catch (err: any) {
+      console.error("Error fetching commercial quotes:", err);
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // GET /api/3d/commercial-quotes-next-number - Get preview of next quote number
+  app.get("/api/3d/commercial-quotes-next-number", async (req, res) => {
+    try {
+      const pool = getDbPool();
+      if (!pool || dbUnavailable) return res.status(503).json({ success: false, message: "DB no disponible" });
+
+      const currentYear = new Date().getFullYear();
+      const seqRes = await pool.query(
+        "SELECT COALESCE(MAX(correlative_seq), 0) + 1 as next_seq FROM public.commercial_quotes_3d WHERE year = $1;",
+        [currentYear]
+      );
+      const nextSeq = Number(seqRes.rows[0]?.next_seq || 1);
+      const nextNumber = `COT-${currentYear}-${String(nextSeq).padStart(4, "0")}`;
+
+      res.json({ success: true, nextNumber, nextSeq, year: currentYear });
+    } catch (err: any) {
+      console.error("Error generating next quote number:", err);
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // GET /api/3d/commercial-quotes/:id - Get single quote with full items
+  app.get("/api/3d/commercial-quotes/:id", async (req, res) => {
+    try {
+      const pool = getDbPool();
+      if (!pool || dbUnavailable) return res.status(503).json({ success: false, message: "DB no disponible" });
+      const { id } = req.params;
+
+      const qRes = await pool.query("SELECT * FROM public.commercial_quotes_3d WHERE id = $1;", [id]);
+      if (qRes.rows.length === 0) {
+        return res.status(404).json({ success: false, message: "Cotización no encontrada." });
+      }
+
+      const itemsRes = await pool.query(
+        "SELECT * FROM public.commercial_quote_items_3d WHERE quote_id = $1 ORDER BY item_index ASC, id ASC;",
+        [id]
+      );
+
+      res.json({
+        success: true,
+        quote: mapCommercialQuoteRow(qRes.rows[0], itemsRes.rows)
+      });
+    } catch (err: any) {
+      console.error("Error fetching single commercial quote:", err);
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // POST /api/3d/commercial-quotes - Create new multi-item commercial quote
+  app.post("/api/3d/commercial-quotes", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!isValidToken(authHeader)) return res.status(403).json({ success: false, message: "Acceso denegado." });
+
+    const client = await (getDbPool() as any)?.connect();
+    if (!client) return res.status(503).json({ success: false, message: "DB no disponible" });
+
+    try {
+      await client.query("BEGIN;");
+
+      const {
+        customerName, customerPhone, customerEmail, validityDays = 15,
+        status = "borrador", notes, conditions, showTechnicalDetails,
+        companySnapshot, discountAmount = 0, shippingCost = 0,
+        items = []
+      } = req.body;
+
+      const currentYear = new Date().getFullYear();
+      // Generate consecutive number
+      const seqRes = await client.query(
+        "SELECT COALESCE(MAX(correlative_seq), 0) + 1 as next_seq FROM public.commercial_quotes_3d WHERE year = $1;",
+        [currentYear]
+      );
+      const correlativeSeq = Number(seqRes.rows[0]?.next_seq || 1);
+      const quoteNumber = `COT-${currentYear}-${String(correlativeSeq).padStart(4, "0")}`;
+      const quoteId = `quote-com-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
+      // Calculate totals from items
+      let subtotal = 0;
+      const verifiedItems: any[] = [];
+      (Array.isArray(items) ? items : []).forEach((item: any, idx: number) => {
+        const qty = Math.max(1, parseInt(item.quantity) || 1);
+        const unitP = Math.max(0, parseFloat(item.unitPrice) || 0);
+        const subP = qty * unitP;
+        subtotal += subP;
+
+        verifiedItems.push({
+          id: `item-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+          quoteId,
+          itemIndex: idx + 1,
+          pieceName: sanitizeHtmlString(item.pieceName || `Pieza #${idx + 1}`).substring(0, 200),
+          internalCode: item.internalCode ? sanitizeHtmlString(item.internalCode).substring(0, 100) : null,
+          quantity: qty,
+          material: item.material ? sanitizeHtmlString(item.material).substring(0, 100) : null,
+          color: item.color ? sanitizeHtmlString(item.color).substring(0, 100) : null,
+          weightPerUnitGrams: parseFloat(item.weightPerUnitGrams) || 0,
+          totalWeightGrams: (parseFloat(item.weightPerUnitGrams) || 0) * qty,
+          printTimeHours: parseFloat(item.printTimeHours) || 0,
+          totalPrintTimeHours: (parseFloat(item.printTimeHours) || 0) * qty,
+          unitPrice: unitP,
+          subtotalPrice: subP,
+          internalCostBreakdown: item.internalCostBreakdown || {}
+        });
+      });
+
+      const numDiscount = Math.max(0, parseFloat(discountAmount) || 0);
+      const numShipping = Math.max(0, parseFloat(shippingCost) || 0);
+      const totalAmount = Math.max(0, subtotal - numDiscount + numShipping);
+
+      const days = parseInt(validityDays) || 15;
+      const validUntil = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+
+      await client.query(`
+        INSERT INTO public.commercial_quotes_3d (
+          id, quote_number, correlative_seq, year, customer_name, customer_phone, customer_email,
+          created_at, valid_until, validity_days, status, subtotal, discount_amount, shipping_cost,
+          total_amount, notes, conditions, show_technical_details, company_snapshot, updated_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7,
+          NOW(), $8, $9, $10, $11, $12, $13,
+          $14, $15, $16, $17, $18, NOW()
+        );
+      `, [
+        quoteId, quoteNumber, correlativeSeq, currentYear,
+        sanitizeHtmlString(customerName || "Cliente").substring(0, 200),
+        customerPhone ? sanitizeHtmlString(customerPhone).substring(0, 100) : null,
+        customerEmail ? sanitizeHtmlString(customerEmail).substring(0, 200) : null,
+        validUntil, days, status, subtotal, numDiscount, numShipping,
+        totalAmount, sanitizeHtmlString(notes || ""),
+        sanitizeHtmlString(conditions || ""),
+        JSON.stringify(showTechnicalDetails || { showMaterial: false, showColor: false, showWeight: false, showPrintTime: false }),
+        JSON.stringify(companySnapshot || {})
+      ]);
+
+      for (const it of verifiedItems) {
+        await client.query(`
+          INSERT INTO public.commercial_quote_items_3d (
+            id, quote_id, item_index, piece_name, internal_code, quantity,
+            material, color, weight_per_unit_grams, total_weight_grams,
+            print_time_hours, total_print_time_hours, unit_price, subtotal_price,
+            internal_cost_breakdown
+          ) VALUES (
+            $1, $2, $3, $4, $5, $6,
+            $7, $8, $9, $10,
+            $11, $12, $13, $14,
+            $15
+          );
+        `, [
+          it.id, it.quoteId, it.itemIndex, it.pieceName, it.internalCode, it.quantity,
+          it.material, it.color, it.weightPerUnitGrams, it.totalWeightGrams,
+          it.printTimeHours, it.totalPrintTimeHours, it.unitPrice, it.subtotalPrice,
+          JSON.stringify(it.internalCostBreakdown)
+        ]);
+      }
+
+      await client.query("COMMIT;");
+
+      const createdRes = await client.query("SELECT * FROM public.commercial_quotes_3d WHERE id = $1;", [quoteId]);
+      res.json({
+        success: true,
+        message: "¡Cotización creada con éxito!",
+        quote: mapCommercialQuoteRow(createdRes.rows[0], verifiedItems)
+      });
+    } catch (err: any) {
+      await client.query("ROLLBACK;");
+      console.error("Error creating commercial quote:", err);
+      res.status(500).json({ success: false, message: "Error al guardar cotización comercial.", error: err.message });
+    } finally {
+      client.release();
+    }
+  });
+
+  // PUT /api/3d/commercial-quotes/:id - Update existing quote and its items
+  app.put("/api/3d/commercial-quotes/:id", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!isValidToken(authHeader)) return res.status(403).json({ success: false, message: "Acceso denegado." });
+
+    const client = await (getDbPool() as any)?.connect();
+    if (!client) return res.status(503).json({ success: false, message: "DB no disponible" });
+
+    try {
+      await client.query("BEGIN;");
+      const { id } = req.params;
+
+      const existingRes = await client.query("SELECT * FROM public.commercial_quotes_3d WHERE id = $1 FOR UPDATE;", [id]);
+      if (existingRes.rows.length === 0) {
+        await client.query("ROLLBACK;");
+        return res.status(404).json({ success: false, message: "Cotización no encontrada." });
+      }
+
+      const {
+        customerName, customerPhone, customerEmail, validityDays = 15,
+        status, notes, conditions, showTechnicalDetails,
+        companySnapshot, discountAmount = 0, shippingCost = 0,
+        items = []
+      } = req.body;
+
+      let subtotal = 0;
+      const verifiedItems: any[] = [];
+      (Array.isArray(items) ? items : []).forEach((item: any, idx: number) => {
+        const qty = Math.max(1, parseInt(item.quantity) || 1);
+        const unitP = Math.max(0, parseFloat(item.unitPrice) || 0);
+        const subP = qty * unitP;
+        subtotal += subP;
+
+        verifiedItems.push({
+          id: item.id || `item-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+          quoteId: id,
+          itemIndex: idx + 1,
+          pieceName: sanitizeHtmlString(item.pieceName || `Pieza #${idx + 1}`).substring(0, 200),
+          internalCode: item.internalCode ? sanitizeHtmlString(item.internalCode).substring(0, 100) : null,
+          quantity: qty,
+          material: item.material ? sanitizeHtmlString(item.material).substring(0, 100) : null,
+          color: item.color ? sanitizeHtmlString(item.color).substring(0, 100) : null,
+          weightPerUnitGrams: parseFloat(item.weightPerUnitGrams) || 0,
+          totalWeightGrams: (parseFloat(item.weightPerUnitGrams) || 0) * qty,
+          printTimeHours: parseFloat(item.printTimeHours) || 0,
+          totalPrintTimeHours: (parseFloat(item.printTimeHours) || 0) * qty,
+          unitPrice: unitP,
+          subtotalPrice: subP,
+          internalCostBreakdown: item.internalCostBreakdown || {}
+        });
+      });
+
+      const numDiscount = Math.max(0, parseFloat(discountAmount) || 0);
+      const numShipping = Math.max(0, parseFloat(shippingCost) || 0);
+      const totalAmount = Math.max(0, subtotal - numDiscount + numShipping);
+
+      const days = parseInt(validityDays) || 15;
+      const validUntil = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+
+      await client.query(`
+        UPDATE public.commercial_quotes_3d SET
+          customer_name = $1,
+          customer_phone = $2,
+          customer_email = $3,
+          valid_until = $4,
+          validity_days = $5,
+          status = COALESCE($6, status),
+          subtotal = $7,
+          discount_amount = $8,
+          shipping_cost = $9,
+          total_amount = $10,
+          notes = $11,
+          conditions = $12,
+          show_technical_details = $13,
+          company_snapshot = $14,
+          updated_at = NOW()
+        WHERE id = $15;
+      `, [
+        sanitizeHtmlString(customerName || "Cliente").substring(0, 200),
+        customerPhone ? sanitizeHtmlString(customerPhone).substring(0, 100) : null,
+        customerEmail ? sanitizeHtmlString(customerEmail).substring(0, 200) : null,
+        validUntil, days, status || null, subtotal, numDiscount, numShipping,
+        totalAmount, sanitizeHtmlString(notes || ""),
+        sanitizeHtmlString(conditions || ""),
+        JSON.stringify(showTechnicalDetails || { showMaterial: false, showColor: false, showWeight: false, showPrintTime: false }),
+        JSON.stringify(companySnapshot || {}),
+        id
+      ]);
+
+      // Replace items
+      await client.query("DELETE FROM public.commercial_quote_items_3d WHERE quote_id = $1;", [id]);
+      for (const it of verifiedItems) {
+        await client.query(`
+          INSERT INTO public.commercial_quote_items_3d (
+            id, quote_id, item_index, piece_name, internal_code, quantity,
+            material, color, weight_per_unit_grams, total_weight_grams,
+            print_time_hours, total_print_time_hours, unit_price, subtotal_price,
+            internal_cost_breakdown
+          ) VALUES (
+            $1, $2, $3, $4, $5, $6,
+            $7, $8, $9, $10,
+            $11, $12, $13, $14,
+            $15
+          );
+        `, [
+          it.id, it.quoteId, it.itemIndex, it.pieceName, it.internalCode, it.quantity,
+          it.material, it.color, it.weightPerUnitGrams, it.totalWeightGrams,
+          it.printTimeHours, it.totalPrintTimeHours, it.unitPrice, it.subtotalPrice,
+          JSON.stringify(it.internalCostBreakdown)
+        ]);
+      }
+
+      await client.query("COMMIT;");
+      const updatedRes = await client.query("SELECT * FROM public.commercial_quotes_3d WHERE id = $1;", [id]);
+      res.json({
+        success: true,
+        message: "¡Cotización actualizada con éxito!",
+        quote: mapCommercialQuoteRow(updatedRes.rows[0], verifiedItems)
+      });
+    } catch (err: any) {
+      await client.query("ROLLBACK;");
+      console.error("Error updating commercial quote:", err);
+      res.status(500).json({ success: false, message: "Error al actualizar cotización comercial.", error: err.message });
+    } finally {
+      client.release();
+    }
+  });
+
+  // PATCH /api/3d/commercial-quotes/:id/status - Quick status change
+  app.patch("/api/3d/commercial-quotes/:id/status", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!isValidToken(authHeader)) return res.status(403).json({ success: false, message: "Acceso denegado." });
+
+    try {
+      const pool = getDbPool();
+      if (!pool || dbUnavailable) return res.status(503).json({ success: false, message: "DB no disponible" });
+      const { id } = req.params;
+      const { status } = req.body;
+
+      const validStatuses = ["borrador", "enviada", "aprobada", "rechazada", "vencida", "convertida"];
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({ success: false, message: "Estado no válido." });
+      }
+
+      await pool.query("UPDATE public.commercial_quotes_3d SET status = $1, updated_at = NOW() WHERE id = $2;", [status, id]);
+      res.json({ success: true, message: `Estado actualizado a '${status}'` });
+    } catch (err: any) {
+      console.error("Error updating quote status:", err);
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // POST /api/3d/commercial-quotes/:id/duplicate - Duplicate quote with new consecutive number
+  app.post("/api/3d/commercial-quotes/:id/duplicate", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!isValidToken(authHeader)) return res.status(403).json({ success: false, message: "Acceso denegado." });
+
+    const client = await (getDbPool() as any)?.connect();
+    if (!client) return res.status(503).json({ success: false, message: "DB no disponible" });
+
+    try {
+      await client.query("BEGIN;");
+      const { id } = req.params;
+
+      const qRes = await client.query("SELECT * FROM public.commercial_quotes_3d WHERE id = $1;", [id]);
+      if (qRes.rows.length === 0) {
+        await client.query("ROLLBACK;");
+        return res.status(404).json({ success: false, message: "Cotización a duplicar no encontrada." });
+      }
+      const orig = qRes.rows[0];
+
+      const currentYear = new Date().getFullYear();
+      const seqRes = await client.query(
+        "SELECT COALESCE(MAX(correlative_seq), 0) + 1 as next_seq FROM public.commercial_quotes_3d WHERE year = $1;",
+        [currentYear]
+      );
+      const newSeq = Number(seqRes.rows[0]?.next_seq || 1);
+      const newQuoteNumber = `COT-${currentYear}-${String(newSeq).padStart(4, "0")}`;
+      const newQuoteId = `quote-com-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
+      const days = orig.validity_days || 15;
+      const validUntil = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+
+      await client.query(`
+        INSERT INTO public.commercial_quotes_3d (
+          id, quote_number, correlative_seq, year, customer_name, customer_phone, customer_email,
+          created_at, valid_until, validity_days, status, subtotal, discount_amount, shipping_cost,
+          total_amount, notes, conditions, show_technical_details, company_snapshot, updated_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7,
+          NOW(), $8, $9, 'borrador', $10, $11, $12,
+          $13, $14, $15, $16, $17, NOW()
+        );
+      `, [
+        newQuoteId, newQuoteNumber, newSeq, currentYear,
+        orig.customer_name, orig.customer_phone, orig.customer_email,
+        validUntil, days, orig.subtotal, orig.discount_amount, orig.shipping_cost,
+        orig.total_amount, orig.notes, orig.conditions,
+        JSON.stringify(orig.show_technical_details || {}),
+        JSON.stringify(orig.company_snapshot || {})
+      ]);
+
+      const itemsRes = await client.query(
+        "SELECT * FROM public.commercial_quote_items_3d WHERE quote_id = $1 ORDER BY item_index ASC;",
+        [id]
+      );
+
+      const duplicatedItems: any[] = [];
+      for (const it of itemsRes.rows) {
+        const newItemId = `item-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+        await client.query(`
+          INSERT INTO public.commercial_quote_items_3d (
+            id, quote_id, item_index, piece_name, internal_code, quantity,
+            material, color, weight_per_unit_grams, total_weight_grams,
+            print_time_hours, total_print_time_hours, unit_price, subtotal_price,
+            internal_cost_breakdown
+          ) VALUES (
+            $1, $2, $3, $4, $5, $6,
+            $7, $8, $9, $10,
+            $11, $12, $13, $14,
+            $15
+          );
+        `, [
+          newItemId, newQuoteId, it.item_index, it.piece_name, it.internal_code, it.quantity,
+          it.material, it.color, it.weight_per_unit_grams, it.total_weight_grams,
+          it.print_time_hours, it.total_print_time_hours, it.unit_price, it.subtotal_price,
+          JSON.stringify(it.internal_cost_breakdown || {})
+        ]);
+        duplicatedItems.push({ ...it, id: newItemId, quote_id: newQuoteId });
+      }
+
+      await client.query("COMMIT;");
+      const createdRes = await client.query("SELECT * FROM public.commercial_quotes_3d WHERE id = $1;", [newQuoteId]);
+      res.json({
+        success: true,
+        message: `¡Cotización duplicada con éxito como ${newQuoteNumber}!`,
+        quote: mapCommercialQuoteRow(createdRes.rows[0], duplicatedItems)
+      });
+    } catch (err: any) {
+      await client.query("ROLLBACK;");
+      console.error("Error duplicating commercial quote:", err);
+      res.status(500).json({ success: false, message: "Error al duplicar cotización.", error: err.message });
+    } finally {
+      client.release();
+    }
+  });
+
+  // POST /api/3d/commercial-quotes/:id/convert-to-order - Convert accepted quote into official order
+  app.post("/api/3d/commercial-quotes/:id/convert-to-order", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!isValidToken(authHeader)) return res.status(403).json({ success: false, message: "Acceso denegado." });
+
+    const client = await (getDbPool() as any)?.connect();
+    if (!client) return res.status(503).json({ success: false, message: "DB no disponible" });
+
+    try {
+      await client.query("BEGIN;");
+      const { id } = req.params;
+
+      const qRes = await client.query("SELECT * FROM public.commercial_quotes_3d WHERE id = $1 FOR UPDATE;", [id]);
+      if (qRes.rows.length === 0) {
+        await client.query("ROLLBACK;");
+        return res.status(404).json({ success: false, message: "Cotización no encontrada." });
+      }
+      const quote = qRes.rows[0];
+
+      const itemsRes = await client.query(
+        "SELECT * FROM public.commercial_quote_items_3d WHERE quote_id = $1 ORDER BY item_index ASC;",
+        [id]
+      );
+      if (itemsRes.rows.length === 0) {
+        await client.query("ROLLBACK;");
+        return res.status(400).json({ success: false, message: "La cotización no contiene ítems para convertir en pedido." });
+      }
+
+      // Insert Order into public.orders
+      const orderNotes = `Cotización 3D ${quote.quote_number}. ${quote.notes || ""}`.trim();
+      const customerEmail = quote.customer_email || "cliente@juem.com.uy";
+      const customerName = quote.customer_name || "Cliente Cotización 3D";
+      const customerPhone = quote.customer_phone || "";
+
+      const orderRes = await client.query(`
+        INSERT INTO public.orders (
+          customer_email, customer_name, customer_phone, subtotal, discount_amount,
+          shipping_cost, total, current_status, notes, payment_method, deposito_origen,
+          canal, bypass_stock_deduction, created_at, updated_at
+        ) VALUES (
+          $1, $2, $3, $4, $5,
+          $6, $7, 'pedido_iniciado', $8, 'Coordinar con JUEM', 'Taller 3D',
+          'Cotización 3D', true, NOW(), NOW()
+        ) RETURNING id;
+      `, [
+        customerEmail, customerName, customerPhone,
+        parseFloat(quote.subtotal) || 0,
+        parseFloat(quote.discount_amount) || 0,
+        parseFloat(quote.shipping_cost) || 0,
+        parseFloat(quote.total_amount) || 0,
+        orderNotes
+      ]);
+
+      const orderId = orderRes.rows[0].id;
+
+      // Insert order items
+      for (const item of itemsRes.rows) {
+        await client.query(`
+          INSERT INTO public.order_items (
+            order_id, product_name, sku, unit_price, quantity, total_price
+          ) VALUES (
+            $1, $2, $3, $4, $5, $6
+          );
+        `, [
+          orderId,
+          item.piece_name,
+          item.internal_code || null,
+          parseFloat(item.unit_price) || 0,
+          parseInt(item.quantity) || 1,
+          parseFloat(item.subtotal_price) || 0
+        ]);
+      }
+
+      // Mark quote as converted and link order
+      await client.query(`
+        UPDATE public.commercial_quotes_3d SET
+          status = 'convertida',
+          converted_order_id = $1,
+          updated_at = NOW()
+        WHERE id = $2;
+      `, [orderId, id]);
+
+      await client.query("COMMIT;");
+
+      // Sync in-memory store state if available
+      try {
+        if (typeof getDbState === "function") {
+          const freshState = await getDbState();
+          if (freshState && currentStoreState) {
+            currentStoreState.orders = freshState.orders;
+          }
+        }
+      } catch (syncErr) {
+        console.warn("Non-fatal sync warning during quote conversion:", syncErr);
+      }
+
+      res.json({
+        success: true,
+        message: `¡Cotización ${quote.quote_number} convertida en Pedido con éxito!`,
+        orderId: String(orderId)
+      });
+    } catch (err: any) {
+      await client.query("ROLLBACK;");
+      console.error("Error converting quote to order:", err);
+      res.status(500).json({ success: false, message: "Error al convertir cotización en pedido.", error: err.message });
+    } finally {
+      client.release();
+    }
+  });
+
+  // DELETE /api/3d/commercial-quotes/:id - Delete quote
+  app.delete("/api/3d/commercial-quotes/:id", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!isValidToken(authHeader)) return res.status(403).json({ success: false, message: "Acceso denegado." });
+
+    try {
+      const pool = getDbPool();
+      if (!pool || dbUnavailable) return res.status(503).json({ success: false, message: "DB no disponible" });
+      const { id } = req.params;
+
+      await pool.query("DELETE FROM public.commercial_quotes_3d WHERE id = $1;", [id]);
+      res.json({ success: true, message: "Cotización eliminada con éxito." });
+    } catch (err: any) {
+      console.error("Error deleting commercial quote:", err);
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // GET /api/3d/commercial-quotes-settings - JUEM company settings for quotes
+  app.get("/api/3d/commercial-quotes-settings", async (req, res) => {
+    try {
+      const pool = getDbPool();
+      if (!pool || dbUnavailable) return res.status(503).json({ success: false, message: "DB no disponible" });
+
+      const settingsRes = await pool.query("SELECT * FROM public.company_quote_settings WHERE id = 'default' LIMIT 1;");
+      if (settingsRes.rows.length === 0) {
+        // Return defaults
+        return res.json({
+          success: true,
+          settings: {
+            companyName: "JUEM",
+            tradeName: "JUEM 3D Studio & Fabricación Digital",
+            phone: "+598 99 234 567",
+            whatsapp: "+598 99 234 567",
+            email: "contacto@juem.com.uy",
+            website: "juem.com.uy",
+            address: "Montevideo / Canelones, Uruguay",
+            logoUrl: "",
+            defaultValidityDays: 15,
+            defaultConditions: `• La cotización tiene una validez de 15 días a partir de su emisión.\n• El plazo de fabricación se confirmará al aprobar el pedido y verificar disponibilidad de máquinas.\n• Los tiempos pueden variar según la cantidad de piezas y demanda del taller.\n• El precio final corresponde estrictamente a las especificaciones y materiales indicados.\n• Seña habitual del 50% al confirmar el trabajo y saldo contra entrega.`
+          }
+        });
+      }
+
+      const s = settingsRes.rows[0];
+      res.json({
+        success: true,
+        settings: {
+          companyName: s.company_name,
+          tradeName: s.trade_name,
+          phone: s.phone,
+          whatsapp: s.whatsapp,
+          email: s.email,
+          website: s.website,
+          address: s.address,
+          logoUrl: s.logo_url || "",
+          defaultValidityDays: Number(s.default_validity_days || 15),
+          defaultConditions: s.default_conditions || ""
+        }
+      });
+    } catch (err: any) {
+      console.error("Error fetching company quote settings:", err);
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // PUT /api/3d/commercial-quotes-settings - Update JUEM company settings
+  app.put("/api/3d/commercial-quotes-settings", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!isValidToken(authHeader)) return res.status(403).json({ success: false, message: "Acceso denegado." });
+
+    try {
+      const pool = getDbPool();
+      if (!pool || dbUnavailable) return res.status(503).json({ success: false, message: "DB no disponible" });
+
+      const {
+        companyName, tradeName, phone, whatsapp, email,
+        website, address, logoUrl, defaultValidityDays, defaultConditions
+      } = req.body;
+
+      await pool.query(`
+        INSERT INTO public.company_quote_settings (
+          id, company_name, trade_name, phone, whatsapp, email,
+          website, address, logo_url, default_validity_days, default_conditions, updated_at
+        ) VALUES (
+          'default', $1, $2, $3, $4, $5,
+          $6, $7, $8, $9, $10, NOW()
+        )
+        ON CONFLICT (id) DO UPDATE SET
+          company_name = EXCLUDED.company_name,
+          trade_name = EXCLUDED.trade_name,
+          phone = EXCLUDED.phone,
+          whatsapp = EXCLUDED.whatsapp,
+          email = EXCLUDED.email,
+          website = EXCLUDED.website,
+          address = EXCLUDED.address,
+          logo_url = EXCLUDED.logo_url,
+          default_validity_days = EXCLUDED.default_validity_days,
+          default_conditions = EXCLUDED.default_conditions,
+          updated_at = NOW();
+      `, [
+        sanitizeHtmlString(companyName || "JUEM"),
+        sanitizeHtmlString(tradeName || "JUEM 3D Studio"),
+        sanitizeHtmlString(phone || ""),
+        sanitizeHtmlString(whatsapp || ""),
+        sanitizeHtmlString(email || ""),
+        sanitizeHtmlString(website || "juem.com.uy"),
+        sanitizeHtmlString(address || ""),
+        sanitizeHtmlString(logoUrl || ""),
+        parseInt(defaultValidityDays) || 15,
+        sanitizeHtmlString(defaultConditions || "")
+      ]);
+
+      res.json({ success: true, message: "Datos y condiciones de JUEM actualizados con éxito." });
+    } catch (err: any) {
+      console.error("Error updating company quote settings:", err);
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
   // GET all shippings (Protected)
   app.get("/api/shippings", async (req, res) => {
     const authHeader = req.headers.authorization;
@@ -10286,7 +11091,7 @@ Sitemap: https://juem.com.uy/sitemap-image.xml`);
   // Vite integration
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
-      server: { middlewareMode: true, hmr: true },
+      server: { middlewareMode: true, hmr: process.env.DISABLE_HMR !== 'true' },
       appType: "spa",
     });
     app.use(vite.middlewares);

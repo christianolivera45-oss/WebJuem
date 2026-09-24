@@ -15,16 +15,23 @@ import {
   CheckCircle2,
   AlertTriangle,
   Save,
+  Zap,
   X,
-  ChevronDown,
-  ChevronUp
+  FileText,
+  Building2
 } from "lucide-react";
 import {
   Printer3D,
   Filament3D,
   Settings3D,
-  Quote3D
+  Quote3D,
+  CommercialQuote3D,
+  CommercialQuoteItem,
+  CompanyQuoteSettings
 } from "../types";
+import { CommercialQuoteModal } from "./CommercialQuoteModal";
+import { CompanyQuoteSettingsModal } from "./CompanyQuoteSettingsModal";
+import { CommercialQuotesListView } from "./CommercialQuotesListView";
 
 interface Dashboard3DCalculatorProps {
   authToken: string;
@@ -37,8 +44,8 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
   onNavigateSection,
   onProductCreated
 }) => {
-  // Navigation tabs (channels removed)
-  const [activeTab, setActiveTab] = useState<"calculator" | "quotes" | "printers" | "filaments" | "settings">("calculator");
+  // Navigation tabs (channels removed, commercial quotes added)
+  const [activeTab, setActiveTab] = useState<"calculator" | "commercial_quotes" | "quotes" | "printers" | "filaments" | "settings">("calculator");
 
   // State data
   const [printers, setPrinters] = useState<Printer3D[]>([]);
@@ -63,7 +70,6 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
   // Quote form state - piece centric
   const [productName, setProductName] = useState("");
   const [sku, setSku] = useState("");
-  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
 
   const [selectedPrinterId, setSelectedPrinterId] = useState("");
   const [selectedFilamentId, setSelectedFilamentId] = useState("");
@@ -99,11 +105,35 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
   } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Commercial Multi-Item PDF Quotes state
+  const [showCommercialModal, setShowCommercialModal] = useState(false);
+  const [selectedCommercialQuote, setSelectedCommercialQuote] = useState<CommercialQuote3D | null>(null);
+  const [commercialCartItems, setCommercialCartItems] = useState<CommercialQuoteItem[]>([]);
+  const [showCompanySettingsModal, setShowCompanySettingsModal] = useState(false);
+  const [companySettings, setCompanySettings] = useState<CompanyQuoteSettings | undefined>(undefined);
+  const [commercialRefreshTrigger, setCommercialRefreshTrigger] = useState(0);
+
   const getActiveToken = () => authToken || localStorage.getItem("apex_admin_token") || "";
 
   const showToast = (message: string, type: "success" | "error" = "success") => {
     setFeedback({ type, message });
     setTimeout(() => setFeedback(null), 4000);
+  };
+
+  const handleUpdateElectricityKwh = (val: number) => {
+    const valid = Math.max(0, isNaN(val) ? 0 : val);
+    setSettings((prev) => ({ ...prev, electricityKwhPrice: valid }));
+    // Persist silently in background
+    try {
+      const token = getActiveToken();
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      fetch("/api/3d/settings", {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({ ...settings, electricityKwhPrice: valid })
+      }).catch(() => {});
+    } catch {}
   };
 
   const executeDelete = async () => {
@@ -215,6 +245,11 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
     [filaments, selectedFilamentId]
   );
 
+  // Effective failure rate (%) from current printer profile (or workshop default)
+  const effectiveFailureRate = useMemo(() => {
+    return currentPrinter ? Number(currentPrinter.failureRatePercent) : (Number(settings.defaultFailureRatePercent) || 5);
+  }, [currentPrinter, settings.defaultFailureRatePercent]);
+
   // Extras total cost
   const extrasTotal = useMemo(() => {
     return extras.reduce((acc, item) => acc + (Number(item.unitCost) || 0) * (Number(item.quantity) || 1), 0);
@@ -258,19 +293,16 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
     const packCost = Math.max(0, Number(packagingCost));
     const extraCost = Math.max(0, extrasTotal);
 
-    // 7. DIRECT COSTS BEFORE FAILURES
-    const directMachineCost = filamentCostBase + electricityCost + machineDepreciationCost + maintenanceCost;
+    // 7. FAILURES & SCRAP (Margen de fallo sobre material)
+    const failureRate = Math.max(0, Number(effectiveFailureRate) || 0) / 100;
+    const failureCost = filamentCostBase * failureRate;
+    const materialTotalCost = filamentCostBase + failureCost;
 
-    // 8. FAILURES & SCRAP ADJUSTMENT
-    const failureRate = currentPrinter
-      ? Number(currentPrinter.failureRatePercent) / 100
-      : (Number(settings.defaultFailureRatePercent) || 5) / 100;
-    const safeFailureRate = Math.min(0.5, Math.max(0, failureRate));
-    const failureMultiplier = safeFailureRate > 0 ? (1 / (1 - safeFailureRate)) - 1 : 0;
-    const failureCost = directMachineCost * failureMultiplier;
+    // 8. DIRECT MACHINE OPERATIONAL COSTS (Luz + Desgaste + Mantenimiento)
+    const machineOperatingCost = electricityCost + machineDepreciationCost + maintenanceCost;
 
     // TOTAL REAL UNIT COST
-    const unitRealCost = directMachineCost + failureCost + laborCost + packCost + extraCost;
+    const unitRealCost = materialTotalCost + machineOperatingCost + laborCost + packCost + extraCost;
     const safeQty = Math.max(1, Number(quantity) || 1);
     const totalRealCost = unitRealCost * safeQty;
 
@@ -289,28 +321,28 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
     const minPrice =
       pricingMode === "margin"
         ? Math.ceil(calcPriceWithMargin(unitRealCost, 25))
-        : Math.ceil(calcPriceWithMarkup(unitRealCost, 35));
+        : Math.ceil(calcPriceWithMarkup(unitRealCost, 50));
 
     const recommendedPrice =
       pricingMode === "margin"
         ? Math.ceil(calcPriceWithMargin(unitRealCost, targetRatePercent))
-        : Math.ceil(calcPriceWithMarkup(unitRealCost, targetRatePercent));
+        : Math.round(calcPriceWithMarkup(unitRealCost, targetRatePercent) * 100) / 100;
 
     const targetPrice =
       pricingMode === "margin"
         ? Math.ceil(calcPriceWithMargin(unitRealCost, 65))
-        : Math.ceil(calcPriceWithMarkup(unitRealCost, 180));
+        : Math.ceil(calcPriceWithMarkup(unitRealCost, 200));
 
     // Final price
     const finalPrice = customFinalPrice !== null ? customFinalPrice : recommendedPrice;
 
     // Direct profit
-    const unitProfit = Math.round(finalPrice - unitRealCost);
-    const totalProfit = unitProfit * safeQty;
+    const unitProfit = Math.round((finalPrice - unitRealCost) * 100) / 100;
+    const totalProfit = Math.round(unitProfit * safeQty * 100) / 100;
 
     // Effective margin & markup
-    const effectiveMarginPercent = finalPrice > 0 ? Math.round((unitProfit / finalPrice) * 100) : 0;
-    const effectiveMarkupPercent = unitRealCost > 0 ? Math.round((unitProfit / unitRealCost) * 100) : 0;
+    const effectiveMarginPercent = finalPrice > 0 ? Math.round(((finalPrice - unitRealCost) / finalPrice) * 1000) / 10 : 0;
+    const effectiveMarkupPercent = unitRealCost > 0 ? Math.round(((finalPrice - unitRealCost) / unitRealCost) * 1000) / 10 : 0;
 
     return {
       totalPrintHours,
@@ -322,8 +354,11 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
       packagingCost: packCost,
       extrasCost: extraCost,
       failureCost: Math.round(failureCost * 100) / 100,
-      unitRealCost: Math.round(unitRealCost),
-      totalRealCost: Math.round(totalRealCost),
+      materialTotalCost: Math.round(materialTotalCost * 100) / 100,
+      machineOperatingCost: Math.round(machineOperatingCost * 100) / 100,
+      kwhPrice,
+      unitRealCost: Math.round(unitRealCost * 100) / 100,
+      totalRealCost: Math.round(totalRealCost * 100) / 100,
       minPrice,
       recommendedPrice,
       targetPrice,
@@ -331,6 +366,8 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
       channelCommissionCost: 0,
       unitProfit,
       totalProfit,
+      grossProfit: unitProfit,
+      actualMarginPercent: effectiveMarginPercent,
       effectiveMarginPercent,
       effectiveMarkupPercent
     };
@@ -348,6 +385,7 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
     pricingMode,
     targetRatePercent,
     customFinalPrice,
+    effectiveFailureRate,
     settings
   ]);
 
@@ -355,7 +393,7 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
   const handleSaveQuote = async () => {
     try {
       setActionLoading(true);
-      const generatedName = productName.trim() || `Pieza 3D ${filamentWeightGrams}g (${calculation.totalPrintHours.toFixed(1)}h)`;
+      const generatedName = productName.trim() || `Pieza 3D ${filamentWeightGrams}g (${(calculation?.totalPrintHours ?? 0).toFixed(1)}h)`;
       const generatedSku = sku.trim() || `3D-${Date.now().toString().slice(-6)}`;
 
       const payload = {
@@ -425,34 +463,64 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
     }
   };
 
-  // Convert quote to Juem catalog product
-  const handleConvertToProduct = async (quoteId: string) => {
-    try {
-      setActionLoading(true);
-      const token = getActiveToken();
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
+  // Open Commercial Quote PDF modal with current piece or existing cart
+  const handleOpenCommercialQuoteModal = (includeCurrentPiece: boolean = true) => {
+    let itemsToPass: CommercialQuoteItem[] = [...commercialCartItems];
+    if (includeCurrentPiece) {
+      const unitP = calculation?.finalPrice && quantity > 0
+        ? Number((calculation.finalPrice / quantity).toFixed(2))
+        : 350;
+      const currentPieceItem: CommercialQuoteItem = {
+        itemIndex: itemsToPass.length + 1,
+        pieceName: productName.trim() || `Pieza 3D (${currentFilament?.material || "PLA+"})`,
+        internalCode: sku.trim() || undefined,
+        quantity: Math.max(1, quantity),
+        material: currentFilament?.material || "PLA+",
+        color: currentFilament?.color || "Estándar",
+        weightPerUnitGrams: filamentWeightGrams,
+        totalWeightGrams: filamentWeightGrams * quantity,
+        printTimeHours: printHours + printMinutes / 60,
+        printTimeFormatted: `${printHours}h ${printMinutes}m`,
+        totalPrintTimeHours: (printHours + printMinutes / 60) * quantity,
+        unitPrice: unitP,
+        subtotalPrice: unitP * quantity,
+        internalCostBreakdown: calculation || {}
+      };
 
-      const res = await fetch(`/api/3d/quotes/${quoteId}/convert-to-product`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({})
-      });
-
-      const data = await res.json();
-      if (data.success) {
-        showToast("¡Pieza convertida a producto en el catálogo Juem!");
-        if (onProductCreated) onProductCreated();
-        fetchData();
-      } else {
-        showToast(data.message || "Error al crear producto", "error");
+      if (itemsToPass.length === 0) {
+        itemsToPass = [currentPieceItem];
       }
-    } catch (err: any) {
-      showToast(err.message || "Error al convertir cotización en producto", "error");
-    } finally {
-      setActionLoading(false);
     }
+    setSelectedCommercialQuote(null);
+    setCommercialCartItems(itemsToPass);
+    setShowCommercialModal(true);
   };
+
+  const handleAddCurrentPieceToCommercialQuote = () => {
+    const unitP = calculation?.finalPrice && quantity > 0
+      ? Number((calculation.finalPrice / quantity).toFixed(2))
+      : 350;
+    const newItem: CommercialQuoteItem = {
+      itemIndex: commercialCartItems.length + 1,
+      pieceName: productName.trim() || `Pieza #${commercialCartItems.length + 1} (${currentFilament?.material || "PLA+"})`,
+      internalCode: sku.trim() || undefined,
+      quantity: Math.max(1, quantity),
+      material: currentFilament?.material || "PLA+",
+      color: currentFilament?.color || "Estándar",
+      weightPerUnitGrams: filamentWeightGrams,
+      totalWeightGrams: filamentWeightGrams * quantity,
+      printTimeHours: printHours + printMinutes / 60,
+      printTimeFormatted: `${printHours}h ${printMinutes}m`,
+      totalPrintTimeHours: (printHours + printMinutes / 60) * quantity,
+      unitPrice: unitP,
+      subtotalPrice: unitP * quantity,
+      internalCostBreakdown: calculation || {}
+    };
+    setCommercialCartItems((prev) => [...prev, newItem]);
+    showToast(`¡Pieza agregada a la cotización multi-pieza! (${commercialCartItems.length + 1} en total)`);
+  };
+
+
 
   // Duplicate quote into calculator
   const handleLoadQuoteIntoCalculator = (q: Quote3D) => {
@@ -529,22 +597,21 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => {
-                setActiveTab("calculator");
-              }}
-              className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-[#D4A55A] via-[#E6BF76] to-[#D4A55A] text-[#050B1A] text-xs font-black uppercase tracking-wider transition-all shadow-[0_4px_20px_rgba(212,165,90,0.25)] hover:shadow-[0_4px_25px_rgba(230,191,118,0.4)] hover:brightness-105 active:scale-95 flex items-center gap-2 cursor-pointer"
+              onClick={() => handleOpenCommercialQuoteModal(true)}
+              className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-[#D4A55A] via-[#E6BF76] to-[#D4A55A] text-[#050B1A] text-xs font-black uppercase tracking-wider transition-all shadow-[0_4px_20px_rgba(212,165,90,0.25)] hover:shadow-[0_4px_25px_rgba(230,191,118,0.4)] hover:brightness-105 active:scale-95 flex items-center gap-2 cursor-pointer"
             >
-              <Calculator className="h-4 w-4" />
-              <span>Calcular Pieza</span>
+              <FileText className="h-4 w-4" />
+              <span>Generar Cotización PDF</span>
             </button>
           </div>
         </div>
 
-        {/* SUBTABS DE NAVEGACIÓN - ÁUREA NOCTURNA PRO (SIN CANALES) */}
+        {/* SUBTABS DE NAVEGACIÓN - ÁUREA NOCTURNA PRO (CON COTIZACIONES PDF) */}
         <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-[#D4A55A]/20 pt-4">
           {[
             { id: "calculator", label: "Calculadora de Pieza", icon: Calculator },
-            { id: "quotes", label: `Historial (${quotes.length})`, icon: Clock },
+            { id: "commercial_quotes", label: "Cotizaciones PDF", icon: FileText },
+            { id: "quotes", label: `Historial Interno (${quotes.length})`, icon: Clock },
             { id: "printers", label: `Impresoras (${printers.length})`, icon: Printer },
             { id: "filaments", label: `Filamentos (${filaments.length})`, icon: Layers },
             { id: "settings", label: "Ajustes de Taller", icon: Sliders }
@@ -638,153 +705,163 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
                 </button>
               </div>
 
-              {/* SECCIÓN 1: PESO DE LA PIEZA (GRAMOS) */}
-              <div className="bg-[#050B1A]/80 border border-[#D4A55A]/25 rounded-2xl p-5 space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-serif font-bold text-[#E6BF76] flex items-center gap-2">
-                    <Layers className="h-4 w-4 text-[#D4A55A]" />
-                    <span>1. Peso de la Pieza (Filamento utilizado)</span>
-                  </label>
-                  <span className="text-[11px] font-mono text-[#C5B499]">
-                    Costo filamento: <strong className="text-[#E6BF76]">${calculation.filamentCost} UYU</strong>
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <div className="relative flex-1">
-                    <input
-                      type="number"
-                      step="0.5"
-                      min="0"
-                      value={filamentWeightGrams}
-                      onChange={(e) => setFilamentWeightGrams(Math.max(0, parseFloat(e.target.value) || 0))}
-                      className="w-full pl-4 pr-12 py-3 rounded-xl text-lg font-mono font-bold bg-[#0B1730] border border-[#D4A55A]/30 text-[#F4EAD7] focus:outline-none focus:border-[#E6BF76] focus:ring-1 focus:ring-[#E6BF76]"
-                    />
-                    <span className="absolute right-4 top-3.5 text-xs font-mono font-bold text-[#D4A55A]">
-                      gramos
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setFilamentWeightGrams((g) => Math.max(0, Number((g - 5).toFixed(1))))}
-                      className="px-3 py-3 rounded-xl bg-[#0B1730] border border-[#D4A55A]/30 text-[#C5B499] hover:text-[#F4EAD7] hover:border-[#D4A55A] font-bold text-xs cursor-pointer active:scale-95 transition-all"
-                    >
-                      -5g
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFilamentWeightGrams((g) => Number((g + 5).toFixed(1)))}
-                      className="px-3 py-3 rounded-xl bg-[#0B1730] border border-[#D4A55A]/30 text-[#C5B499] hover:text-[#F4EAD7] hover:border-[#D4A55A] font-bold text-xs cursor-pointer active:scale-95 transition-all"
-                    >
-                      +5g
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFilamentWeightGrams((g) => Number((g + 10).toFixed(1)))}
-                      className="px-3 py-3 rounded-xl bg-[#0B1730] border border-[#D4A55A]/30 text-[#E6BF76] hover:border-[#E6BF76] font-bold text-xs cursor-pointer active:scale-95 transition-all"
-                    >
-                      +10g
-                    </button>
-                  </div>
-                </div>
-
-                {/* Presets rápidos de peso */}
-                <div className="flex flex-wrap items-center gap-2 pt-1">
-                  <span className="text-[10px] uppercase font-bold tracking-wider text-[#A0AEC0]">Atajos:</span>
-                  {[15, 30, 50, 75, 120, 200, 350].map((preset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() => setFilamentWeightGrams(preset)}
-                      className={`px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold transition-all cursor-pointer ${
-                        filamentWeightGrams === preset
-                          ? "bg-[#D4A55A] text-[#050B1A] shadow-sm"
-                          : "bg-[#0B1730] text-[#C5B499] hover:text-[#F4EAD7] border border-[#D4A55A]/20"
-                      }`}
-                    >
-                      {preset}g
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* SECCIÓN 2: TIEMPO DE IMPRESIÓN */}
-              <div className="bg-[#050B1A]/80 border border-[#D4A55A]/25 rounded-2xl p-5 space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-serif font-bold text-[#E6BF76] flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-[#D4A55A]" />
-                    <span>2. Tiempo de Impresión</span>
-                  </label>
-                  <span className="text-[11px] font-mono text-[#C5B499]">
-                    Total: <strong className="text-[#E6BF76]">{calculation.totalPrintHours.toFixed(2)} horas</strong> (~${(calculation.electricityCost + calculation.machineDepreciationCost + calculation.maintenanceCost).toFixed(1)} UYU máquina/energía)
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-[#A0AEC0]">Horas</label>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        min="0"
-                        value={printHours}
-                        onChange={(e) => setPrintHours(Math.max(0, parseInt(e.target.value) || 0))}
-                        className="w-full pl-4 pr-10 py-2.5 rounded-xl text-base font-mono font-bold bg-[#0B1730] border border-[#D4A55A]/30 text-[#F4EAD7] focus:outline-none focus:border-[#E6BF76]"
-                      />
-                      <span className="absolute right-3.5 top-3 text-xs font-mono text-[#A0AEC0]">h</span>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-[#A0AEC0]">Minutos</label>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        min="0"
-                        max="59"
-                        value={printMinutes}
-                        onChange={(e) => setPrintMinutes(Math.min(59, Math.max(0, parseInt(e.target.value) || 0)))}
-                        className="w-full pl-4 pr-10 py-2.5 rounded-xl text-base font-mono font-bold bg-[#0B1730] border border-[#D4A55A]/30 text-[#F4EAD7] focus:outline-none focus:border-[#E6BF76]"
-                      />
-                      <span className="absolute right-3.5 top-3 text-xs font-mono text-[#A0AEC0]">min</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Presets rápidos de tiempo */}
-                <div className="flex flex-wrap items-center gap-2 pt-1">
-                  <span className="text-[10px] uppercase font-bold tracking-wider text-[#A0AEC0]">Atajos:</span>
-                  {[
-                    { h: 0, m: 45, label: "45m" },
-                    { h: 1, m: 30, label: "1h 30m" },
-                    { h: 2, m: 15, label: "2h 15m" },
-                    { h: 4, m: 0, label: "4h" },
-                    { h: 6, m: 30, label: "6h 30m" },
-                    { h: 10, m: 0, label: "10h" }
-                  ].map((p, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => {
-                        setPrintHours(p.h);
-                        setPrintMinutes(p.m);
-                      }}
-                      className={`px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold transition-all cursor-pointer ${
-                        printHours === p.h && printMinutes === p.m
-                          ? "bg-[#D4A55A] text-[#050B1A] shadow-sm"
-                          : "bg-[#0B1730] text-[#C5B499] hover:text-[#F4EAD7] border border-[#D4A55A]/20"
-                      }`}
-                    >
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* SECCIÓN 3: IMPRESORA Y FILAMENTO */}
+              {/* SECCIÓN 1 Y 2: PESO (GRAMOS) Y TIEMPO EN LA MISMA LÍNEA */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* SECCIÓN 1: PESO DE LA PIEZA (GRAMOS) */}
+                <div className="bg-[#050B1A]/80 border border-[#D4A55A]/25 rounded-2xl p-4 md:p-5 flex flex-col justify-between space-y-3">
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="text-xs font-serif font-bold text-[#E6BF76] flex items-center gap-2">
+                        <Layers className="h-4 w-4 text-[#D4A55A]" />
+                        <span>1. Peso de la Pieza (Gramos)</span>
+                      </label>
+                      <span className="text-[11px] font-mono text-[#C5B499]">
+                        Costo: <strong className="text-[#E6BF76]">${calculation.filamentCost} UYU</strong>
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex-1 min-w-0">
+                        <input
+                          type="number"
+                          step="0.5"
+                          min="0"
+                          value={filamentWeightGrams}
+                          onChange={(e) => setFilamentWeightGrams(Math.max(0, parseFloat(e.target.value) || 0))}
+                          className="w-full pl-3.5 pr-10 py-2.5 rounded-xl text-base font-mono font-bold bg-[#0B1730] border border-[#D4A55A]/30 text-[#F4EAD7] focus:outline-none focus:border-[#E6BF76] focus:ring-1 focus:ring-[#E6BF76]"
+                        />
+                        <span className="absolute right-3 top-3 text-xs font-mono font-bold text-[#D4A55A]">
+                          g
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setFilamentWeightGrams((g) => Math.max(0, Number((g - 5).toFixed(1))))}
+                          className="px-2.5 py-2.5 rounded-xl bg-[#0B1730] border border-[#D4A55A]/30 text-[#C5B499] hover:text-[#F4EAD7] hover:border-[#D4A55A] font-bold text-xs cursor-pointer active:scale-95 transition-all"
+                          title="Restar 5 gramos"
+                        >
+                          -5g
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFilamentWeightGrams((g) => Number((g + 5).toFixed(1)))}
+                          className="px-2.5 py-2.5 rounded-xl bg-[#0B1730] border border-[#D4A55A]/30 text-[#C5B499] hover:text-[#F4EAD7] hover:border-[#D4A55A] font-bold text-xs cursor-pointer active:scale-95 transition-all"
+                          title="Sumar 5 gramos"
+                        >
+                          +5g
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFilamentWeightGrams((g) => Number((g + 10).toFixed(1)))}
+                          className="px-2.5 py-2.5 rounded-xl bg-[#0B1730] border border-[#D4A55A]/30 text-[#E6BF76] hover:border-[#E6BF76] font-bold text-xs cursor-pointer active:scale-95 transition-all"
+                          title="Sumar 10 gramos"
+                        >
+                          +10g
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Presets rápidos de peso */}
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-[#D4A55A]/10">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-[#A0AEC0]">Atajos:</span>
+                    {[15, 30, 50, 75, 120, 200, 350].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setFilamentWeightGrams(preset)}
+                        className={`px-2 py-0.5 rounded-md text-[11px] font-mono font-bold transition-all cursor-pointer ${
+                          filamentWeightGrams === preset
+                            ? "bg-[#D4A55A] text-[#050B1A] shadow-sm"
+                            : "bg-[#0B1730] text-[#C5B499] hover:text-[#F4EAD7] border border-[#D4A55A]/20"
+                        }`}
+                      >
+                        {preset}g
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* SECCIÓN 2: TIEMPO DE IMPRESIÓN */}
+                <div className="bg-[#050B1A]/80 border border-[#D4A55A]/25 rounded-2xl p-4 md:p-5 flex flex-col justify-between space-y-3">
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="text-xs font-serif font-bold text-[#E6BF76] flex items-center gap-2">
+                        <Clock className="h-4 w-4 text-[#D4A55A]" />
+                        <span>2. Tiempo de Impresión</span>
+                      </label>
+                      <span className="text-[11px] font-mono text-[#C5B499]">
+                        Total: <strong className="text-[#E6BF76]">{(calculation?.totalPrintHours ?? 0).toFixed(2)}h</strong>
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-[#A0AEC0]">Horas</label>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            min="0"
+                            value={printHours}
+                            onChange={(e) => setPrintHours(Math.max(0, parseInt(e.target.value) || 0))}
+                            className="w-full pl-3.5 pr-8 py-2.5 rounded-xl text-base font-mono font-bold bg-[#0B1730] border border-[#D4A55A]/30 text-[#F4EAD7] focus:outline-none focus:border-[#E6BF76]"
+                          />
+                          <span className="absolute right-3 top-3 text-xs font-mono text-[#A0AEC0]">h</span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-[#A0AEC0]">Minutos</label>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            min="0"
+                            max="59"
+                            value={printMinutes}
+                            onChange={(e) => setPrintMinutes(Math.min(59, Math.max(0, parseInt(e.target.value) || 0)))}
+                            className="w-full pl-3.5 pr-10 py-2.5 rounded-xl text-base font-mono font-bold bg-[#0B1730] border border-[#D4A55A]/30 text-[#F4EAD7] focus:outline-none focus:border-[#E6BF76]"
+                          />
+                          <span className="absolute right-3 top-3 text-xs font-mono text-[#A0AEC0]">min</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Presets rápidos de tiempo */}
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-[#D4A55A]/10">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-[#A0AEC0]">Atajos:</span>
+                    {[
+                      { h: 0, m: 45, label: "45m" },
+                      { h: 1, m: 30, label: "1h 30" },
+                      { h: 2, m: 15, label: "2h 15" },
+                      { h: 4, m: 0, label: "4h" },
+                      { h: 6, m: 30, label: "6h 30" },
+                      { h: 10, m: 0, label: "10h" }
+                    ].map((p, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          setPrintHours(p.h);
+                          setPrintMinutes(p.m);
+                        }}
+                        className={`px-2 py-0.5 rounded-md text-[11px] font-mono font-bold transition-all cursor-pointer ${
+                          printHours === p.h && printMinutes === p.m
+                            ? "bg-[#D4A55A] text-[#050B1A] shadow-sm"
+                            : "bg-[#0B1730] text-[#C5B499] hover:text-[#F4EAD7] border border-[#D4A55A]/20"
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* SECCIÓN 3: IMPRESORA, FILAMENTO Y ELECTRICIDAD */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
                 {/* Filamento */}
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
@@ -824,9 +901,9 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
                   </select>
                   {currentFilament && (
                     <div className="text-[10px] text-[#A0AEC0] flex items-center gap-2 pt-0.5">
-                      <span>Carrete: {currentFilament.spoolWeightGrams}g (${currentFilament.spoolPrice} {currentFilament.currency})</span>
+                      <span>Bobina: {currentFilament.spoolWeightGrams}g (${currentFilament.spoolPrice} {currentFilament.currency})</span>
                       <span>•</span>
-                      <span className="text-[#E6BF76] font-mono">${currentFilament.costPerGram} / gramo</span>
+                      <span className="text-[#E6BF76] font-mono">${currentFilament.costPerGram} / g</span>
                     </div>
                   )}
                 </div>
@@ -838,30 +915,46 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
                       <Printer className="h-3.5 w-3.5 text-[#D4A55A]" />
                       <span>Impresora 3D</span>
                     </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingPrinter({
-                          name: "",
-                          brand: "Bambu Lab",
-                          model: "",
-                          purchasePrice: 400,
-                          currency: "USD",
-                          lifespanHours: 3500,
-                          powerWatts: 120,
-                          maintenanceCostPerHour: 5,
-                          failureRatePercent: 4,
-                          buildVolumeX: 256,
-                          buildVolumeY: 256,
-                          buildVolumeZ: 256,
-                          status: "active"
-                        });
-                        setShowPrinterModal(true);
-                      }}
-                      className="text-[11px] text-[#E6BF76] hover:underline font-bold cursor-pointer"
-                    >
-                      + Nueva
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {currentPrinter && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingPrinter({ ...currentPrinter });
+                            setShowPrinterModal(true);
+                          }}
+                          className="text-[11px] text-[#C5B499] hover:text-[#E6BF76] hover:underline font-medium cursor-pointer"
+                          title="Editar parámetros permanentes de esta impresora"
+                        >
+                          Editar
+                        </button>
+                      )}
+                      <span className="text-[#A0AEC0]/30">•</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingPrinter({
+                            name: "",
+                            brand: "Bambu Lab",
+                            model: "",
+                            purchasePrice: 400,
+                            currency: "USD",
+                            lifespanHours: 3500,
+                            powerWatts: 120,
+                            maintenanceCostPerHour: 5,
+                            failureRatePercent: 4,
+                            buildVolumeX: 256,
+                            buildVolumeY: 256,
+                            buildVolumeZ: 256,
+                            status: "active"
+                          });
+                          setShowPrinterModal(true);
+                        }}
+                        className="text-[11px] text-[#E6BF76] hover:underline font-bold cursor-pointer"
+                      >
+                        + Nueva
+                      </button>
+                    </div>
                   </div>
                   <select
                     value={selectedPrinterId}
@@ -870,161 +963,234 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
                   >
                     {printers.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.name} ({p.powerWatts}W | {p.brand})
+                        {p.name} ({p.powerWatts}W) • Fallas: {p.failureRatePercent}%
                       </option>
                     ))}
                   </select>
                   {currentPrinter && (
-                    <div className="text-[10px] text-[#A0AEC0] flex items-center gap-2 pt-0.5">
-                      <span>Potencia: {currentPrinter.powerWatts}W</span>
+                    <div className="text-[10px] text-[#A0AEC0] flex items-center gap-1.5 pt-0.5 truncate">
+                      <span>Fallas: <strong className="text-[#E6BF76]">{currentPrinter.failureRatePercent}%</strong></span>
                       <span>•</span>
-                      <span>Fallas: {currentPrinter.failureRatePercent}%</span>
+                      <span>Vida: <strong className="text-[#F4EAD7]">{currentPrinter.lifespanHours}h</strong></span>
                       <span>•</span>
-                      <span>Vida útil: {currentPrinter.lifespanHours}h</span>
+                      <span>Mant: <strong className="text-[#F4EAD7]">${currentPrinter.maintenanceCostPerHour}/h</strong></span>
                     </div>
                   )}
                 </div>
-              </div>
 
-              {/* SECCIÓN 4: MARGEN DIRECTO DE GANANCIA */}
-              <div className="bg-[#050B1A]/80 border border-[#D4A55A]/25 rounded-2xl p-5 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <DollarSign className="h-4 w-4 text-[#D4A55A]" />
-                    <span className="text-xs font-serif font-bold text-[#E6BF76]">Fijación de Margen de Ganancia:</span>
+                {/* Costo kWh (Electricidad) */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-serif font-bold text-[#E6BF76] flex items-center gap-1.5">
+                      <Zap className="h-3.5 w-3.5 text-[#D4A55A]" />
+                      <span>Costo kWh (Luz)</span>
+                    </label>
+                    <span className="text-[10px] text-[#A0AEC0]">UTE / Tarifa eléctrica</span>
                   </div>
-
-                  <div className="inline-flex rounded-xl border border-[#D4A55A]/30 p-1 bg-[#0B1730]">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPricingMode("margin");
-                        setTargetRatePercent(50);
-                      }}
-                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                        pricingMode === "margin"
-                          ? "bg-[#D4A55A] text-[#050B1A] font-extrabold shadow-sm"
-                          : "text-[#C5B499] hover:text-[#F4EAD7]"
-                      }`}
-                    >
-                      Margen % sobre Venta
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPricingMode("markup");
-                        setTargetRatePercent(100);
-                      }}
-                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                        pricingMode === "markup"
-                          ? "bg-[#D4A55A] text-[#050B1A] font-extrabold shadow-sm"
-                          : "text-[#C5B499] hover:text-[#F4EAD7]"
-                      }`}
-                    >
-                      Markup % sobre Costo
-                    </button>
-                  </div>
-                </div>
-
-                {/* Slider de porcentaje con presets áureos */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-[#C5B499]">
-                      {pricingMode === "margin" ? "Margen libre deseado en mano:" : "Multiplicador de costo (markup):"}
-                    </span>
-                    <span className="font-mono font-black text-[#E6BF76] text-base">
-                      {targetRatePercent}%
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      value={settings.electricityKwhPrice}
+                      onChange={(e) => handleUpdateElectricityKwh(parseFloat(e.target.value) || 0)}
+                      className="w-full px-3 py-2.5 rounded-xl text-xs bg-[#050B1A] border border-[#D4A55A]/30 text-[#F4EAD7] focus:outline-none focus:border-[#E6BF76] font-mono font-bold pr-20"
+                      placeholder="12"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-[#A0AEC0] font-mono pointer-events-none">
+                      $ UYU/kWh
                     </span>
                   </div>
-
-                  <input
-                    type="range"
-                    min={pricingMode === "margin" ? 15 : 25}
-                    max={pricingMode === "margin" ? 85 : 300}
-                    step="5"
-                    value={targetRatePercent}
-                    onChange={(e) => setTargetRatePercent(parseInt(e.target.value) || 50)}
-                    className="w-full accent-[#D4A55A] cursor-pointer"
-                  />
-
-                  {/* Botones de preset de margen */}
-                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                    {(pricingMode === "margin" ? [30, 40, 50, 60, 70] : [50, 80, 100, 150, 200]).map((pct) => (
+                  <div className="flex items-center gap-1 pt-0.5">
+                    {[8.5, 10, 12, 14].map((rate) => (
                       <button
-                        key={pct}
+                        key={rate}
                         type="button"
-                        onClick={() => setTargetRatePercent(pct)}
-                        className={`px-3 py-1 rounded-lg text-[11px] font-mono font-bold transition-all cursor-pointer ${
-                          targetRatePercent === pct
-                            ? "bg-[#D4A55A] text-[#050B1A]"
-                            : "bg-[#0B1730] text-[#C5B499] hover:text-[#F4EAD7] border border-[#D4A55A]/20"
+                        onClick={() => handleUpdateElectricityKwh(rate)}
+                        className={`flex-1 py-1 rounded-md text-[10px] font-mono font-bold transition-all cursor-pointer border ${
+                          settings.electricityKwhPrice === rate
+                            ? "bg-[#D4A55A] text-[#050B1A] border-[#E6BF76]"
+                            : "bg-[#050B1A] text-[#C5B499] border-[#D4A55A]/20 hover:text-white"
                         }`}
+                        title={`Fijar costo de electricidad en $${rate} UYU / kWh`}
                       >
-                        {pct}%
+                        ${rate}
                       </button>
                     ))}
                   </div>
+                  <div className="text-[10px] text-[#A0AEC0] flex items-center justify-between pt-0.5">
+                    <span>Consumo: <strong className="text-[#F4EAD7]">{currentPrinter?.powerWatts || 100}W</strong></span>
+                    <span>•</span>
+                    <span>Hora luz: <strong className="text-[#E6BF76] font-mono">${(((currentPrinter?.powerWatts || 100) / 1000) * (settings.electricityKwhPrice || 12)).toFixed(2)}/h</strong></span>
+                  </div>
                 </div>
               </div>
 
-              {/* SECCIÓN 5: AJUSTES ADICIONALES (EXPANDIBLE Y OPCIONAL) */}
-              <div className="border border-[#D4A55A]/25 rounded-2xl overflow-hidden bg-[#050B1A]/40">
-                <button
-                  type="button"
-                  onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
-                  className="w-full p-4 flex items-center justify-between text-left hover:bg-[#D4A55A]/5 transition-colors cursor-pointer"
-                >
-                  <div className="flex items-center gap-2">
-                    <Sliders className="h-4 w-4 text-[#D4A55A]" />
-                    <span className="text-xs font-bold text-[#E6BF76]">
-                      Opciones Adicionales (Mano de Obra, Packaging, Extras e Insumos)
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-xs text-[#A0AEC0]">
-                    <span>{showAdvancedOptions ? "Ocultar" : "Personalizar"}</span>
-                    {showAdvancedOptions ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                  </div>
-                </button>
+              {/* SECCIÓN 4 Y 5: MARGEN DE GANANCIA Y OPCIONES ADICIONALES EN LA MISMA LÍNEA */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* SECCIÓN 4: MARGEN DIRECTO DE GANANCIA */}
+                <div className="bg-[#050B1A]/80 border border-[#D4A55A]/25 rounded-2xl p-4 md:p-5 flex flex-col justify-between space-y-4">
+                  <div className="space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-[#D4A55A]/15">
+                      <div className="flex items-center gap-2">
+                        <DollarSign className="h-4 w-4 text-[#D4A55A]" />
+                        <span className="text-xs font-serif font-bold text-[#E6BF76]">Fijación de Margen:</span>
+                      </div>
 
-                {showAdvancedOptions && (
-                  <div className="p-5 pt-0 space-y-4 border-t border-[#D4A55A]/15 mt-2">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3">
+                      <div className="inline-flex rounded-xl border border-[#D4A55A]/30 p-0.5 bg-[#0B1730]">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPricingMode("margin");
+                            setTargetRatePercent(50);
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                            pricingMode === "margin"
+                              ? "bg-[#D4A55A] text-[#050B1A] font-extrabold shadow-sm"
+                              : "text-[#C5B499] hover:text-[#F4EAD7]"
+                          }`}
+                        >
+                          Margen % Venta
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPricingMode("markup");
+                            setTargetRatePercent(100);
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                            pricingMode === "markup"
+                              ? "bg-[#D4A55A] text-[#050B1A] font-extrabold shadow-sm"
+                              : "text-[#C5B499] hover:text-[#F4EAD7]"
+                          }`}
+                        >
+                          Markup % Costo
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Slider de porcentaje */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-[#C5B499] text-[11px]">
+                          {pricingMode === "margin"
+                            ? "Margen libre deseado en mano:"
+                            : `Multiplicador de costo (x${(1 + targetRatePercent / 100).toFixed(1)}):`}
+                        </span>
+                        <span className="font-mono font-black text-[#E6BF76] text-base">
+                          {pricingMode === "markup" ? `x${(1 + targetRatePercent / 100).toFixed(1)} ` : ""}({targetRatePercent}%)
+                        </span>
+                      </div>
+
+                      <input
+                        type="range"
+                        min={pricingMode === "margin" ? 15 : 25}
+                        max={pricingMode === "margin" ? 85 : 400}
+                        step="5"
+                        value={targetRatePercent}
+                        onChange={(e) => setTargetRatePercent(parseInt(e.target.value) || 50)}
+                        className="w-full accent-[#D4A55A] cursor-pointer"
+                      />
+
+                      {/* Botones de preset de margen */}
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                        {(pricingMode === "margin" ? [30, 40, 50, 60, 70] : [100, 150, 200, 300, 400]).map((pct) => (
+                          <button
+                            key={pct}
+                            type="button"
+                            onClick={() => setTargetRatePercent(pct)}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold transition-all cursor-pointer ${
+                              targetRatePercent === pct
+                                ? "bg-[#D4A55A] text-[#050B1A]"
+                                : "bg-[#0B1730] text-[#C5B499] hover:text-[#F4EAD7] border border-[#D4A55A]/20"
+                            }`}
+                          >
+                            {pricingMode === "margin"
+                              ? `${pct}%`
+                              : pct === 100
+                              ? "x2"
+                              : pct === 150
+                              ? "x2.5"
+                              : pct === 200
+                              ? "x3"
+                              : pct === 300
+                              ? "x4"
+                              : "x5"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-[#0B1730] border border-[#D4A55A]/15 text-[11px] text-[#C5B499] space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span>Ganancia bruta estimada:</span>
+                      <strong className="font-mono text-[#E6BF76]">${calculation?.grossProfit ?? calculation?.unitProfit ?? 0} UYU</strong>
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] text-[#A0AEC0]">
+                      <span>Margen neto resultante:</span>
+                      <span className="font-mono">{(calculation?.actualMarginPercent ?? calculation?.effectiveMarginPercent ?? 0).toFixed(1)}%</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* SECCIÓN 5: AJUSTES ADICIONALES (YA NO OCULTO - DIRECTAMENTE VISIBLE) */}
+                <div className="bg-[#050B1A]/80 border border-[#D4A55A]/25 rounded-2xl p-4 md:p-5 flex flex-col justify-between space-y-3.5">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between pb-2 border-b border-[#D4A55A]/15">
+                      <div className="flex items-center gap-2">
+                        <Sliders className="h-4 w-4 text-[#D4A55A]" />
+                        <span className="text-xs font-serif font-bold text-[#E6BF76]">
+                          Opciones Adicionales
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-[#A0AEC0]">Mano de obra, packaging y extras</span>
+                    </div>
+
+                    {/* Mano de obra y packaging en 3 columnas */}
+                    <div className="grid grid-cols-3 gap-2">
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-[#A0AEC0] uppercase">Prep. archivo/cama (min)</label>
+                        <label className="text-[10px] font-bold text-[#A0AEC0] uppercase truncate block" title="Preparación de archivo y cama en minutos">
+                          Prep. (min)
+                        </label>
                         <input
                           type="number"
                           min="0"
                           value={prepMinutes}
                           onChange={(e) => setPrepMinutes(Math.max(0, parseInt(e.target.value) || 0))}
-                          className="w-full px-3 py-2 rounded-xl text-xs bg-[#0B1730] border border-[#D4A55A]/30 text-[#F4EAD7] focus:outline-none"
+                          className="w-full px-2.5 py-1.5 rounded-xl text-xs font-mono font-bold bg-[#0B1730] border border-[#D4A55A]/30 text-[#F4EAD7] focus:outline-none focus:border-[#E6BF76]"
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-[#A0AEC0] uppercase">Postprocesado (min)</label>
+                        <label className="text-[10px] font-bold text-[#A0AEC0] uppercase truncate block" title="Postprocesado y limpieza en minutos">
+                          Postproc. (min)
+                        </label>
                         <input
                           type="number"
                           min="0"
                           value={postMinutes}
                           onChange={(e) => setPostMinutes(Math.max(0, parseInt(e.target.value) || 0))}
-                          className="w-full px-3 py-2 rounded-xl text-xs bg-[#0B1730] border border-[#D4A55A]/30 text-[#F4EAD7] focus:outline-none"
+                          className="w-full px-2.5 py-1.5 rounded-xl text-xs font-mono font-bold bg-[#0B1730] border border-[#D4A55A]/30 text-[#F4EAD7] focus:outline-none focus:border-[#E6BF76]"
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-[#A0AEC0] uppercase">Packaging ($ UYU)</label>
+                        <label className="text-[10px] font-bold text-[#A0AEC0] uppercase truncate block" title="Costo de caja o bolsa">
+                          Pack ($ UYU)
+                        </label>
                         <input
                           type="number"
                           min="0"
                           value={packagingCost}
                           onChange={(e) => setPackagingCost(Math.max(0, parseFloat(e.target.value) || 0))}
-                          className="w-full px-3 py-2 rounded-xl text-xs bg-[#0B1730] border border-[#D4A55A]/30 text-[#F4EAD7] focus:outline-none"
+                          className="w-full px-2.5 py-1.5 rounded-xl text-xs font-mono font-bold bg-[#0B1730] border border-[#D4A55A]/30 text-[#F4EAD7] focus:outline-none focus:border-[#E6BF76]"
                         />
                       </div>
                     </div>
 
-                    {/* Extras */}
-                    <div className="space-y-2 pt-2 border-t border-[#D4A55A]/10">
+                    {/* Extras / Insumos no 3D */}
+                    <div className="space-y-2 pt-1 border-t border-[#D4A55A]/10">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-[#C5B499]">Insumos no 3D (Tornillos, imanes, adhesivos):</span>
+                        <span className="text-[11px] font-bold text-[#C5B499]">Insumos no 3D:</span>
                         <button
                           type="button"
                           onClick={addExtra}
@@ -1035,74 +1201,56 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
                         </button>
                       </div>
 
-                      {extras.length > 0 && (
-                        <div className="space-y-2">
+                      {extras.length > 0 ? (
+                        <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1">
                           {extras.map((ex) => (
-                            <div key={ex.id} className="flex items-center gap-2">
+                            <div key={ex.id} className="flex items-center gap-1.5">
                               <input
                                 type="text"
                                 value={ex.name}
                                 onChange={(e) => updateExtra(ex.id, "name", e.target.value)}
-                                placeholder="Nombre (ej. Imán de Neodimio)"
-                                className="flex-1 px-3 py-1.5 text-xs rounded-xl bg-[#0B1730] border border-[#D4A55A]/30 text-[#F4EAD7]"
+                                placeholder="Nombre (ej. Imán)"
+                                className="flex-1 min-w-0 px-2.5 py-1 text-xs rounded-lg bg-[#0B1730] border border-[#D4A55A]/30 text-[#F4EAD7]"
                               />
-                              <div className="flex items-center gap-1 w-24">
-                                <span className="text-[11px] text-[#A0AEC0]">$</span>
+                              <div className="flex items-center gap-1 w-20 shrink-0">
+                                <span className="text-[10px] text-[#A0AEC0]">$</span>
                                 <input
                                   type="number"
                                   value={ex.unitCost}
                                   onChange={(e) => updateExtra(ex.id, "unitCost", parseFloat(e.target.value) || 0)}
-                                  className="w-full px-2 py-1.5 text-xs rounded-xl bg-[#0B1730] border border-[#D4A55A]/30 text-[#F4EAD7] text-right font-mono"
+                                  className="w-full px-1.5 py-1 text-xs rounded-lg bg-[#0B1730] border border-[#D4A55A]/30 text-[#F4EAD7] text-right font-mono"
                                 />
                               </div>
-                              <div className="flex items-center gap-1 w-16">
-                                <span className="text-[11px] text-[#A0AEC0]">x</span>
+                              <div className="flex items-center gap-1 w-14 shrink-0">
+                                <span className="text-[10px] text-[#A0AEC0]">x</span>
                                 <input
                                   type="number"
                                   value={ex.quantity}
                                   onChange={(e) => updateExtra(ex.id, "quantity", parseInt(e.target.value) || 1)}
-                                  className="w-full px-2 py-1.5 text-xs rounded-xl bg-[#0B1730] border border-[#D4A55A]/30 text-[#F4EAD7] text-right font-mono"
+                                  className="w-full px-1.5 py-1 text-xs rounded-lg bg-[#0B1730] border border-[#D4A55A]/30 text-[#F4EAD7] text-right font-mono"
                                 />
                               </div>
                               <button
                                 type="button"
                                 onClick={() => removeExtra(ex.id)}
-                                className="text-rose-400 hover:text-rose-300 p-1.5 cursor-pointer"
+                                className="text-rose-400 hover:text-rose-300 p-1 cursor-pointer shrink-0"
+                                title="Eliminar componente"
                               >
-                                <Trash2 className="h-4 w-4" />
+                                <Trash2 className="h-3.5 w-3.5" />
                               </button>
                             </div>
                           ))}
                         </div>
+                      ) : (
+                        <p className="text-[10px] text-[#A0AEC0] italic">
+                          Opcional: agrega imanes, tornillos, inserts o adhesivos.
+                        </p>
                       )}
                     </div>
-
-                    {/* Identificación opcional (nombre/código opcional para cuando se quiera guardar) */}
-                    <div className="pt-3 border-t border-[#D4A55A]/10 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-[#A0AEC0]">
-                          Nombre y código para historial (100% opcional):
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <input
-                          type="text"
-                          value={productName}
-                          onChange={(e) => setProductName(e.target.value)}
-                          placeholder="Nombre opcional (ej. Soporte)"
-                          className="px-3 py-1.5 text-xs rounded-xl bg-[#0B1730] border border-[#D4A55A]/30 text-[#F4EAD7]"
-                        />
-                        <input
-                          type="text"
-                          value={sku}
-                          onChange={(e) => setSku(e.target.value)}
-                          placeholder="Código / SKU opcional"
-                          className="px-3 py-1.5 text-xs rounded-xl bg-[#0B1730] border border-[#D4A55A]/30 text-[#F4EAD7]"
-                        />
-                      </div>
-                    </div>
                   </div>
-                )}
+
+
+                </div>
               </div>
 
             </div>
@@ -1121,7 +1269,7 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
                   </span>
                 </div>
                 <span className="px-2.5 py-0.5 rounded-full bg-[#D4A55A]/15 text-[#E6BF76] border border-[#D4A55A]/30 text-[10px] font-mono font-bold">
-                  {filamentWeightGrams}g • {calculation.totalPrintHours.toFixed(1)}h
+                  {filamentWeightGrams}g • {(calculation?.totalPrintHours ?? 0).toFixed(1)}h
                 </span>
               </div>
 
@@ -1240,89 +1388,164 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
               {/* DESGLOSE TRANSPARENTE DEL COSTO DE LA PIEZA */}
               <div className="space-y-2 border-t border-[#D4A55A]/20 pt-4">
                 <span className="text-[11px] uppercase tracking-wider font-serif font-bold text-[#E6BF76] block">
-                  Desglose del Costo de la Pieza
+                  Desglose de Producción
                 </span>
-                <div className="space-y-1.5 text-xs text-[#C5B499]">
-                  <div className="flex justify-between">
-                    <span>Filamento ({filamentWeightGrams}g):</span>
-                    <span className="font-mono text-[#F4EAD7]">${calculation.filamentCost} UYU</span>
+                <div className="space-y-2 text-xs text-[#C5B499]">
+                  {/* Inversión Material */}
+                  <div className="bg-[#050B1A]/70 p-2.5 rounded-xl border border-[#D4A55A]/15 space-y-1">
+                    <div className="flex justify-between font-bold text-[#F4EAD7]">
+                      <span className="flex items-center gap-1.5">
+                        <Layers className="h-3 w-3 text-[#D4A55A]" />
+                        <span>Inversión Material:</span>
+                      </span>
+                      <span className="font-mono text-[#E6BF76]">
+                        ${(Number(calculation?.filamentCost || 0) + Number(calculation?.failureCost || 0)).toFixed(2)} UYU
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-[10px] text-[#A0AEC0] pl-4">
+                      <span>• Filamento ({filamentWeightGrams}g):</span>
+                      <span className="font-mono">${Number(calculation?.filamentCost || 0).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-[10px] text-[#A0AEC0] pl-4">
+                      <span>• Fallas estimadas ({effectiveFailureRate}%):</span>
+                      <span className="font-mono text-[#E6BF76]">+${Number(calculation?.failureCost || 0).toFixed(2)}</span>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span>Electricidad ({calculation.totalPrintHours.toFixed(1)}h):</span>
-                    <span className="font-mono text-[#F4EAD7]">${calculation.electricityCost} UYU</span>
+
+                  {/* Luz, Desgaste y Mantenimiento */}
+                  <div className="bg-[#050B1A]/70 p-2.5 rounded-xl border border-[#D4A55A]/15 space-y-1">
+                    <div className="flex justify-between font-bold text-[#F4EAD7]">
+                      <span className="flex items-center gap-1.5">
+                        <Zap className="h-3 w-3 text-[#D4A55A]" />
+                        <span>Luz, Desgaste y Mantenimiento:</span>
+                      </span>
+                      <span className="font-mono text-[#E6BF76]">
+                        ${(Number(calculation?.electricityCost || 0) + Number(calculation?.machineDepreciationCost || 0) + Number(calculation?.maintenanceCost || 0)).toFixed(2)} UYU
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-[10px] text-[#A0AEC0] pl-4">
+                      <span>• Luz ({(calculation?.totalPrintHours ?? 0).toFixed(1)}h @ ${settings.electricityKwhPrice}/kWh):</span>
+                      <span className="font-mono">${Number(calculation?.electricityCost || 0).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-[10px] text-[#A0AEC0] pl-4">
+                      <span>• Desgaste máquina:</span>
+                      <span className="font-mono">${Number(calculation?.machineDepreciationCost || 0).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-[10px] text-[#A0AEC0] pl-4">
+                      <span>• Fondo repuestos:</span>
+                      <span className="font-mono">${Number(calculation?.maintenanceCost || 0).toFixed(2)}</span>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span>Desgaste máquina ({calculation.totalPrintHours.toFixed(1)}h):</span>
-                    <span className="font-mono text-[#F4EAD7]">${calculation.machineDepreciationCost} UYU</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Mantenimiento & lubricación:</span>
-                    <span className="font-mono text-[#F4EAD7]">${calculation.maintenanceCost} UYU</span>
-                  </div>
-                  <div className="flex justify-between text-[#E6BF76]">
-                    <span>Fallas estimadas ({currentPrinter?.failureRatePercent || settings.defaultFailureRatePercent}%):</span>
-                    <span className="font-mono text-[#E6BF76]">${calculation.failureCost} UYU</span>
-                  </div>
-                  {calculation.laborCost > 0 && (
-                    <div className="flex justify-between">
-                      <span>Mano de obra (prep/post):</span>
-                      <span className="font-mono text-[#F4EAD7]">${calculation.laborCost} UYU</span>
+
+                  {/* Otros gastos / Extras */}
+                  {(Number(calculation?.laborCost || 0) > 0 || Number(calculation?.packagingCost || 0) > 0 || Number(calculation?.extrasCost || 0) > 0) && (
+                    <div className="bg-[#050B1A]/70 p-2.5 rounded-xl border border-[#D4A55A]/15 space-y-1">
+                      <div className="flex justify-between font-bold text-[#F4EAD7]">
+                        <span>Otros Gastos (Pack/Post/Extras):</span>
+                        <span className="font-mono text-[#E6BF76]">
+                          ${(Number(calculation?.laborCost || 0) + Number(calculation?.packagingCost || 0) + Number(calculation?.extrasCost || 0)).toFixed(2)} UYU
+                        </span>
+                      </div>
+                      {Number(calculation?.laborCost || 0) > 0 && (
+                        <div className="flex justify-between text-[10px] text-[#A0AEC0] pl-4">
+                          <span>• Mano de obra:</span>
+                          <span className="font-mono">${Number(calculation.laborCost).toFixed(2)}</span>
+                        </div>
+                      )}
+                      {Number(calculation?.packagingCost || 0) > 0 && (
+                        <div className="flex justify-between text-[10px] text-[#A0AEC0] pl-4">
+                          <span>• Packaging:</span>
+                          <span className="font-mono">${Number(calculation.packagingCost).toFixed(2)}</span>
+                        </div>
+                      )}
+                      {Number(calculation?.extrasCost || 0) > 0 && (
+                        <div className="flex justify-between text-[10px] text-[#A0AEC0] pl-4">
+                          <span>• Insumos extras:</span>
+                          <span className="font-mono">${Number(calculation.extrasCost).toFixed(2)}</span>
+                        </div>
+                      )}
                     </div>
                   )}
-                  {calculation.packagingCost > 0 && (
-                    <div className="flex justify-between">
-                      <span>Packaging:</span>
-                      <span className="font-mono text-[#F4EAD7]">${calculation.packagingCost} UYU</span>
-                    </div>
-                  )}
-                  {calculation.extrasCost > 0 && (
-                    <div className="flex justify-between text-[#E6BF76]">
-                      <span>Insumos extras:</span>
-                      <span className="font-mono text-[#E6BF76]">${calculation.extrasCost} UYU</span>
-                    </div>
-                  )}
+
                   <div className="flex justify-between font-serif font-black text-[#F4EAD7] border-t border-[#D4A55A]/25 pt-2 text-sm">
-                    <span>Costo Real Total:</span>
-                    <span className="font-mono text-[#E6BF76]">${calculation.unitRealCost} UYU</span>
+                    <span>Costo Total Neto:</span>
+                    <span className="font-mono text-[#E6BF76] text-base">${Number(calculation?.unitRealCost || 0).toFixed(2)} UYU</span>
                   </div>
                 </div>
               </div>
 
-              {/* BOTONES DE ACCIÓN (GUARDAR O CONVERTIR) */}
+              {/* BOTONES DE ACCIÓN: GENERAR PDF, AGREGAR PIEZA, HISTORIAL */}
               <div className="space-y-2.5 pt-2 border-t border-[#D4A55A]/20">
+                {/* 1. BOTÓN PRINCIPAL: GENERAR COTIZACIÓN PDF */}
+                <button
+                  type="button"
+                  onClick={() => handleOpenCommercialQuoteModal(true)}
+                  className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-[#D4A55A] via-[#E6BF76] to-[#D4A55A] text-[#050B1A] font-serif font-black text-xs uppercase tracking-wider transition-all shadow-[0_4px_25px_rgba(212,165,90,0.35)] hover:shadow-[0_4px_30px_rgba(230,191,118,0.5)] hover:brightness-110 active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <FileText className="h-4 w-4" />
+                  <span>Generar Cotización PDF</span>
+                </button>
+
+                {/* 2. BOTÓN SECUNDARIO: AGREGAR A COTIZACIÓN MULTI-PIEZA */}
+                <button
+                  type="button"
+                  onClick={handleAddCurrentPieceToCommercialQuote}
+                  className="w-full py-2.5 rounded-2xl bg-[#050B1A] hover:bg-[#D4A55A]/15 text-[#E6BF76] border border-[#D4A55A]/40 font-bold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>
+                    Agregar Pieza a Cotización {commercialCartItems.length > 0 && `(${commercialCartItems.length})`}
+                  </span>
+                </button>
+
+                {/* BADGE SI HAY PIEZAS EN COLA */}
+                {commercialCartItems.length > 0 && (
+                  <div className="p-2.5 rounded-xl bg-[#D4A55A]/10 border border-[#D4A55A]/30 flex items-center justify-between text-xs">
+                    <span className="text-[#C5B499]">
+                      📋 <strong className="text-[#E6BF76]">{commercialCartItems.length}</strong> {commercialCartItems.length === 1 ? "pieza lista" : "piezas listas"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenCommercialQuoteModal(false)}
+                      className="text-[#E6BF76] hover:underline font-bold text-[11px] cursor-pointer"
+                    >
+                      Ver y Generar PDF →
+                    </button>
+                  </div>
+                )}
+
+                {/* 3. GUARDAR EN HISTORIAL */}
                 <button
                   type="button"
                   disabled={actionLoading}
                   onClick={handleSaveQuote}
-                  className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-[#D4A55A] via-[#E6BF76] to-[#D4A55A] text-[#050B1A] font-serif font-bold text-xs uppercase tracking-wider transition-all shadow-[0_4px_20px_rgba(212,165,90,0.25)] hover:shadow-[0_4px_25px_rgba(230,191,118,0.4)] hover:brightness-105 active:scale-95 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  className="w-full py-2.5 rounded-2xl bg-[#050B1A]/80 hover:bg-white/5 text-[#A0AEC0] hover:text-[#F4EAD7] border border-[#D4A55A]/20 font-bold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                 >
-                  <Save className="h-4 w-4" />
-                  <span>{actionLoading ? "Guardando..." : "Guardar en Historial de Cotizaciones"}</span>
-                </button>
-
-                <button
-                  type="button"
-                  disabled={actionLoading}
-                  onClick={async () => {
-                    await handleSaveQuote();
-                    setTimeout(async () => {
-                      const res = await fetch("/api/3d/quotes?limit=1");
-                      const d = await res.json();
-                      if (d.quotes && d.quotes[0]) {
-                        await handleConvertToProduct(d.quotes[0].id);
-                      }
-                    }, 500);
-                  }}
-                  className="w-full py-3 rounded-2xl bg-[#050B1A] hover:bg-[#D4A55A]/10 text-[#E6BF76] font-bold text-xs transition-all border border-[#D4A55A]/40 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                >
-                  <Sparkles className="h-4 w-4 text-[#D4A55A]" />
-                  <span>Crear Producto en Catálogo Juem</span>
+                  <Save className="h-3.5 w-3.5" />
+                  <span>{actionLoading ? "Guardando..." : "Guardar en Historial Interno"}</span>
                 </button>
               </div>
 
             </div>
           </div>
         </div>
+      )}
+
+      {/* ==========================================
+          TAB: COTIZACIONES COMERCIALES PDF (JUEM)
+          ========================================== */}
+      {activeTab === "commercial_quotes" && (
+        <CommercialQuotesListView
+          onOpenModal={(quoteToEdit) => {
+            setSelectedCommercialQuote(quoteToEdit || null);
+            setShowCommercialModal(true);
+          }}
+          onOpenCompanySettings={() => setShowCompanySettingsModal(true)}
+          companySettings={companySettings}
+          authToken={authToken}
+          showToast={(msg, type) => showToast(msg, type === "error" ? "error" : "success")}
+          refreshTrigger={commercialRefreshTrigger}
+        />
       )}
 
       {/* ==========================================
@@ -1416,14 +1639,6 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
                             </button>
                             <button
                               type="button"
-                              onClick={() => handleConvertToProduct(q.id)}
-                              title="Crear producto Juem"
-                              className="p-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500 hover:text-white transition-all text-emerald-400 border border-emerald-500/30 cursor-pointer"
-                            >
-                              <Sparkles className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              type="button"
                               onClick={() => {
                                 setDeleteTarget({
                                   type: "quote",
@@ -1489,8 +1704,8 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {printers.map((p) => {
               const machineCostPerHour = (
-                (Number(p.purchasePrice) * (p.currency === "USD" ? settings.exchangeRateUsdUyu : 1)) /
-                p.lifespanHours
+                ((Number(p.purchasePrice) || 0) * (p.currency === "USD" ? (Number(settings?.exchangeRateUsdUyu) || 42.5) : 1)) /
+                Math.max(1, Number(p.lifespanHours) || 3000)
               ).toFixed(1);
 
               return (
@@ -1865,6 +2080,58 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
                   className="w-full px-3 py-2 rounded-xl bg-[#050B1A] border border-[#D4A55A]/30 text-[#F4EAD7]"
                 />
               </div>
+
+              <div className="space-y-1">
+                <label className="font-bold text-[#C5B499]">Tasa de Fallas Estimada (%)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.5"
+                  value={editingPrinter.failureRatePercent ?? 4}
+                  onChange={(e) => setEditingPrinter({ ...editingPrinter, failureRatePercent: parseFloat(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 rounded-xl bg-[#050B1A] border border-[#D4A55A]/30 text-[#E6BF76] font-bold"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-bold text-[#C5B499]">Mantenimiento ($ / hora)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={editingPrinter.maintenanceCostPerHour ?? 5}
+                  onChange={(e) => setEditingPrinter({ ...editingPrinter, maintenanceCostPerHour: parseFloat(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 rounded-xl bg-[#050B1A] border border-[#D4A55A]/30 text-[#F4EAD7]"
+                />
+              </div>
+
+              <div className="col-span-2 space-y-1">
+                <label className="font-bold text-[#C5B499]">Volumen de Impresión (X x Y x Z mm)</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <input
+                    type="number"
+                    value={editingPrinter.buildVolumeX ?? 180}
+                    onChange={(e) => setEditingPrinter({ ...editingPrinter, buildVolumeX: parseInt(e.target.value) || 0 })}
+                    placeholder="X (mm)"
+                    className="w-full px-3 py-2 rounded-xl bg-[#050B1A] border border-[#D4A55A]/30 text-[#F4EAD7]"
+                  />
+                  <input
+                    type="number"
+                    value={editingPrinter.buildVolumeY ?? 180}
+                    onChange={(e) => setEditingPrinter({ ...editingPrinter, buildVolumeY: parseInt(e.target.value) || 0 })}
+                    placeholder="Y (mm)"
+                    className="w-full px-3 py-2 rounded-xl bg-[#050B1A] border border-[#D4A55A]/30 text-[#F4EAD7]"
+                  />
+                  <input
+                    type="number"
+                    value={editingPrinter.buildVolumeZ ?? 180}
+                    onChange={(e) => setEditingPrinter({ ...editingPrinter, buildVolumeZ: parseInt(e.target.value) || 0 })}
+                    placeholder="Z (mm)"
+                    className="w-full px-3 py-2 rounded-xl bg-[#050B1A] border border-[#D4A55A]/30 text-[#F4EAD7]"
+                  />
+                </div>
+              </div>
             </div>
 
             <div className="flex justify-end gap-2 pt-3 border-t border-[#D4A55A]/20">
@@ -2088,6 +2355,51 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
           </div>
         </div>
       )}
+
+      {/* MODAL DE COTIZACIÓN COMERCIAL PDF (MULTI-PIEZA) */}
+      <CommercialQuoteModal
+        isOpen={showCommercialModal}
+        onClose={() => setShowCommercialModal(false)}
+        quote={selectedCommercialQuote}
+        initialItems={commercialCartItems.length > 0 ? commercialCartItems : undefined}
+        companySettings={companySettings}
+        authToken={authToken}
+        showToast={(msg, type) => showToast(msg, type === "error" ? "error" : "success")}
+        onSaveSuccess={(savedQuote) => {
+          setSelectedCommercialQuote(savedQuote);
+          setCommercialCartItems([]);
+          setCommercialRefreshTrigger((prev) => prev + 1);
+        }}
+        onConvertToOrder={async (quoteId) => {
+          try {
+            const token = getActiveToken();
+            const res = await fetch(`/api/3d/commercial-quotes/${quoteId}/convert-to-order`, {
+              method: "POST",
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            const data = await res.json();
+            if (data.success) {
+              showToast(data.message || "Cotización convertida en pedido con éxito.", "success");
+              setShowCommercialModal(false);
+              setCommercialRefreshTrigger((prev) => prev + 1);
+              if (onProductCreated) onProductCreated();
+            } else {
+              showToast(data.message || "Error al convertir", "error");
+            }
+          } catch (err: any) {
+            showToast(err.message || "Error", "error");
+          }
+        }}
+      />
+
+      {/* MODAL DE CONFIGURACIÓN DE JUEM (LOGO, CONTACTO, CONDICIONES) */}
+      <CompanyQuoteSettingsModal
+        isOpen={showCompanySettingsModal}
+        onClose={() => setShowCompanySettingsModal(false)}
+        authToken={authToken}
+        onSaved={(updated) => setCompanySettings(updated)}
+        showToast={(msg, type) => showToast(msg, type === "error" ? "error" : "success")}
+      />
     </div>
   );
 };

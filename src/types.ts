@@ -620,3 +620,77 @@ export interface Quote3D {
   updatedAt?: string;
 }
 
+export type CommercialQuoteStatus =
+  | "borrador"
+  | "enviada"
+  | "aprobada"
+  | "rechazada"
+  | "vencida"
+  | "convertida";
+
+export interface CommercialQuoteTechnicalOptions {
+  showMaterial: boolean;
+  showColor: boolean;
+  showWeight: boolean;
+  showPrintTime: boolean;
+}
+
+export interface CommercialQuoteItem {
+  id?: string;
+  itemIndex: number;
+  pieceName: string;
+  internalCode?: string;
+  quantity: number;
+  material?: string;
+  color?: string;
+  weightPerUnitGrams?: number;
+  totalWeightGrams?: number;
+  printTimeHours?: number;
+  printTimeFormatted?: string;
+  totalPrintTimeHours?: number;
+  unitPrice: number;
+  subtotalPrice: number;
+  internalCostBreakdown?: Record<string, any>;
+}
+
+export interface CompanyQuoteSettings {
+  companyName: string;
+  tradeName: string;
+  phone: string;
+  whatsapp: string;
+  email: string;
+  website: string;
+  address: string;
+  logoUrl?: string;
+  defaultValidityDays: number;
+  defaultConditions: string;
+}
+
+export interface CommercialQuote3D {
+  id: string;
+  quoteNumber: string;
+  correlativeSeq: number;
+  year: number;
+  customerName: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  createdAt: string;
+  validUntil?: string;
+  validityDays: number;
+  status: CommercialQuoteStatus;
+  subtotal: number;
+  discountAmount: number;
+  shippingCost: number;
+  totalAmount: number;
+  notes?: string;
+  conditions?: string;
+  showTechnicalDetails: CommercialQuoteTechnicalOptions;
+  companySnapshot?: Partial<CompanyQuoteSettings>;
+  convertedOrderId?: string;
+  items: CommercialQuoteItem[];
+  itemCount?: number;
+  totalPieces?: number;
+  updatedAt?: string;
+}
+
+
