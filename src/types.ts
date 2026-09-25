@@ -651,6 +651,7 @@ export interface CommercialQuoteItem {
   unitPrice: number;
   subtotalPrice: number;
   internalCostBreakdown?: Record<string, any>;
+  imageUrl?: string;
 }
 
 export interface CompanyQuoteSettings {

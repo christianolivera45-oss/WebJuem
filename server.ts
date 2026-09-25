@@ -7808,7 +7808,17 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       let pIdx = 1;
 
       if (search.trim()) {
-        query += ` AND (LOWER(q.quote_number) LIKE $${pIdx} OR LOWER(q.customer_name) LIKE $${pIdx} OR LOWER(COALESCE(q.customer_phone, '')) LIKE $${pIdx} OR LOWER(COALESCE(q.customer_email, '')) LIKE $${pIdx})`;
+        query += ` AND (
+          LOWER(q.quote_number) LIKE $${pIdx} 
+          OR LOWER(q.customer_name) LIKE $${pIdx} 
+          OR LOWER(COALESCE(q.customer_phone, '')) LIKE $${pIdx} 
+          OR LOWER(COALESCE(q.customer_email, '')) LIKE $${pIdx}
+          OR EXISTS (
+            SELECT 1 FROM public.commercial_quote_items_3d i2 
+            WHERE i2.quote_id = q.id 
+            AND (LOWER(i2.piece_name) LIKE $${pIdx} OR LOWER(COALESCE(i2.internal_code, '')) LIKE $${pIdx})
+          )
+        )`;
         params.push(`%${search.trim().toLowerCase()}%`);
         pIdx++;
       }
@@ -8399,7 +8409,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
             address: "Montevideo / Canelones, Uruguay",
             logoUrl: "",
             defaultValidityDays: 15,
-            defaultConditions: `• La cotización tiene una validez de 15 días a partir de su emisión.\n• El plazo de fabricación se confirmará al aprobar el pedido y verificar disponibilidad de máquinas.\n• Los tiempos pueden variar según la cantidad de piezas y demanda del taller.\n• El precio final corresponde estrictamente a las especificaciones y materiales indicados.\n• Seña habitual del 50% al confirmar el trabajo y saldo contra entrega.`
+            defaultConditions: `• Validez de la cotización: 15 días a partir de su emisión.\n• Plazo de entrega: A coordinar según volumen del pedido y disponibilidad del taller 3D.\n• Forma de pago: 50% de seña para iniciar la producción y saldo restante contra entrega.\n• Cuentas para pago / transferencia bancaria JUEM:\n  - Banco / Mercado Pago: N° de cuenta 1004278620163\n  - Redpagos y Abitab: Joana Baptista (C.I. 4.051.645-7)\n• Enviar comprobante al WhatsApp (+598 99 234 567) indicando el N° de cotización para confirmar la orden.`
           }
         });
       }

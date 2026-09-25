@@ -32,6 +32,7 @@ import {
 import { CommercialQuoteModal } from "./CommercialQuoteModal";
 import { CompanyQuoteSettingsModal } from "./CompanyQuoteSettingsModal";
 import { CommercialQuotesListView } from "./CommercialQuotesListView";
+import { ProductSearchProModal, SelectedProductPayload } from "./ProductSearchProModal";
 
 interface Dashboard3DCalculatorProps {
   authToken: string;
@@ -107,6 +108,7 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
 
   // Commercial Multi-Item PDF Quotes state
   const [showCommercialModal, setShowCommercialModal] = useState(false);
+  const [showProProductSearchModal, setShowProProductSearchModal] = useState(false);
   const [selectedCommercialQuote, setSelectedCommercialQuote] = useState<CommercialQuote3D | null>(null);
   const [commercialCartItems, setCommercialCartItems] = useState<CommercialQuoteItem[]>([]);
   const [showCompanySettingsModal, setShowCompanySettingsModal] = useState(false);
@@ -518,6 +520,30 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
     };
     setCommercialCartItems((prev) => [...prev, newItem]);
     showToast(`¡Pieza agregada a la cotización multi-pieza! (${commercialCartItems.length + 1} en total)`);
+  };
+
+  const handleAddProductFromProSearchToCart = (payload: SelectedProductPayload) => {
+    const unitP = Number(payload.price || 0);
+    const qty = Number(payload.quantity || 1);
+    const newItem: CommercialQuoteItem = {
+      itemIndex: commercialCartItems.length + 1,
+      pieceName: payload.name,
+      internalCode: payload.sku || undefined,
+      quantity: qty,
+      material: payload.material || "PLA+",
+      color: payload.variant?.color || "Estándar",
+      weightPerUnitGrams: 0,
+      totalWeightGrams: 0,
+      printTimeHours: 0,
+      printTimeFormatted: "0h",
+      totalPrintTimeHours: 0,
+      unitPrice: unitP,
+      subtotalPrice: unitP * qty,
+      imageUrl: payload.imageUrl,
+      internalCostBreakdown: {}
+    };
+    setCommercialCartItems((prev) => [...prev, newItem]);
+    showToast(`Artículo "${payload.name}" con foto agregado a la cotización (${commercialCartItems.length + 1} piezas)`);
   };
 
 
@@ -2359,7 +2385,10 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
       {/* MODAL DE COTIZACIÓN COMERCIAL PDF (MULTI-PIEZA) */}
       <CommercialQuoteModal
         isOpen={showCommercialModal}
-        onClose={() => setShowCommercialModal(false)}
+        onClose={() => {
+          setShowCommercialModal(false);
+          setSelectedCommercialQuote(null);
+        }}
         quote={selectedCommercialQuote}
         initialItems={commercialCartItems.length > 0 ? commercialCartItems : undefined}
         companySettings={companySettings}
@@ -2399,6 +2428,15 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
         authToken={authToken}
         onSaved={(updated) => setCompanySettings(updated)}
         showToast={(msg, type) => showToast(msg, type === "error" ? "error" : "success")}
+      />
+
+      {/* BUSCADOR PRO DE ARTÍCULOS CON FOTO */}
+      <ProductSearchProModal
+        isOpen={showProProductSearchModal}
+        onClose={() => setShowProProductSearchModal(false)}
+        onSelectProduct={handleAddProductFromProSearchToCart}
+        existingItems={commercialCartItems}
+        title="Buscador Pro de Artículos — Catálogo JUEM con Fotos"
       />
     </div>
   );

@@ -481,6 +481,8 @@ export default function App() {
   const [showAIAssistantSidebar, setShowAIAssistantSidebar] = useState(false);
   const [showAdminDevicePreview, setShowAdminDevicePreview] = useState(true);
   const [mobileAdminMenuOpen, setMobileAdminMenuOpen] = useState(false);
+  const [salesInitialFilter, setSalesInitialFilter] = useState<string>("all");
+  const [salesInitialOrderId, setSalesInitialOrderId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [tempSearchQuery, setTempSearchQuery] = useState("");
   
@@ -6996,7 +6998,11 @@ export default function App() {
                   </div>
                   <div className="space-y-1">
                     <button
-                      onClick={() => navigateAdminSection("sales")}
+                      onClick={() => {
+                        setSalesInitialFilter("all");
+                        setSalesInitialOrderId(null);
+                        navigateAdminSection("sales");
+                      }}
                       className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-xs font-bold tracking-wide transition-all duration-300 hover:translate-x-0.5 cursor-pointer ${
                         adminSection === "sales"
                           ? "bg-gradient-to-r from-[#D4AF37]/20 via-[#D4A55A]/12 to-transparent text-[#F3E5AB] border border-[#D4AF37]/45 shadow-[0_4px_20px_rgba(212,175,55,0.18)]"
@@ -7008,8 +7014,30 @@ export default function App() {
                         <span>Venta de Artículos</span>
                       </div>
                       {store.orders && store.orders.filter(o => o.status === "pedido_iniciado" || o.status === "pago_pendiente").length > 0 && (
-                        <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-[#D4AF37]/25 text-[#F3E5AB] border border-[#D4AF37]/40 shadow-[0_0_10px_rgba(212,175,55,0.3)] animate-pulse">
-                          {store.orders.filter(o => o.status === "pedido_iniciado" || o.status === "pago_pendiente").length}
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          title="Ir directo al pedido pendiente notificado"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const pendingOrders = store.orders.filter(o => o.status === "pedido_iniciado" || o.status === "pago_pendiente");
+                            setSalesInitialFilter("pendiente");
+                            setSalesInitialOrderId(pendingOrders[0]?.id || null);
+                            navigateAdminSection("sales");
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.stopPropagation();
+                              const pendingOrders = store.orders.filter(o => o.status === "pedido_iniciado" || o.status === "pago_pendiente");
+                              setSalesInitialFilter("pendiente");
+                              setSalesInitialOrderId(pendingOrders[0]?.id || null);
+                              navigateAdminSection("sales");
+                            }
+                          }}
+                          className="group/badge inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black bg-[#D4AF37]/25 hover:bg-[#D4AF37]/45 text-[#F3E5AB] border border-[#D4AF37]/40 hover:border-[#D4AF37] shadow-[0_0_10px_rgba(212,175,55,0.3)] hover:shadow-[0_0_15px_rgba(212,175,55,0.6)] animate-pulse hover:animate-none hover:scale-110 active:scale-95 transition-all cursor-pointer"
+                        >
+                          <span>{store.orders.filter(o => o.status === "pedido_iniciado" || o.status === "pago_pendiente").length}</span>
+                          <span className="text-[9px] text-[#F3E5AB]/70 group-hover/badge:text-[#F3E5AB] transition-transform group-hover/badge:translate-x-0.5">➜</span>
                         </span>
                       )}
                     </button>
@@ -7444,6 +7472,8 @@ export default function App() {
               <DashboardOrders
                 store={store}
                 onRefreshStore={async () => { await fetchStoreData(true); }}
+                initialStatusFilter={salesInitialFilter}
+                initialExpandedOrderId={salesInitialOrderId}
                 onUpdateStatus={async (id, newStatus) => {
                   try {
                     const response = await fetch(`/api/orders/${id}/status`, {

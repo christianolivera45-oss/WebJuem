@@ -233,11 +233,11 @@ export const CommercialQuotesListView: React.FC<CommercialQuotesListViewProps> =
         
         {/* Search & Status Filters */}
         <div className="flex flex-wrap items-center gap-3 flex-1">
-          <div className="relative w-full sm:w-72">
+          <div className="relative w-full sm:w-80">
             <Search className="h-4 w-4 absolute left-3.5 top-3 text-[#A0AEC0]" />
             <input
               type="text"
-              placeholder="Buscar por N°, cliente, tel..."
+              placeholder="Buscar por N°, cliente, tel, Pieza / Descripción..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full pl-10 pr-4 py-2 rounded-xl text-xs bg-[#050B1A] border border-[#D4A55A]/25 text-[#F4EAD7] focus:outline-none focus:border-[#E6BF76]"

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { ShopState, Order, Product, ProductVariant } from "../types";
 import { normalizeText } from "../utils/shopLogic.tsx";
 import { 
@@ -37,6 +37,8 @@ interface DashboardOrdersProps {
   onOrderCreated?: (newOrder: Order) => void;
   onOrderUpdated?: (updatedOrder: Order) => void;
   onRefreshStore?: () => Promise<void>;
+  initialStatusFilter?: string;
+  initialExpandedOrderId?: string | null;
 }
 
 export const DashboardOrders: React.FC<DashboardOrdersProps> = ({ 
@@ -45,10 +47,12 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
   onDeleteOrder,
   onOrderCreated,
   onOrderUpdated,
-  onRefreshStore
+  onRefreshStore,
+  initialStatusFilter,
+  initialExpandedOrderId
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>(initialStatusFilter || "all");
   const [branchFilter, setBranchFilter] = useState<string>("all");
   const [channelFilter, setChannelFilter] = useState<string>("all");
 
@@ -88,7 +92,26 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
   const [isSubmittingNewSale, setIsSubmittingNewSale] = useState(false);
   const [newSaleErrorMessage, setNewSaleErrorMessage] = useState<string | null>(null);
 
-  const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
+  const [expandedOrderId, setExpandedOrderId] = useState<string | null>(initialExpandedOrderId || null);
+
+  useEffect(() => {
+    if (initialStatusFilter !== undefined) {
+      setStatusFilter(initialStatusFilter);
+      setCurrentPage(1);
+    }
+  }, [initialStatusFilter]);
+
+  useEffect(() => {
+    if (initialExpandedOrderId) {
+      setExpandedOrderId(initialExpandedOrderId);
+      setTimeout(() => {
+        const el = document.getElementById(`order-row-${initialExpandedOrderId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }, 250);
+    }
+  }, [initialExpandedOrderId]);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isDeletingLoading, setIsDeletingLoading] = useState<string | null>(null);
@@ -1121,6 +1144,32 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
 
         </div>
 
+        {/* NOTIFICACIÓN DE FILTRO PENDIENTE DIRECTO */}
+        {statusFilter === "pendiente" && (
+          <div className="mx-5 mt-4 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-wrap items-center justify-between gap-3 text-xs text-amber-300 shadow-[0_0_20px_rgba(245,158,11,0.08)]">
+            <div className="flex items-center gap-2.5">
+              <span className="p-1.5 rounded-lg bg-amber-500/20 text-amber-400">
+                <Clock className="h-4 w-4 animate-pulse" />
+              </span>
+              <div>
+                <p className="font-bold text-amber-200">
+                  Acceso directo a órdenes pendientes de atención
+                </p>
+                <p className="text-[11px] text-amber-300/80">
+                  Mostrando {filteredOrders.length} pedido{filteredOrders.length === 1 ? "" : "s"} ({orders.filter(o => o.status === "pedido_iniciado" || o.status === "pago_pendiente").length} en espera de confirmación o preparación).
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => { setStatusFilter("all"); setCurrentPage(1); }}
+              className="px-3 py-1.5 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-zinc-700/60 text-xs font-bold transition-all cursor-pointer"
+            >
+              Ver todos los pedidos
+            </button>
+          </div>
+        )}
+
         {/* LIST TABLE CONTAINER */}
         {paginatedOrders.length === 0 ? (
           <div className="p-12 text-center">
@@ -1150,6 +1199,7 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
               <tbody className="divide-y divide-zinc-850/60">
                 {paginatedOrders.map((order) => {
                   const isExpanded = expandedOrderId === order.id;
+                  const isPending = order.status === "pedido_iniciado" || order.status === "pago_pendiente";
                   const statusInfo = getStatusLabelAndStyle(order.status);
                   
                   // Math breakdowns
@@ -1164,7 +1214,14 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
                   return (
                     <React.Fragment key={order.id}>
                       <tr 
-                        className={`hover:bg-zinc-800/30 cursor-pointer transition-all duration-300 border-b border-zinc-850/45 ${isExpanded ? 'bg-indigo-500/[0.04]' : ''}`} 
+                        id={`order-row-${order.id}`}
+                        className={`hover:bg-zinc-800/30 cursor-pointer transition-all duration-300 border-b border-zinc-850/45 ${
+                          isExpanded 
+                            ? (isPending 
+                                ? 'bg-amber-500/[0.08] ring-1 ring-amber-500/40 shadow-[0_0_15px_rgba(245,158,11,0.1)]' 
+                                : 'bg-indigo-500/[0.04]') 
+                            : ''
+                        }`} 
                         onClick={() => toggleRow(order.id)}
                       >
                         {/* ID / FECHA */}

@@ -12,11 +12,13 @@ export const DEFAULT_COMPANY_SETTINGS: CompanyQuoteSettings = {
   address: "Montevideo / Canelones, Uruguay",
   logoUrl: "",
   defaultValidityDays: 15,
-  defaultConditions: `• La cotización tiene una validez de 15 días a partir de su emisión.
-• El plazo de fabricación se confirmará al aprobar el pedido y verificar disponibilidad de máquinas.
-• Los tiempos pueden variar según la cantidad de piezas y demanda del taller.
-• El precio final corresponde estrictamente a las especificaciones y materiales indicados.
-• Seña habitual del 50% al confirmar el trabajo y saldo contra entrega.`
+  defaultConditions: `• Validez de la cotización: 15 días a partir de su emisión.
+• Plazo de entrega: A coordinar según volumen del pedido y disponibilidad del taller 3D.
+• Forma de pago: 50% de seña para iniciar la producción y saldo restante contra entrega.
+• Cuentas para pago / transferencia bancaria JUEM:
+  - Banco / Mercado Pago: N° de cuenta 1004278620163
+  - Redpagos y Abitab: Joana Baptista (C.I. 4.051.645-7)
+• Enviar comprobante al WhatsApp (+598 99 234 567) indicando el N° de cotización para confirmar la orden.`
 };
 
 /**
