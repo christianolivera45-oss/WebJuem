@@ -1526,17 +1526,39 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
 
                 {/* BADGE SI HAY PIEZAS EN COLA */}
                 {commercialCartItems.length > 0 && (
-                  <div className="p-2.5 rounded-xl bg-[#D4A55A]/10 border border-[#D4A55A]/30 flex items-center justify-between text-xs">
-                    <span className="text-[#C5B499]">
-                      📋 <strong className="text-[#E6BF76]">{commercialCartItems.length}</strong> {commercialCartItems.length === 1 ? "pieza lista" : "piezas listas"}
+                  <div className="p-2.5 rounded-xl bg-[#D4A55A]/10 border border-[#D4A55A]/30 flex items-center justify-between text-xs animate-in fade-in duration-150">
+                    <span className="text-[#C5B499] flex items-center gap-1.5">
+                      <span>📋</span>
+                      <span>
+                        <strong className="text-[#E6BF76]">{commercialCartItems.length}</strong>{" "}
+                        {commercialCartItems.length === 1 ? "pieza lista" : "piezas listas"}
+                      </span>
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenCommercialQuoteModal(false)}
-                      className="text-[#E6BF76] hover:underline font-bold text-[11px] cursor-pointer"
-                    >
-                      Ver y Generar PDF →
-                    </button>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenCommercialQuoteModal(false)}
+                        className="text-[#E6BF76] hover:underline font-bold text-[11px] cursor-pointer"
+                      >
+                        Ver y Generar PDF →
+                      </button>
+
+                      <span className="text-[#D4A55A]/40">•</span>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCommercialCartItems([]);
+                          showToast("Lista de piezas vaciada. Calculadora restablecida.", "success");
+                        }}
+                        className="text-[#A0AEC0] hover:text-rose-400 font-medium text-[11px] flex items-center gap-1 cursor-pointer transition-colors"
+                        title="Vaciar lista y dejar como al principio"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        <span>Vaciar</span>
+                      </button>
+                    </div>
                   </div>
                 )}
 
