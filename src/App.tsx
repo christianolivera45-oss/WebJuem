@@ -991,6 +991,7 @@ export default function App() {
 
   const [usernameInput, setUsernameInput] = useState("");
   const [passwordInput, setPasswordInput] = useState("");
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [loginError, setLoginError] = useState("");
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
 
@@ -3860,11 +3861,17 @@ export default function App() {
   const handleLoginSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setLoginError("");
+    const trimmedUser = usernameInput.trim();
+    const cleanPass = passwordInput.trim();
+    if (!trimmedUser || !cleanPass) {
+      setLoginError("Por favor ingresa tu usuario y contraseña.");
+      return;
+    }
     try {
       const res = await fetch("/api/admin/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: usernameInput, password: passwordInput })
+        body: JSON.stringify({ username: trimmedUser, password: cleanPass })
       });
 
       const data = await res.json();
@@ -3876,6 +3883,7 @@ export default function App() {
         setActiveTab("admin");
         setUsernameInput("");
         setPasswordInput("");
+        setShowLoginPassword(false);
         // Synchronize with active section subpath
         window.history.pushState(null, "", `/admin/${adminSection}`);
         showAdminToast("¡Sincronización de Sesión Establecida!", "success");
@@ -3897,7 +3905,11 @@ export default function App() {
 
   // Send whole storage state update to Server
   const saveStateToServer = async (updatedStore: ShopState, isBackground = false): Promise<boolean> => {
-    if (!authToken) return false;
+    const activeToken = authToken || localStorage.getItem("apex_admin_token");
+    if (!activeToken) return false;
+    if (!authToken && activeToken) {
+      setAuthToken(activeToken);
+    }
     if (!isBackground) {
       setSyncStatus("syncing");
       setSaving(true);
@@ -3907,7 +3919,7 @@ export default function App() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${authToken}`
+          "Authorization": `Bearer ${activeToken}`
         },
         body: JSON.stringify(updatedStore)
       });
@@ -4424,40 +4436,65 @@ export default function App() {
     showAdminToast(`Límite de stock bajo configurado: ${newThreshold} unidades.`, "success");
   };
 
-  const handleUpdateStockItem = async (item: any, field: string, value: any, reasonStr?: string) => {
+  const handleUpdateStockItem = async (item: any, field: string, value: any, reasonStr?: string): Promise<boolean> => {
     let originalStock = 0;
     if (field === "stockMontevideo") {
-      originalStock = item.stockMontevideo || 0;
+      originalStock = Number(item.stockMontevideo) || 0;
     } else if (field === "stockPinamar") {
-      originalStock = item.stockPinamar || 0;
+      originalStock = Number(item.stockPinamar) || 0;
     }
 
+    const numValue = Math.max(0, Math.round(parseInt(value) || 0));
+
+    // 1. Optimistic update in local store
     const updatedProducts = store.products.map(p => {
-      if (p.id !== item.productId) return p;
+      if (String(p.id) !== String(item.productId)) return p;
 
       const updatedProduct = { ...p };
 
       if (item.isVariant) {
+        let variantUpdated = false;
         updatedProduct.variants = (updatedProduct.variants || []).map(v => {
-          if (v.id !== item.variantId && v.sku !== item.sku) return v;
+          const match = 
+            (item.variantId && v.id && String(v.id) === String(item.variantId)) ||
+            (item.sku && v.sku && String(v.sku).trim().toUpperCase() === String(item.sku).trim().toUpperCase()) ||
+            (!item.variantId && v.sku && item.sku && v.sku === item.sku);
+
+          if (!match) return v;
+          variantUpdated = true;
           const updatedVariant = { ...v };
 
           if (field === "stockMontevideo") {
-            updatedVariant.stockMontevideo = Math.max(0, Math.round(parseInt(value) || 0));
-            updatedVariant.stock = (updatedVariant.stockMontevideo || 0) + (updatedVariant.stockPinamar || 0);
+            updatedVariant.stockMontevideo = numValue;
+            updatedVariant.stock = (updatedVariant.stockMontevideo || 0) + (Number(updatedVariant.stockPinamar) || 0);
           } else if (field === "stockPinamar") {
-            updatedVariant.stockPinamar = Math.max(0, Math.round(parseInt(value) || 0));
-            updatedVariant.stock = (updatedVariant.stockMontevideo || 0) + (updatedVariant.stockPinamar || 0);
+            updatedVariant.stockPinamar = numValue;
+            updatedVariant.stock = (Number(updatedVariant.stockMontevideo) || 0) + (updatedVariant.stockPinamar || 0);
           } else if (field === "price") {
             updatedVariant.price = Math.max(0, Math.round(parseFloat(value) || 0));
           }
           return updatedVariant;
         });
 
+        // If not matched by ID/SKU and product has only 1 variant, update it
+        if (!variantUpdated && updatedProduct.variants && updatedProduct.variants.length === 1) {
+          const v = updatedProduct.variants[0];
+          const updatedVariant = { ...v };
+          if (field === "stockMontevideo") {
+            updatedVariant.stockMontevideo = numValue;
+            updatedVariant.stock = (updatedVariant.stockMontevideo || 0) + (Number(updatedVariant.stockPinamar) || 0);
+          } else if (field === "stockPinamar") {
+            updatedVariant.stockPinamar = numValue;
+            updatedVariant.stock = (Number(updatedVariant.stockMontevideo) || 0) + (updatedVariant.stockPinamar || 0);
+          }
+          updatedProduct.variants = [updatedVariant];
+        }
+
         // Sum up stocks for the product
         updatedProduct.stockMontevideo = (updatedProduct.variants || []).reduce((sum, v) => sum + (v.stockMontevideo || 0), 0);
         updatedProduct.stockPinamar = (updatedProduct.variants || []).reduce((sum, v) => sum + (v.stockPinamar || 0), 0);
         updatedProduct.stock = (updatedProduct.variants || []).reduce((sum, v) => sum + (v.stock || 0), 0);
+        updatedProduct.stockTotalActual = updatedProduct.stock;
 
         if (field === "precioCompra") {
           updatedProduct.precioCompra = Math.max(0, Math.round(parseFloat(value) || 0));
@@ -4468,11 +4505,13 @@ export default function App() {
         }
       } else {
         if (field === "stockMontevideo") {
-          updatedProduct.stockMontevideo = Math.max(0, Math.round(parseInt(value) || 0));
-          updatedProduct.stock = (updatedProduct.stockMontevideo || 0) + (updatedProduct.stockPinamar || 0);
+          updatedProduct.stockMontevideo = numValue;
+          updatedProduct.stock = (updatedProduct.stockMontevideo || 0) + (Number(updatedProduct.stockPinamar) || 0);
+          updatedProduct.stockTotalActual = updatedProduct.stock;
         } else if (field === "stockPinamar") {
-          updatedProduct.stockPinamar = Math.max(0, Math.round(parseInt(value) || 0));
-          updatedProduct.stock = (updatedProduct.stockMontevideo || 0) + (updatedProduct.stockPinamar || 0);
+          updatedProduct.stockPinamar = numValue;
+          updatedProduct.stock = (Number(updatedProduct.stockMontevideo) || 0) + (updatedProduct.stockPinamar || 0);
+          updatedProduct.stockTotalActual = updatedProduct.stock;
         } else if (field === "precioCompra") {
           updatedProduct.precioCompra = Math.max(0, Math.round(parseFloat(value) || 0));
         } else if (field === "price") {
@@ -4482,6 +4521,14 @@ export default function App() {
         } else if (field === "comisionML") {
           updatedProduct.comisionML = Math.max(0, Math.round(parseFloat(value) || 0));
         }
+
+        if (updatedProduct.variants && updatedProduct.variants.length === 1) {
+          const v = { ...updatedProduct.variants[0] };
+          v.stockMontevideo = updatedProduct.stockMontevideo;
+          v.stockPinamar = updatedProduct.stockPinamar;
+          v.stock = updatedProduct.stock;
+          updatedProduct.variants = [v];
+        }
       }
 
       return updatedProduct;
@@ -4489,7 +4536,6 @@ export default function App() {
 
     let updatedAdjustments = store.stockAdjustments || [];
     if (field === "stockMontevideo" || field === "stockPinamar") {
-      const newValue = Math.max(0, Math.round(parseInt(value) || 0));
       const adjustment: StockAdjustment = {
         id: `ADJ-${Date.now()}-${Math.floor(Math.random() * 900) + 100}`,
         sku: item.sku || "SIN-SKU",
@@ -4497,8 +4543,8 @@ export default function App() {
         variantName: item.variantName || undefined,
         deposito: field === "stockMontevideo" ? "Montevideo" : "Pinamar",
         stockAnterior: originalStock,
-        stockNuevo: newValue,
-        motivo: reasonStr || "Ajuste Directo Rápido",
+        stockNuevo: numValue,
+        motivo: reasonStr || "Ajuste Directo de Almacén",
         usuario: "Administrador",
         createdAt: new Date().toISOString()
       };
@@ -4510,9 +4556,78 @@ export default function App() {
       products: updatedProducts,
       stockAdjustments: updatedAdjustments
     };
+
+    // Immediate reactive local state update
     setStore(updatedState);
-    await saveStateToServer(updatedState);
+    if (field === "stockMontevideo") item.stockMontevideo = numValue;
+    if (field === "stockPinamar") item.stockPinamar = numValue;
+
+    // 2. Fast atomic stock update on server
+    const activeToken = authToken || localStorage.getItem("apex_admin_token");
+    if ((field === "stockMontevideo" || field === "stockPinamar") && activeToken) {
+      try {
+        const res = await fetch("/api/stock/adjust", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${activeToken}`
+          },
+          body: JSON.stringify({
+            productId: item.productId,
+            variantId: item.variantId,
+            sku: item.sku,
+            field,
+            value: numValue,
+            reason: reasonStr
+          })
+        });
+        if (res.ok) {
+          const resData = await res.json();
+          if (resData.state) {
+            setStore(resData.state);
+          }
+          return true;
+        }
+      } catch (e) {
+        console.warn("Stock fast-adjust fallback triggered:", e);
+      }
+    }
+
+    // 3. Fallback whole store save
+    return await saveStateToServer(updatedState, true);
   };
+
+interface StockReasonOption {
+  id: string;
+  label: string;
+  desc: string;
+  icon: string;
+}
+
+const STOCK_INCREASE_OPTIONS: StockReasonOption[] = [
+  { id: "Ingreso / Recepción de mercadería", label: "Ingreso / Recepción de mercadería", desc: "Compras a proveedores o nuevo lote recibido", icon: "📦" },
+  { id: "Devolución de cliente", label: "Devolución de cliente", desc: "Reingreso por cambio, cancelación o devolución", icon: "↩️" },
+  { id: "Sobrante en conteo físico", label: "Sobrante en conteo físico / Auditoría", desc: "Se encontraron más unidades reales en depósito", icon: "🔍" },
+  { id: "Producción / Reposición interna", label: "Producción / Reposición interna", desc: "Fabricación propia o armado de stock interno", icon: "🏭" },
+  { id: "Corrección de error de ingreso", label: "Corrección de error de ingreso anterior", desc: "Ajuste por equivocación en carga previa", icon: "✏️" },
+  { id: "Otro", label: "Otro motivo (especificar)", desc: "Escribir un motivo personalizado...", icon: "✨" },
+];
+
+const STOCK_DECREASE_OPTIONS: StockReasonOption[] = [
+  { id: "Venta directa en mostrador / Local", label: "Venta directa en mostrador / Local", desc: "Venta física fuera de la tienda online", icon: "🏪" },
+  { id: "Rotura / Daño de mercadería", label: "Rotura / Daño de mercadería", desc: "Producto roto, vencido, dañado o defectuoso", icon: "💥" },
+  { id: "Faltante en conteo físico / Pérdida", label: "Faltante en conteo físico / Pérdida", desc: "Menos unidades reales que las registradas", icon: "🔍" },
+  { id: "Uso interno o muestra comercial", label: "Uso interno o muestra comercial", desc: "Destinado a exhibición, regalo o marketing", icon: "🎁" },
+  { id: "Devolución a proveedor", label: "Devolución a proveedor", desc: "Mercadería devuelta por falla o garantía", icon: "🚚" },
+  { id: "Corrección de error de registro", label: "Corrección de error de registro", desc: "Ajuste por haber sumado de más previamente", icon: "✏️" },
+  { id: "Otro", label: "Otro motivo (especificar)", desc: "Escribir un motivo personalizado...", icon: "✨" },
+];
+
+const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
+  { id: "Auditoría / Conteo Físico Conforme", label: "Auditoría / Conteo Físico Conforme", desc: "Existencias verificadas físicamente sin discrepancias", icon: "📋" },
+  { id: "Verificación de SKU y datos", label: "Verificación de SKU y datos", desc: "Revisión técnica de artículo sin modificar cantidad", icon: "🔍" },
+  { id: "Otro", label: "Otro motivo (especificar)", desc: "Escribir un motivo personalizado...", icon: "✨" },
+];
 
   const requestStockAdjustment = (item: any, field: string, newValue: number) => {
     if (item.productObj?.isCombo) {
@@ -4520,13 +4635,17 @@ export default function App() {
       return;
     }
     const currentVal = field === "stockMontevideo" ? (item.stockMontevideo || 0) : (item.stockPinamar || 0);
-    if (Math.round(newValue) === Math.round(currentVal)) {
-      return;
-    }
+    const targetVal = Math.max(0, Math.round(newValue !== undefined ? newValue : currentVal));
     setPendingStockItem(item);
     setPendingStockField(field);
-    setPendingStockValue(newValue);
-    setStockAdjustmentReason("Auditoría / Conteo Físico");
+    setPendingStockValue(targetVal);
+    if (targetVal > currentVal) {
+      setStockAdjustmentReason("Ingreso / Recepción de mercadería");
+    } else if (targetVal < currentVal) {
+      setStockAdjustmentReason("Venta directa en mostrador / Local");
+    } else {
+      setStockAdjustmentReason("Auditoría / Conteo Físico Conforme");
+    }
     setCustomStockAdjustmentReason("");
     setShowStockAdjustmentModal(true);
   };
@@ -6878,7 +6997,7 @@ export default function App() {
                 <input
                   required
                   type="text"
-                  placeholder="ej. Juem"
+                  placeholder="Usuario administrador"
                   value={usernameInput}
                   onChange={(e) => setUsernameInput(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-[#060A13] border border-[#D4AF37]/25 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37]/30 transition-all"
@@ -6887,14 +7006,24 @@ export default function App() {
 
               <div className="space-y-1">
                 <label className="text-[10px] font-black uppercase tracking-widest text-[#E6BF76]">Contraseña Segura</label>
-                <input
-                  required
-                  type="password"
-                  placeholder="••••••••"
-                  value={passwordInput}
-                  onChange={(e) => setPasswordInput(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-[#060A13] border border-[#D4AF37]/25 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37]/30 transition-all"
-                />
+                <div className="relative">
+                  <input
+                    required
+                    type={showLoginPassword ? "text" : "password"}
+                    placeholder="••••••••"
+                    value={passwordInput}
+                    onChange={(e) => setPasswordInput(e.target.value)}
+                    className="w-full pl-3.5 pr-10 py-2.5 bg-[#060A13] border border-[#D4AF37]/25 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37]/30 transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginPassword(!showLoginPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-[#E6BF76] cursor-pointer"
+                    title={showLoginPassword ? "Ocultar contraseña" : "Ver contraseña"}
+                  >
+                    {showLoginPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
 
               {loginError && (
@@ -12521,8 +12650,15 @@ export default function App() {
                                   min="0"
                                   value={(editingProduct.stockPinamar !== undefined && editingProduct.stockPinamar !== "") ? Math.round(Number(editingProduct.stockPinamar)) : ""}
                                   onChange={(e) => {
-                                    const val = e.target.value === "" ? "" : Math.round(Number(e.target.value));
-                                    const numVal = val === "" ? 0 : Number(val);
+                                    const raw = e.target.value;
+                                    if (raw === "") {
+                                      setEditingProduct({
+                                        ...editingProduct,
+                                        stockPinamar: "" as any
+                                      });
+                                      return;
+                                    }
+                                    const numVal = Math.max(0, Math.round(Number(raw) || 0));
                                     let nextVariants = editingProduct.variants || [];
                                     if (nextVariants.length > 0) {
                                       const count = nextVariants.length;
@@ -12540,7 +12676,7 @@ export default function App() {
                                     }
                                     setEditingProduct(updateProductCalculations({ 
                                       ...editingProduct, 
-                                      stockPinamar: val as any,
+                                      stockPinamar: numVal,
                                       variants: nextVariants 
                                     }) as Product);
                                   }}
@@ -12569,8 +12705,15 @@ export default function App() {
                                   min="0"
                                   value={(editingProduct.stockMontevideo !== undefined && editingProduct.stockMontevideo !== "") ? Math.round(Number(editingProduct.stockMontevideo)) : ""}
                                   onChange={(e) => {
-                                    const val = e.target.value === "" ? "" : Math.round(Number(e.target.value));
-                                    const numVal = val === "" ? 0 : Number(val);
+                                    const raw = e.target.value;
+                                    if (raw === "") {
+                                      setEditingProduct({
+                                        ...editingProduct,
+                                        stockMontevideo: "" as any
+                                      });
+                                      return;
+                                    }
+                                    const numVal = Math.max(0, Math.round(Number(raw) || 0));
                                     let nextVariants = editingProduct.variants || [];
                                     if (nextVariants.length > 0) {
                                       const count = nextVariants.length;
@@ -12588,7 +12731,7 @@ export default function App() {
                                     }
                                     setEditingProduct(updateProductCalculations({ 
                                       ...editingProduct, 
-                                      stockMontevideo: val as any,
+                                      stockMontevideo: numVal,
                                       variants: nextVariants 
                                     }) as Product);
                                   }}
@@ -16049,43 +16192,58 @@ export default function App() {
                                             <Lock className="h-3 w-3 text-slate-400 dark:text-zinc-500 shrink-0" />
                                           </div>
                                         ) : (
-                                          <div className="flex items-center justify-center gap-1.5 font-mono">
+                                          <div className="flex items-center justify-center gap-1 font-mono">
                                             <button
-                                              onClick={() => {
-                                                const nextVal = Math.max(0, item.stockMontevideo - 1);
-                                                requestStockAdjustment(item, "stockMontevideo", nextVal);
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                const current = Number(item.stockMontevideo) || 0;
+                                                if (current <= 0) {
+                                                  showToast("El stock en Montevideo ya se encuentra en 0", "info");
+                                                  return;
+                                                }
+                                                requestStockAdjustment(item, "stockMontevideo", current - 1);
                                               }}
-                                              className="w-5 h-5 flex items-center justify-center rounded-md bg-slate-100 dark:bg-zinc-800 text-zinc-500 hover:bg-red-500 hover:text-white transition opacity-0 group-hover:opacity-100 cursor-pointer"
-                                              title="Descontar 1 unidad"
+                                              className="w-6 h-6 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-rose-500 hover:text-white dark:bg-zinc-850 dark:hover:bg-rose-600 text-zinc-600 dark:text-zinc-300 transition font-black text-xs cursor-pointer shadow-xs active:scale-90"
+                                              title="Descontar unidades (solicitar motivo)"
                                             >
                                               -
                                             </button>
                                             <input
                                               type="number"
+                                              min="0"
                                               key={`${item.sku}-mvd-${item.stockMontevideo}`}
                                               defaultValue={Math.round(item.stockMontevideo || 0)}
                                               onBlur={(e) => {
-                                                const val = Math.max(0, parseInt(e.target.value) || 0);
-                                                requestStockAdjustment(item, "stockMontevideo", val);
+                                                const raw = e.target.value.trim();
+                                                if (raw === "") return;
+                                                const current = Math.round(Number(item.stockMontevideo) || 0);
+                                                const val = Math.max(0, parseInt(raw, 10) || 0);
+                                                if (val !== current) {
+                                                  requestStockAdjustment(item, "stockMontevideo", val);
+                                                }
+                                                e.target.value = String(current);
                                               }}
                                               onKeyDown={(e) => {
                                                 if (e.key === "Enter") {
                                                   (e.target as HTMLInputElement).blur();
                                                 }
                                               }}
-                                              className={`w-12 text-center bg-transparent focus:bg-white dark:focus:bg-zinc-950 rounded-md border-0 focus:ring-1 focus:ring-indigo-500 font-extrabold p-0 focus:p-1 outline-hidden transition ${
+                                              className={`w-12 text-center bg-slate-50/70 hover:bg-slate-100 focus:bg-white dark:bg-zinc-900/60 dark:hover:bg-zinc-900 dark:focus:bg-zinc-950 rounded-lg border border-slate-200 dark:border-zinc-800 focus:ring-1 focus:ring-indigo-500 font-extrabold py-0.5 outline-hidden transition ${
                                                 item.stockMontevideo <= 0
                                                   ? "text-zinc-400 dark:text-zinc-600"
                                                   : "text-slate-800 dark:text-zinc-100"
                                               }`}
                                             />
                                             <button
-                                              onClick={() => {
-                                                const nextVal = item.stockMontevideo + 1;
-                                                requestStockAdjustment(item, "stockMontevideo", nextVal);
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                const current = Number(item.stockMontevideo) || 0;
+                                                requestStockAdjustment(item, "stockMontevideo", current + 1);
                                               }}
-                                              className="w-5 h-5 flex items-center justify-center rounded-md bg-slate-100 dark:bg-zinc-800 text-zinc-500 hover:bg-emerald-500 hover:text-white transition opacity-0 group-hover:opacity-100 cursor-pointer"
-                                              title="Sumar 1 unidad"
+                                              className="w-6 h-6 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-emerald-500 hover:text-white dark:bg-zinc-850 dark:hover:bg-emerald-600 text-zinc-600 dark:text-zinc-300 transition font-black text-xs cursor-pointer shadow-xs active:scale-90"
+                                              title="Sumar unidades (solicitar motivo)"
                                             >
                                               +
                                             </button>
@@ -16103,43 +16261,58 @@ export default function App() {
                                             <Lock className="h-3 w-3 text-slate-400 dark:text-zinc-500 shrink-0" />
                                           </div>
                                         ) : (
-                                          <div className="flex items-center justify-center gap-1.5 font-mono">
+                                          <div className="flex items-center justify-center gap-1 font-mono">
                                             <button
-                                              onClick={() => {
-                                                const nextVal = Math.max(0, item.stockPinamar - 1);
-                                                requestStockAdjustment(item, "stockPinamar", nextVal);
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                const current = Number(item.stockPinamar) || 0;
+                                                if (current <= 0) {
+                                                  showToast("El stock en Pinamar ya se encuentra en 0", "info");
+                                                  return;
+                                                }
+                                                requestStockAdjustment(item, "stockPinamar", current - 1);
                                               }}
-                                              className="w-5 h-5 flex items-center justify-center rounded-md bg-slate-100 dark:bg-zinc-800 text-zinc-500 hover:bg-red-500 hover:text-white transition opacity-0 group-hover:opacity-100 cursor-pointer"
-                                              title="Descontar 1 unidad"
+                                              className="w-6 h-6 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-rose-500 hover:text-white dark:bg-zinc-850 dark:hover:bg-rose-600 text-zinc-600 dark:text-zinc-300 transition font-black text-xs cursor-pointer shadow-xs active:scale-90"
+                                              title="Descontar unidades (solicitar motivo)"
                                             >
                                               -
                                             </button>
                                             <input
                                               type="number"
+                                              min="0"
                                               key={`${item.sku}-pin-${item.stockPinamar}`}
                                               defaultValue={Math.round(item.stockPinamar || 0)}
                                               onBlur={(e) => {
-                                                const val = Math.max(0, parseInt(e.target.value) || 0);
-                                                requestStockAdjustment(item, "stockPinamar", val);
+                                                const raw = e.target.value.trim();
+                                                if (raw === "") return;
+                                                const current = Math.round(Number(item.stockPinamar) || 0);
+                                                const val = Math.max(0, parseInt(raw, 10) || 0);
+                                                if (val !== current) {
+                                                  requestStockAdjustment(item, "stockPinamar", val);
+                                                }
+                                                e.target.value = String(current);
                                               }}
                                               onKeyDown={(e) => {
                                                 if (e.key === "Enter") {
                                                   (e.target as HTMLInputElement).blur();
                                                 }
                                               }}
-                                              className={`w-12 text-center bg-transparent focus:bg-white dark:focus:bg-zinc-950 rounded-md border-0 focus:ring-1 focus:ring-indigo-500 font-extrabold p-0 focus:p-1 outline-hidden transition ${
+                                              className={`w-12 text-center bg-slate-50/70 hover:bg-slate-100 focus:bg-white dark:bg-zinc-900/60 dark:hover:bg-zinc-900 dark:focus:bg-zinc-950 rounded-lg border border-slate-200 dark:border-zinc-800 focus:ring-1 focus:ring-indigo-500 font-extrabold py-0.5 outline-hidden transition ${
                                                 item.stockPinamar <= 0
                                                   ? "text-zinc-400 dark:text-zinc-600"
                                                   : "text-slate-800 dark:text-zinc-100"
                                               }`}
                                             />
                                             <button
-                                              onClick={() => {
-                                                const nextVal = item.stockPinamar + 1;
-                                                requestStockAdjustment(item, "stockPinamar", nextVal);
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                const current = Number(item.stockPinamar) || 0;
+                                                requestStockAdjustment(item, "stockPinamar", current + 1);
                                               }}
-                                              className="w-5 h-5 flex items-center justify-center rounded-md bg-slate-100 dark:bg-zinc-800 text-zinc-500 hover:bg-emerald-500 hover:text-white transition opacity-0 group-hover:opacity-100 cursor-pointer"
-                                              title="Sumar 1 unidad"
+                                              className="w-6 h-6 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-emerald-500 hover:text-white dark:bg-zinc-850 dark:hover:bg-emerald-600 text-zinc-600 dark:text-zinc-300 transition font-black text-xs cursor-pointer shadow-xs active:scale-90"
+                                              title="Sumar unidades (solicitar motivo)"
                                             >
                                               +
                                             </button>
@@ -16149,40 +16322,53 @@ export default function App() {
 
                                       {/* ACCIONES */}
                                       <td className="py-3 px-4 text-center">
-                                        <button
-                                          disabled={item.productObj?.isCombo}
-                                          onClick={() => {
-                                            const totalStock = (item.stockPinamar || 0) + (item.stockMontevideo || 0);
-                                            if (totalStock <= 0) {
-                                              showToast(`Stock insuficiente: "${item.name}${item.variantName ? ` (${item.variantName})` : ''}" no tiene existencias en ningún depósito para transferir.`, "error");
-                                              return;
+                                        <div className="flex items-center justify-center gap-1.5">
+                                          <button
+                                            disabled={item.productObj?.isCombo}
+                                            onClick={() => {
+                                              const totalStock = (item.stockPinamar || 0) + (item.stockMontevideo || 0);
+                                              if (totalStock <= 0) {
+                                                showToast(`Stock insuficiente: "${item.name}${item.variantName ? ` (${item.variantName})` : ''}" no tiene existencias en ningún depósito para transferir.`, "error");
+                                                return;
+                                              }
+                                              setTransferProductId(String(item.productId));
+                                              setTransferVariantId(item.variantId ? String(item.variantId) : "");
+                                              setTransferQty(1);
+                                              if ((item.stockPinamar || 0) >= (item.stockMontevideo || 0)) {
+                                                setTransferFrom("Pinamar");
+                                                setTransferTo("Montevideo");
+                                              } else {
+                                                setTransferFrom("Montevideo");
+                                                setTransferTo("Pinamar");
+                                              }
+                                              setStockSubSection("transfer");
+                                            }}
+                                            className={`px-2.5 py-1 text-white font-bold text-[10px] rounded-lg shadow-xs transition inline-flex items-center gap-1.5 ${
+                                              item.productObj?.isCombo
+                                                ? "bg-slate-200 dark:bg-zinc-800 text-slate-400 dark:text-zinc-500 cursor-not-allowed opacity-60"
+                                                : "bg-indigo-600 hover:bg-indigo-700 cursor-pointer"
+                                            }`}
+                                            title={
+                                              item.productObj?.isCombo
+                                                ? "Los combos no se transfieren directamente, se transfieren sus componentes"
+                                                : "Transferir stock de este artículo"
                                             }
-                                            setTransferProductId(String(item.productId));
-                                            setTransferVariantId(item.variantId ? String(item.variantId) : "");
-                                            setTransferQty(1);
-                                            if ((item.stockPinamar || 0) >= (item.stockMontevideo || 0)) {
-                                              setTransferFrom("Pinamar");
-                                              setTransferTo("Montevideo");
-                                            } else {
-                                              setTransferFrom("Montevideo");
-                                              setTransferTo("Pinamar");
-                                            }
-                                            setStockSubSection("transfer");
-                                          }}
-                                          className={`px-2.5 py-1 text-white font-bold text-[10px] rounded-lg shadow-xs transition inline-flex items-center gap-1.5 mx-auto ${
-                                            item.productObj?.isCombo
-                                              ? "bg-slate-200 dark:bg-zinc-800 text-slate-400 dark:text-zinc-500 cursor-not-allowed opacity-60"
-                                              : "bg-indigo-600 hover:bg-indigo-700 cursor-pointer"
-                                          }`}
-                                          title={
-                                            item.productObj?.isCombo
-                                              ? "Los combos no se transfieren directamente, se transfieren sus componentes"
-                                              : "Transferir stock de este artículo"
-                                          }
-                                        >
-                                          <ArrowLeftRight className="h-3 w-3" />
-                                          <span>Transferir</span>
-                                        </button>
+                                          >
+                                            <ArrowLeftRight className="h-3 w-3" />
+                                            <span>Transferir</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            disabled={item.productObj?.isCombo}
+                                            onClick={() => {
+                                              requestStockAdjustment(item, "stockMontevideo", Number(item.stockMontevideo) || 0);
+                                            }}
+                                            className="p-1.5 text-zinc-400 hover:text-amber-500 hover:bg-amber-500/10 dark:hover:bg-amber-500/20 rounded-lg transition cursor-pointer"
+                                            title="Auditar / Ajuste formal con motivo detallado"
+                                          >
+                                            <Scale className="h-3.5 w-3.5" />
+                                          </button>
+                                        </div>
                                       </td>
                                     </tr>
                                   );
@@ -21249,7 +21435,7 @@ export default function App() {
                 <input
                   required
                   type="text"
-                  placeholder="ej. Juem"
+                  placeholder="Usuario administrador"
                   value={usernameInput}
                   onChange={(e) => setUsernameInput(e.target.value)}
                   className="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-white outline-none focus:border-zinc-700"
@@ -21258,14 +21444,24 @@ export default function App() {
 
               <div className="text-left space-y-1">
                 <label className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-500">Contraseña Segura</label>
-                <input
-                  required
-                  type="password"
-                  placeholder="••••••••"
-                  value={passwordInput}
-                  onChange={(e) => setPasswordInput(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-white outline-none focus:border-zinc-700"
-                />
+                <div className="relative">
+                  <input
+                    required
+                    type={showLoginPassword ? "text" : "password"}
+                    placeholder="••••••••"
+                    value={passwordInput}
+                    onChange={(e) => setPasswordInput(e.target.value)}
+                    className="w-full pl-3 pr-9 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-white outline-none focus:border-zinc-700"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginPassword(!showLoginPassword)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white cursor-pointer"
+                    title={showLoginPassword ? "Ocultar contraseña" : "Ver contraseña"}
+                  >
+                    {showLoginPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
 
               {loginError && (
@@ -21745,163 +21941,434 @@ export default function App() {
         </div>
       )}
 
-      {showStockAdjustmentModal && pendingStockItem && (
-        <div className="fixed inset-0 bg-zinc-950/80 backdrop-blur-sm flex items-center justify-center z-[99999] p-4 animate-fade-in">
-          <div className="w-full max-w-md bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl shadow-xl overflow-hidden">
-            <div className="p-5 border-b border-slate-100 dark:border-zinc-800 flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full bg-amber-50 dark:bg-amber-950/50 flex items-center justify-center text-amber-500">
-                <Scale className="h-5 w-5" />
-              </div>
-              <div>
-                <h3 className="font-extrabold text-sm text-slate-900 dark:text-zinc-100 uppercase tracking-wide">
-                  Confirmar Ajuste de Stock
-                </h3>
-                <p className="text-xs text-zinc-500">
-                  Verifique los cambios antes de actualizar las existencias.
-                </p>
-              </div>
-            </div>
+      {showStockAdjustmentModal && pendingStockItem && (() => {
+        const currentVal = pendingStockField === "stockMontevideo" ? (pendingStockItem.stockMontevideo || 0) : (pendingStockItem.stockPinamar || 0);
+        const diff = pendingStockValue - currentVal;
+        const isIncrease = diff > 0;
+        const isDecrease = diff < 0;
+        const isSame = diff === 0;
+        const depositoName = pendingStockField === "stockMontevideo" ? "Montevideo" : "Pinamar";
+        
+        const currentOptions: StockReasonOption[] = isIncrease 
+          ? STOCK_INCREASE_OPTIONS 
+          : isDecrease 
+            ? STOCK_DECREASE_OPTIONS 
+            : STOCK_NEUTRAL_OPTIONS;
 
-            <div className="p-5 space-y-4">
-              {/* Product Info Card */}
-              <div className="bg-slate-50 dark:bg-zinc-950 p-4 rounded-xl border border-slate-100 dark:border-zinc-900 space-y-1.5 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-zinc-400 font-bold">Artículo:</span>
-                  <span className="font-black text-slate-800 dark:text-zinc-200 text-right">
-                    {pendingStockItem.name}
-                  </span>
+        return (
+          <div className="fixed inset-0 bg-zinc-950/80 backdrop-blur-sm flex items-center justify-center z-[99999] p-4 animate-fade-in">
+            <div className="w-full max-w-lg bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
+              
+              {/* Header */}
+              <div className={`p-5 border-b flex items-center justify-between ${
+                isIncrease 
+                  ? "bg-emerald-50/70 dark:bg-emerald-950/40 border-emerald-100 dark:border-emerald-900/40" 
+                  : isDecrease 
+                    ? "bg-rose-50/70 dark:bg-rose-950/40 border-rose-100 dark:border-rose-900/40" 
+                    : "bg-slate-50 dark:bg-zinc-950 border-slate-100 dark:border-zinc-800"
+              }`}>
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-sm shrink-0 ${
+                    isIncrease 
+                      ? "bg-emerald-600" 
+                      : isDecrease 
+                        ? "bg-rose-600" 
+                        : "bg-indigo-600"
+                  }`}>
+                    {isIncrease ? (
+                      <TrendingUp className="h-5 w-5" />
+                    ) : isDecrease ? (
+                      <TrendingDown className="h-5 w-5" />
+                    ) : (
+                      <Scale className="h-5 w-5" />
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="font-black text-sm text-slate-900 dark:text-zinc-100">
+                      {isIncrease 
+                        ? "¿Por qué estás subiendo el stock?" 
+                        : isDecrease 
+                          ? "¿Por qué estás bajando el stock?" 
+                          : "Auditoría / Verificación de Stock"}
+                    </h3>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                      {isIncrease 
+                        ? `Incremento de +${diff} ${diff === 1 ? "unidad" : "unidades"} en ${depositoName}` 
+                        : isDecrease 
+                          ? `Descuento de -${Math.abs(diff)} ${Math.abs(diff) === 1 ? "unidad" : "unidades"} en ${depositoName}` 
+                          : `Sin variación en la cantidad de ${depositoName}`}
+                    </p>
+                  </div>
                 </div>
-                {pendingStockItem.variantName && (
-                  <div className="flex justify-between">
-                    <span className="text-zinc-400 font-bold">Variante:</span>
-                    <span className="font-bold text-slate-700 dark:text-zinc-300">
-                      {pendingStockItem.variantName}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowStockAdjustmentModal(false);
+                    setPendingStockItem(null);
+                  }}
+                  className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800 transition cursor-pointer"
+                  title="Cerrar"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Scrollable Content */}
+              <div className="p-5 space-y-4 overflow-y-auto">
+                {/* Product Info & Deposito selector */}
+                <div className="bg-slate-50 dark:bg-zinc-950/80 p-3.5 rounded-xl border border-slate-200/80 dark:border-zinc-800 space-y-2.5 text-xs">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <span className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400">Artículo</span>
+                      <h4 className="font-black text-slate-900 dark:text-zinc-100 truncate text-sm">
+                        {pendingStockItem.name}
+                      </h4>
+                      {pendingStockItem.variantName && (
+                        <p className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 mt-0.5">
+                          Variante: {pendingStockItem.variantName}
+                        </p>
+                      )}
+                    </div>
+                    <span className="font-mono font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/50 dark:border-indigo-800/40 px-2 py-0.5 rounded text-[11px] shrink-0">
+                      {pendingStockItem.sku || "SIN SKU"}
                     </span>
                   </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-zinc-400 font-bold">Código SKU:</span>
-                  <span className="font-mono font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 rounded text-[11px]">
-                    {pendingStockItem.sku || "SIN SKU"}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-zinc-400 font-bold">Depósito:</span>
-                  <span className="font-bold text-slate-800 dark:text-zinc-200">
-                    {pendingStockField === "stockMontevideo" ? "Montevideo" : "Pinamar"}
-                  </span>
-                </div>
-              </div>
 
-              {/* Stock Comparison Grid */}
-              <div className="grid grid-cols-3 gap-3 text-center">
-                <div className="bg-slate-50 dark:bg-zinc-950/30 p-2.5 rounded-lg border border-slate-100 dark:border-zinc-800/60 flex flex-col justify-center items-center min-h-[76px]">
-                  <span className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1">Actual</span>
-                  <span className="text-lg font-black text-slate-600 dark:text-zinc-400 font-mono leading-none">
-                    {pendingStockField === "stockMontevideo" ? (pendingStockItem.stockMontevideo || 0) : (pendingStockItem.stockPinamar || 0)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-center text-zinc-300 dark:text-zinc-700 font-bold">
-                  ➔
-                </div>
-                <div className="bg-indigo-50/50 dark:bg-indigo-950/20 p-2.5 rounded-lg border border-indigo-100 dark:border-indigo-950/40 flex flex-col justify-center items-center min-h-[76px]">
-                  <span className="block text-[10px] font-bold text-indigo-500 uppercase tracking-wider mb-1.5">Nuevo</span>
-                  <div className="flex items-center gap-1.5 justify-center">
-                    <button
-                      type="button"
-                      onClick={() => setPendingStockValue(prev => Math.max(0, prev - 1))}
-                      className="w-6 h-6 flex items-center justify-center rounded-md bg-white hover:bg-slate-100 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300 hover:text-red-500 transition font-black shadow-xs cursor-pointer text-xs border border-slate-200 dark:border-zinc-700 select-none"
-                      title="Disminuir 1"
-                    >
-                      -
-                    </button>
-                    <input
-                      type="number"
-                      min="0"
-                      value={pendingStockValue}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value);
-                        setPendingStockValue(isNaN(val) ? 0 : Math.max(0, val));
-                      }}
-                      className="w-12 text-center font-black text-sm text-indigo-600 dark:text-indigo-400 bg-white dark:bg-zinc-950 border border-indigo-100 dark:border-indigo-900 rounded py-0.5 outline-hidden focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 font-mono"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setPendingStockValue(prev => prev + 1)}
-                      className="w-6 h-6 flex items-center justify-center rounded-md bg-white hover:bg-slate-100 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300 hover:text-emerald-500 transition font-black shadow-xs cursor-pointer text-xs border border-slate-200 dark:border-zinc-700 select-none"
-                      title="Incrementar 1"
-                    >
-                      +
-                    </button>
+                  {/* Switch between depósitos if desired */}
+                  <div>
+                    <span className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1">
+                      Depósito a modificar:
+                    </span>
+                    <div className="grid grid-cols-2 gap-1.5 bg-slate-200/60 dark:bg-zinc-900 p-1 rounded-lg">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPendingStockField("stockMontevideo");
+                          const cur = pendingStockItem.stockMontevideo || 0;
+                          const nextVal = isIncrease ? cur + (diff || 1) : isDecrease ? Math.max(0, cur - (Math.abs(diff) || 1)) : cur;
+                          setPendingStockValue(nextVal);
+                        }}
+                        className={`py-1.5 px-3 rounded-md text-xs font-bold transition flex items-center justify-between cursor-pointer ${
+                          pendingStockField === "stockMontevideo"
+                            ? "bg-white dark:bg-zinc-850 text-indigo-600 dark:text-indigo-400 shadow-xs"
+                            : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200"
+                        }`}
+                      >
+                        <span>Montevideo</span>
+                        <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-slate-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300">
+                          {pendingStockItem.stockMontevideo || 0}u
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPendingStockField("stockPinamar");
+                          const cur = pendingStockItem.stockPinamar || 0;
+                          const nextVal = isIncrease ? cur + (diff || 1) : isDecrease ? Math.max(0, cur - (Math.abs(diff) || 1)) : cur;
+                          setPendingStockValue(nextVal);
+                        }}
+                        className={`py-1.5 px-3 rounded-md text-xs font-bold transition flex items-center justify-between cursor-pointer ${
+                          pendingStockField === "stockPinamar"
+                            ? "bg-white dark:bg-zinc-850 text-indigo-600 dark:text-indigo-400 shadow-xs"
+                            : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200"
+                        }`}
+                      >
+                        <span>Pinamar</span>
+                        <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-slate-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300">
+                          {pendingStockItem.stockPinamar || 0}u
+                        </span>
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Reason for adjustment input */}
-              <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-slate-700 dark:text-zinc-300">
-                  Motivo del Ajuste Directo
-                </label>
-                <select
-                  value={stockAdjustmentReason}
-                  onChange={(e) => setStockAdjustmentReason(e.target.value)}
-                  className="w-full bg-white dark:bg-zinc-950 text-slate-800 dark:text-zinc-200 text-xs font-semibold rounded-lg border border-slate-200 dark:border-zinc-800 focus:ring-1 focus:ring-indigo-500 outline-hidden p-2"
-                >
-                  <option value="Auditoría / Conteo Físico">Auditoría / Conteo Físico</option>
-                  <option value="Rotura / Daño de mercadería">Rotura / Daño de mercadería</option>
-                  <option value="Pérdida / Faltante">Pérdida / Faltante</option>
-                  <option value="Entrada de nuevo stock">Entrada de nuevo stock</option>
-                  <option value="Ajuste por venta directa">Ajuste por venta directa</option>
-                  <option value="Error de sistema / Corrección">Error de sistema / Corrección</option>
-                  <option value="Otro">Otro (Especificar)</option>
-                </select>
-              </div>
+                {/* Stock Delta Control */}
+                <div className="bg-slate-50 dark:bg-zinc-950 p-3.5 rounded-xl border border-slate-200/80 dark:border-zinc-800 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-700 dark:text-zinc-300">
+                      Ajuste de Cantidad:
+                    </span>
+                    <span className={`text-[11px] font-black px-2 py-0.5 rounded-full ${
+                      isIncrease 
+                        ? "bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400" 
+                        : isDecrease 
+                          ? "bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400" 
+                          : "bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400"
+                    }`}>
+                      {isIncrease ? `+${diff} unidades` : isDecrease ? `-${Math.abs(diff)} unidades` : "Sin cambio (0)"}
+                    </span>
+                  </div>
 
-              {stockAdjustmentReason === "Otro" && (
-                <div className="space-y-1 animate-fade-in">
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                    Escriba el motivo personalizado
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Ej. Devolución de cliente o regalo empresarial"
-                    value={customStockAdjustmentReason}
-                    onChange={(e) => setCustomStockAdjustmentReason(e.target.value)}
-                    className="w-full bg-white dark:bg-zinc-950 text-slate-800 dark:text-zinc-200 text-xs font-semibold rounded-lg border border-slate-200 dark:border-zinc-800 focus:ring-1 focus:ring-indigo-500 outline-hidden p-2"
-                  />
+                  <div className="grid grid-cols-3 gap-2 text-center items-center">
+                    <div className="bg-white dark:bg-zinc-900 p-2 rounded-lg border border-slate-200 dark:border-zinc-800">
+                      <span className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-0.5">Actual</span>
+                      <span className="text-lg font-black text-slate-700 dark:text-zinc-300 font-mono">
+                        {currentVal}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-center text-zinc-400 dark:text-zinc-600 font-bold">
+                      ➔
+                    </div>
+
+                    <div className="bg-white dark:bg-zinc-900 p-2 rounded-lg border border-indigo-200 dark:border-indigo-900/60">
+                      <span className="block text-[10px] font-bold text-indigo-500 uppercase tracking-wider mb-0.5">Nuevo</span>
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = Math.max(0, pendingStockValue - 1);
+                            setPendingStockValue(next);
+                            const nextDiff = next - currentVal;
+                            if (nextDiff < 0 && !isDecrease) {
+                              setStockAdjustmentReason("Venta directa en mostrador / Local");
+                            } else if (nextDiff === 0 && !isSame) {
+                              setStockAdjustmentReason("Auditoría / Conteo Físico Conforme");
+                            }
+                          }}
+                          className="w-6 h-6 flex items-center justify-center rounded bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 font-black text-xs cursor-pointer select-none"
+                          title="Restar 1"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="number"
+                          min="0"
+                          value={pendingStockValue}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value);
+                            const next = isNaN(val) ? 0 : Math.max(0, val);
+                            setPendingStockValue(next);
+                            const nextDiff = next - currentVal;
+                            if (nextDiff > 0 && !isIncrease) {
+                              setStockAdjustmentReason("Ingreso / Recepción de mercadería");
+                            } else if (nextDiff < 0 && !isDecrease) {
+                              setStockAdjustmentReason("Venta directa en mostrador / Local");
+                            } else if (nextDiff === 0 && !isSame) {
+                              setStockAdjustmentReason("Auditoría / Conteo Físico Conforme");
+                            }
+                          }}
+                          className="w-12 text-center font-black text-sm text-indigo-600 dark:text-indigo-400 bg-transparent outline-hidden font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = pendingStockValue + 1;
+                            setPendingStockValue(next);
+                            const nextDiff = next - currentVal;
+                            if (nextDiff > 0 && !isIncrease) {
+                              setStockAdjustmentReason("Ingreso / Recepción de mercadería");
+                            } else if (nextDiff === 0 && !isSame) {
+                              setStockAdjustmentReason("Auditoría / Conteo Físico Conforme");
+                            }
+                          }}
+                          className="w-6 h-6 flex items-center justify-center rounded bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 font-black text-xs cursor-pointer select-none"
+                          title="Sumar 1"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Quick delta chips */}
+                  <div className="flex items-center justify-center gap-1.5 pt-1 flex-wrap">
+                    <span className="text-[10px] font-bold text-zinc-400 mr-1">Rápidos:</span>
+                    {isIncrease ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setPendingStockValue(currentVal + 1)}
+                          className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-950/60 dark:hover:bg-emerald-900 text-emerald-800 dark:text-emerald-300 transition cursor-pointer"
+                        >
+                          +1
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPendingStockValue(currentVal + 5)}
+                          className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-950/60 dark:hover:bg-emerald-900 text-emerald-800 dark:text-emerald-300 transition cursor-pointer"
+                        >
+                          +5
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPendingStockValue(currentVal + 10)}
+                          className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-950/60 dark:hover:bg-emerald-900 text-emerald-800 dark:text-emerald-300 transition cursor-pointer"
+                        >
+                          +10
+                        </button>
+                      </>
+                    ) : isDecrease ? (
+                      <>
+                        {currentVal >= 1 && (
+                          <button
+                            type="button"
+                            onClick={() => setPendingStockValue(Math.max(0, currentVal - 1))}
+                            className="px-2 py-0.5 rounded text-[11px] font-bold bg-rose-100 hover:bg-rose-200 dark:bg-rose-950/60 dark:hover:bg-rose-900 text-rose-800 dark:text-rose-300 transition cursor-pointer"
+                          >
+                            -1
+                          </button>
+                        )}
+                        {currentVal >= 5 && (
+                          <button
+                            type="button"
+                            onClick={() => setPendingStockValue(Math.max(0, currentVal - 5))}
+                            className="px-2 py-0.5 rounded text-[11px] font-bold bg-rose-100 hover:bg-rose-200 dark:bg-rose-950/60 dark:hover:bg-rose-900 text-rose-800 dark:text-rose-300 transition cursor-pointer"
+                          >
+                            -5
+                          </button>
+                        )}
+                        {currentVal >= 10 && (
+                          <button
+                            type="button"
+                            onClick={() => setPendingStockValue(Math.max(0, currentVal - 10))}
+                            className="px-2 py-0.5 rounded text-[11px] font-bold bg-rose-100 hover:bg-rose-200 dark:bg-rose-950/60 dark:hover:bg-rose-900 text-rose-800 dark:text-rose-300 transition cursor-pointer"
+                          >
+                            -10
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setPendingStockValue(0)}
+                          className="px-2 py-0.5 rounded text-[11px] font-bold bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 transition cursor-pointer"
+                        >
+                          Agotar (0)
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
                 </div>
-              )}
-            </div>
 
-            {/* Modal Actions */}
-            <div className="p-5 bg-slate-50 dark:bg-zinc-950/40 border-t border-slate-100 dark:border-zinc-800 flex items-center justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowStockAdjustmentModal(false);
-                  setPendingStockItem(null);
-                }}
-                className="px-4 py-2 text-xs font-bold bg-white hover:bg-slate-100 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-300 rounded-xl transition cursor-pointer"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  const finalReason = stockAdjustmentReason === "Otro" ? (customStockAdjustmentReason || "Ajuste manual personalizado") : stockAdjustmentReason;
-                  await handleUpdateStockItem(pendingStockItem, pendingStockField, pendingStockValue, finalReason);
-                  showToast("¡Ajuste directo de stock guardado con éxito!", "success");
-                  setShowStockAdjustmentModal(false);
-                  setPendingStockItem(null);
-                }}
-                className="px-4 py-2 text-xs font-black bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
-              >
-                <span>Confirmar Ajuste</span>
-              </button>
+                {/* Common Options Selection */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-slate-800 dark:text-zinc-200">
+                      {isIncrease 
+                        ? "¿Por qué motivo estás subiendo el stock?" 
+                        : isDecrease 
+                          ? "¿Por qué motivo estás bajando el stock?" 
+                          : "Motivo de la verificación / auditoría:"}
+                    </label>
+                    <span className="text-[10px] text-zinc-400">Opciones más comunes</span>
+                  </div>
+
+                  {/* Interactive Option Cards */}
+                  <div className="space-y-1.5 max-h-56 overflow-y-auto pr-0.5">
+                    {currentOptions.map((opt) => {
+                      const isSelected = stockAdjustmentReason === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => setStockAdjustmentReason(opt.id)}
+                          className={`w-full text-left p-2.5 rounded-xl border transition-all cursor-pointer flex items-center gap-3 ${
+                            isSelected
+                              ? isIncrease
+                                ? "bg-emerald-500/10 border-emerald-500 text-emerald-950 dark:text-emerald-100 ring-1 ring-emerald-500"
+                                : isDecrease
+                                  ? "bg-rose-500/10 border-rose-500 text-rose-950 dark:text-rose-100 ring-1 ring-rose-500"
+                                  : "bg-indigo-500/10 border-indigo-500 text-indigo-950 dark:text-indigo-100 ring-1 ring-indigo-500"
+                              : "bg-white dark:bg-zinc-950/60 border-slate-200 dark:border-zinc-800/80 hover:border-slate-300 dark:hover:border-zinc-700 text-slate-800 dark:text-zinc-200"
+                          }`}
+                        >
+                          <span className="text-base select-none shrink-0">{opt.icon}</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="font-extrabold text-xs">{opt.label}</span>
+                              {isSelected && (
+                                <Check className={`h-3.5 w-3.5 shrink-0 ${
+                                  isIncrease ? "text-emerald-600 dark:text-emerald-400" : isDecrease ? "text-rose-600 dark:text-rose-400" : "text-indigo-600 dark:text-indigo-400"
+                                }`} />
+                              )}
+                            </div>
+                            <p className="text-[10px] text-zinc-500 dark:text-zinc-400 truncate">
+                              {opt.desc}
+                            </p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Custom reason input if "Otro" is chosen */}
+                  {stockAdjustmentReason === "Otro" && (
+                    <div className="space-y-1 pt-1 animate-fade-in">
+                      <label className="block text-[10px] font-bold text-slate-600 dark:text-zinc-400 uppercase tracking-wider">
+                        Escribe el motivo detallado:
+                      </label>
+                      <input
+                        type="text"
+                        autoFocus
+                        placeholder={isIncrease ? "Ej: Regalo de fábrica, canje publicitario..." : "Ej: Donación, muestra a cliente, retiro especial..."}
+                        value={customStockAdjustmentReason}
+                        onChange={(e) => setCustomStockAdjustmentReason(e.target.value)}
+                        className="w-full bg-white dark:bg-zinc-950 text-slate-800 dark:text-zinc-200 text-xs font-semibold rounded-lg border border-slate-200 dark:border-zinc-800 focus:ring-1 focus:ring-indigo-500 outline-hidden p-2.5"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Modal Actions */}
+              <div className="p-4 bg-slate-50 dark:bg-zinc-950/80 border-t border-slate-200 dark:border-zinc-800 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowStockAdjustmentModal(false);
+                    setPendingStockItem(null);
+                  }}
+                  className="px-4 py-2 text-xs font-bold bg-white hover:bg-slate-100 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-300 rounded-xl transition cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const finalReason = stockAdjustmentReason === "Otro" 
+                      ? (customStockAdjustmentReason.trim() || (isIncrease ? "Aumento de stock personalizado" : isDecrease ? "Baja de stock personalizada" : "Auditoría manual"))
+                      : stockAdjustmentReason;
+                    
+                    const ok = await handleUpdateStockItem(pendingStockItem, pendingStockField, pendingStockValue, finalReason);
+                    if (ok) {
+                      const diffStr = diff > 0 ? `+${diff}` : `${diff}`;
+                      showToast(`Stock de ${pendingStockItem.name} actualizado: ${diffStr}u (${finalReason})`, "success");
+                    }
+                    setShowStockAdjustmentModal(false);
+                    setPendingStockItem(null);
+                  }}
+                  className={`px-4 py-2 text-xs font-black text-white rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer ${
+                    isIncrease 
+                      ? "bg-emerald-600 hover:bg-emerald-500 active:scale-95" 
+                      : isDecrease 
+                        ? "bg-rose-600 hover:bg-rose-500 active:scale-95" 
+                        : "bg-indigo-600 hover:bg-indigo-500 active:scale-95"
+                  }`}
+                >
+                  {isIncrease ? (
+                    <>
+                      <TrendingUp className="h-4 w-4" />
+                      <span>Confirmar Aumento (+{diff}u)</span>
+                    </>
+                  ) : isDecrease ? (
+                    <>
+                      <TrendingDown className="h-4 w-4" />
+                      <span>Confirmar Baja (-{Math.abs(diff)}u)</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="h-4 w-4" />
+                      <span>Confirmar Verificación</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Lightbox Modal para visualización mejorada de imágenes */}
       <AnimatePresence>
