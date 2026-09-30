@@ -274,6 +274,259 @@ let fallbackAdminTasks: any[] = [
   }
 ];
 
+export const DEFAULT_WEEKLY_TEMPLATE_TASKS: any[] = [
+  // Lunes (Foco: Planificación + ventas)
+  {
+    id: "tpl-lunes-1",
+    dayId: "lunes",
+    slotOrder: 1,
+    title: "Planificación semanal y fijación de objetivos",
+    description: "Revisar ventas anteriores, pedidos pendientes y definir las 3 metas clave de la semana.",
+    area: "crecer",
+    priority: "high",
+    isPriorityToday: true,
+    category: "otros",
+    isActive: true
+  },
+  {
+    id: "tpl-lunes-2",
+    dayId: "lunes",
+    slotOrder: 2,
+    title: "Seguimiento comercial y atención a clientes",
+    description: "Responder consultas, presupuestos pendientes y coordinar entregas de la semana.",
+    area: "crecer",
+    priority: "high",
+    isPriorityToday: true,
+    category: "otros",
+    isActive: true
+  },
+  {
+    id: "tpl-lunes-3",
+    dayId: "lunes",
+    slotOrder: 3,
+    title: "Revisión de stock e insumos de impresión",
+    description: "Verificar disponibilidad de filamentos y materiales necesarios para pedidos entrantes.",
+    area: "mantener",
+    priority: "medium",
+    isPriorityToday: true,
+    category: "otros",
+    isActive: true
+  },
+  // Martes (Foco: Diseño 3D)
+  {
+    id: "tpl-martes-1",
+    dayId: "martes",
+    slotOrder: 1,
+    title: "Definir y terminar el diseño del producto 3D de la semana",
+    description: "STL terminado y listo para imprimir.",
+    area: "crecer",
+    priority: "high",
+    isPriorityToday: true,
+    category: "otros",
+    isActive: true
+  },
+  {
+    id: "tpl-martes-2",
+    dayId: "martes",
+    slotOrder: 2,
+    title: "Preparar e iniciar impresión del prototipo",
+    description: "Validar medidas, encastres y calidad de impresión.",
+    area: "crecer",
+    priority: "high",
+    isPriorityToday: true,
+    category: "otros",
+    isActive: true
+  },
+  {
+    id: "tpl-martes-3",
+    dayId: "martes",
+    slotOrder: 3,
+    title: "Calcular costo estimado del producto 3D",
+    description: "Tiempo de impresión, peso en gramos, costo de material y precio sugerido.",
+    area: "crecer",
+    priority: "high",
+    isPriorityToday: true,
+    category: "otros",
+    isActive: true
+  },
+  // Miércoles (Foco: Publicaciones)
+  {
+    id: "tpl-miercoles-1",
+    dayId: "miercoles",
+    slotOrder: 1,
+    title: "Crear imágenes del producto 3D",
+    description: "Renders, fotos de prototipo y fotos contextuales para publicación.",
+    area: "crecer",
+    priority: "high",
+    isPriorityToday: true,
+    category: "otros",
+    isActive: true
+  },
+  {
+    id: "tpl-miercoles-2",
+    dayId: "miercoles",
+    slotOrder: 2,
+    title: "Publicar producto 3D en JUEM",
+    description: "Web + Mercado Libre + Instagram + Marketplace + TikTok.",
+    area: "crecer",
+    priority: "high",
+    isPriorityToday: true,
+    category: "otros",
+    isActive: true
+  },
+  {
+    id: "tpl-miercoles-3",
+    dayId: "miercoles",
+    slotOrder: 3,
+    title: "Mejorar 2 publicaciones existentes",
+    description: "Elegir productos que ya tenés pero que tengan imágenes o descripción mejorables.",
+    area: "crecer",
+    priority: "high",
+    isPriorityToday: true,
+    category: "otros",
+    isActive: true
+  },
+  // Jueves (Foco: Investigación comercial)
+  {
+    id: "tpl-jueves-1",
+    dayId: "jueves",
+    slotOrder: 1,
+    title: "Analizar 5 productos de Mercado Libre",
+    description: "Para cada uno registrar: Precio, Competencia, Costo aprox, Comisión, Ganancia posible, Si se puede fabricar en 3D, Demanda repetitiva, Diferenciación posible.",
+    area: "crecer",
+    priority: "high",
+    isPriorityToday: true,
+    category: "otros",
+    isActive: true
+  },
+  {
+    id: "tpl-jueves-2",
+    dayId: "jueves",
+    slotOrder: 2,
+    title: "Seleccionar los 2 mejores candidatos",
+    description: "Evaluar rentabilidad, rapidez de fabricación y demanda.",
+    area: "crecer",
+    priority: "high",
+    isPriorityToday: true,
+    category: "otros",
+    isActive: true
+  },
+  {
+    id: "tpl-jueves-3",
+    dayId: "jueves",
+    slotOrder: 3,
+    title: "Elegir cuál podría convertirse en próximo producto JUEM",
+    description: "Decisión final de desarrollo para el ciclo entrante.",
+    area: "crecer",
+    priority: "high",
+    isPriorityToday: true,
+    category: "otros",
+    isActive: true
+  },
+  // Viernes (Foco: Producción + operativa)
+  {
+    id: "tpl-viernes-1",
+    dayId: "viernes",
+    slotOrder: 1,
+    title: "Terminar el producto 3D de la semana",
+    description: "Si el prototipo necesita correcciones: modificar → imprimir nuevamente → validar.",
+    area: "crecer",
+    priority: "high",
+    isPriorityToday: true,
+    category: "otros",
+    isActive: true
+  },
+  {
+    id: "tpl-viernes-2",
+    dayId: "viernes",
+    slotOrder: 2,
+    title: "Actualizar stock",
+    description: "Revisar: JUEM, productos 3D, stock de sucursales (Montevideo y Pinamar) y productos sin stock.",
+    area: "crecer",
+    priority: "high",
+    isPriorityToday: true,
+    category: "otros",
+    isActive: true
+  },
+  {
+    id: "tpl-viernes-3",
+    dayId: "viernes",
+    slotOrder: 3,
+    title: "Revisar pedidos y envíos",
+    description: "Todo pedido pendiente debe quedar resuelto o con estado actualizado.",
+    area: "crecer",
+    priority: "high",
+    isPriorityToday: true,
+    category: "otros",
+    isActive: true
+  },
+  // Sábado (Foco: Contenido + mejoras)
+  {
+    id: "tpl-sabado-1",
+    dayId: "sabado",
+    slotOrder: 1,
+    title: "Crear contenido del producto 3D",
+    description: "Por ejemplo: video de impresión, producto terminado, cómo se utiliza, problema que resuelve.",
+    area: "crecer",
+    priority: "high",
+    isPriorityToday: true,
+    category: "otros",
+    isActive: true
+  },
+  {
+    id: "tpl-sabado-2",
+    dayId: "sabado",
+    slotOrder: 2,
+    title: "Publicar contenido",
+    description: "Instagram + Facebook + TikTok.",
+    area: "crecer",
+    priority: "high",
+    isPriorityToday: true,
+    category: "otros",
+    isActive: true
+  },
+  {
+    id: "tpl-sabado-3",
+    dayId: "sabado",
+    slotOrder: 3,
+    title: "Revisar las publicaciones que tuvieron movimiento",
+    description: "Preguntarte: ¿Cuál tuvo visitas? ¿Cuál tuvo consultas? ¿Cuál no generó nada?",
+    area: "crecer",
+    priority: "high",
+    isPriorityToday: true,
+    category: "otros",
+    isActive: true
+  },
+  // Domingo (Foco: Revisión semanal)
+  {
+    id: "tpl-domingo-1",
+    dayId: "domingo",
+    slotOrder: 1,
+    title: "Revisión semanal de objetivos y cierre",
+    description: "Evaluar qué funcionó, qué no funcionó y el balance de ventas.",
+    area: "mejorar",
+    priority: "high",
+    isPriorityToday: true,
+    category: "otros",
+    isActive: true
+  },
+  {
+    id: "tpl-domingo-2",
+    dayId: "domingo",
+    slotOrder: 2,
+    title: "Organizar prioridades de la próxima semana",
+    description: "Dejar listo el foco y preparación para el lunes.",
+    area: "crecer",
+    priority: "medium",
+    isPriorityToday: true,
+    category: "otros",
+    isActive: true
+  }
+];
+
+let fallbackWeeklyTemplateTasks: any[] = JSON.parse(JSON.stringify(DEFAULT_WEEKLY_TEMPLATE_TASKS));
+let fallbackWeeklyResets: Record<string, any> = {};
+
 function recalculateComboStocks(productsList: any[]): any[] {
   if (!productsList || !Array.isArray(productsList)) return [];
   return productsList.map(prod => {
@@ -2685,6 +2938,29 @@ async function initPostgresStore(): Promise<ShopState | null> {
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
 
+      CREATE TABLE IF NOT EXISTS public.admin_weekly_template_tasks (
+        id VARCHAR(50) PRIMARY KEY,
+        day_id VARCHAR(20) NOT NULL,
+        slot_order INT DEFAULT 1,
+        title TEXT NOT NULL,
+        description TEXT,
+        area VARCHAR(50) DEFAULT 'crecer',
+        priority VARCHAR(50) DEFAULT 'high',
+        is_priority_today BOOLEAN DEFAULT true,
+        category VARCHAR(100) DEFAULT 'otros',
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS public.admin_weekly_resets (
+        week_period VARCHAR(50) PRIMARY KEY,
+        monday_date DATE NOT NULL,
+        reset_at TIMESTAMPTZ DEFAULT NOW(),
+        tasks_placed INT DEFAULT 0,
+        notes TEXT
+      );
+
       -- 3D Printing & Manufacturing Module Tables
       CREATE TABLE IF NOT EXISTS public.printers (
         id VARCHAR(50) PRIMARY KEY,
@@ -2908,6 +3184,31 @@ async function initPostgresStore(): Promise<ShopState | null> {
       }
     }
 
+    // Seed default weekly template tasks if empty
+    const templateCheck = await pool.query("SELECT COUNT(*) FROM public.admin_weekly_template_tasks;");
+    if (parseInt(templateCheck.rows[0].count) === 0) {
+      console.log("Seeding admin_weekly_template_tasks Table with programmed weekly tasks...");
+      for (const tpl of DEFAULT_WEEKLY_TEMPLATE_TASKS) {
+        await pool.query(`
+          INSERT INTO public.admin_weekly_template_tasks 
+          (id, day_id, slot_order, title, description, area, priority, is_priority_today, category, is_active)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          ON CONFLICT (id) DO NOTHING;
+        `, [
+          tpl.id,
+          tpl.dayId,
+          tpl.slotOrder,
+          tpl.title,
+          tpl.description || "",
+          tpl.area || "crecer",
+          tpl.priority || "high",
+          tpl.isPriorityToday !== false,
+          tpl.category || "otros",
+          tpl.isActive !== false
+        ]);
+      }
+    }
+
     // Seed categories
     const catCheck = await pool.query("SELECT COUNT(*) FROM categories;");
     if (parseInt(catCheck.rows[0].count) === 0) {
@@ -2969,7 +3270,7 @@ async function initPostgresStore(): Promise<ShopState | null> {
     // Seed 3D Printing default settings, sales channels, printers, and filaments
     await pool.query(`
       INSERT INTO public.settings_3d (id, electricity_kwh_price, labor_hourly_rate, default_failure_rate_percent, target_margin_percent, default_markup_percent, pricing_mode, default_packaging_cost, currency, exchange_rate_usd_uyu)
-      VALUES ('default', 8.50, 250.00, 5.00, 50.00, 100.00, 'margin', 25.00, 'UYU', 42.50)
+      VALUES ('default', 8.50, 250.00, 5.00, 50.00, 100.00, 'margin', 10.00, 'UYU', 42.50)
       ON CONFLICT (id) DO NOTHING;
 
       INSERT INTO public.sales_channels (id, name, fee_percent, fixed_fee, other_cost, description, active)
@@ -6342,6 +6643,17 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       const currentMonthStr = `${currentYear}-${String(currentMonthNum).padStart(2, "0")}`;
       const monthParam = (req.query.month as string) || currentMonthStr;
 
+      // Automatically ensure current week is initialized with programmed tasks (or on Mondays)
+      const weekOffsetParam = parseInt(req.query.weekOffset as string, 10) || 0;
+      let targetPlanningDate = new Date();
+      if (weekOffsetParam !== 0) {
+        targetPlanningDate = new Date(Date.now() + weekOffsetParam * 7 * 86400000);
+      }
+      const syncInfo = await syncWeeklyProgrammedTasks(targetPlanningDate, false).catch(err => {
+        console.warn("Failed to sync weekly tasks quietly:", err);
+        return null;
+      });
+
       // Determine date ranges for requested month
       const [mYear, mMonth] = monthParam.split("-").map(Number);
       const startOfMonth = new Date(Date.UTC(mYear, mMonth - 1, 1)).toISOString();
@@ -6362,7 +6674,6 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       monday.setUTCDate(now.getUTCDate() + diffToMonday);
       monday.setUTCHours(0, 0, 0, 0);
 
-      const weekOffsetParam = parseInt(req.query.weekOffset as string) || 0;
       if (weekOffsetParam !== 0) {
         monday.setUTCDate(monday.getUTCDate() + weekOffsetParam * 7);
       }
@@ -6627,7 +6938,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         tasksToday,
         prioritiesToday,
         dayFocus,
-        alerts
+        alerts,
+        weeklyResetInfo: syncInfo || null
       });
     } catch (err: any) {
       console.error("Error in /api/planning/overview:", err);
@@ -6962,6 +7274,326 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     }
   });
 
+  // Helper: Synchronize weekly programmed tasks (reset every Monday or manual trigger)
+  async function syncWeeklyProgrammedTasks(targetDate?: Date, forceReset: boolean = false) {
+    const now = targetDate ? new Date(targetDate) : new Date();
+    const dayOfWeek = now.getDay(); // 0 is Sun, 1 is Mon...
+    const distanceToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + distanceToMonday);
+    monday.setHours(0, 0, 0, 0);
+
+    const getIsoWeek = (d: Date) => {
+      const target = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+      const dayNr = target.getUTCDay() || 7;
+      target.setUTCDate(target.getUTCDate() + 4 - dayNr);
+      const yrStart = new Date(Date.UTC(target.getUTCFullYear(), 0, 1));
+      const weekNum = Math.ceil(((target.getTime() - yrStart.getTime()) / 86400000 + 1) / 7);
+      return `${target.getUTCFullYear()}-W${String(weekNum).padStart(2, "0")}`;
+    };
+
+    const weekPeriod = getIsoWeek(monday);
+    const mondayDateStr = monday.toISOString().substring(0, 10);
+
+    const dayOffsets: Record<string, number> = {
+      lunes: 0,
+      martes: 1,
+      miercoles: 2,
+      jueves: 3,
+      viernes: 4,
+      sabado: 5,
+      domingo: 6
+    };
+
+    const pool = getDbPool();
+    if (pool && !dbUnavailable) {
+      try {
+        if (!forceReset) {
+          const resetCheck = await pool.query(
+            "SELECT week_period, reset_at FROM public.admin_weekly_resets WHERE week_period = $1;",
+            [weekPeriod]
+          );
+          if (resetCheck.rows.length > 0) {
+            return { success: true, alreadyReset: true, weekPeriod, mondayDate: mondayDateStr };
+          }
+        }
+
+        const tplRes = await pool.query(`
+          SELECT id, day_id, slot_order, title, description, area, priority, is_priority_today, category, is_active
+          FROM public.admin_weekly_template_tasks
+          WHERE is_active = true
+          ORDER BY day_id, slot_order ASC;
+        `);
+
+        let templates = tplRes.rows;
+        if (templates.length === 0) {
+          templates = DEFAULT_WEEKLY_TEMPLATE_TASKS;
+        }
+
+        let tasksPlaced = 0;
+        for (const tpl of templates) {
+          const dayKey = tpl.day_id || tpl.dayId || "lunes";
+          const d = new Date(monday);
+          d.setDate(monday.getDate() + (dayOffsets[dayKey] ?? 0));
+          const yyyy = d.getFullYear();
+          const mm = String(d.getMonth() + 1).padStart(2, "0");
+          const dd = String(d.getDate()).padStart(2, "0");
+          const targetDayStr = `${yyyy}-${mm}-${dd}`;
+
+          const existingRes = await pool.query(
+            "SELECT id, status, is_priority_today FROM public.admin_tasks WHERE due_date = $1 AND title = $2;",
+            [targetDayStr, tpl.title]
+          );
+
+          if (existingRes.rows.length > 0) {
+            if (forceReset) {
+              await pool.query(`
+                UPDATE public.admin_tasks
+                SET status = 'pending',
+                    is_priority_today = $1,
+                    priority = $2,
+                    area = $3,
+                    updated_at = NOW()
+                WHERE id = $4;
+              `, [tpl.is_priority_today !== false, tpl.priority || "high", tpl.area || "crecer", existingRes.rows[0].id]);
+              tasksPlaced++;
+            }
+          } else {
+            const taskId = `task-prog-${dayKey}-${weekPeriod}-${tpl.slot_order || 1}-${Math.random().toString(36).substring(2, 7)}`;
+            await pool.query(`
+              INSERT INTO public.admin_tasks 
+              (id, title, description, type, priority, status, category, due_date, area, is_priority_today, created_at, updated_at)
+              VALUES ($1, $2, $3, 'task', $4, 'pending', $5, $6, $7, $8, NOW(), NOW())
+              ON CONFLICT (id) DO UPDATE SET status = 'pending', due_date = $6, updated_at = NOW();
+            `, [
+              taskId,
+              tpl.title,
+              tpl.description || "",
+              tpl.priority || "high",
+              tpl.category || "otros",
+              targetDayStr,
+              tpl.area || "crecer",
+              tpl.is_priority_today !== false
+            ]);
+            tasksPlaced++;
+          }
+        }
+
+        await pool.query(`
+          INSERT INTO public.admin_weekly_resets (week_period, monday_date, reset_at, tasks_placed, notes)
+          VALUES ($1, $2, NOW(), $3, $4)
+          ON CONFLICT (week_period) DO UPDATE
+          SET reset_at = NOW(), tasks_placed = $3;
+        `, [weekPeriod, mondayDateStr, tasksPlaced, `Reinicio de semana ${weekPeriod} con ${tasksPlaced} tareas programadas`]);
+
+        console.log(`[Planning] Weekly reset completed for ${weekPeriod} (${mondayDateStr}): ${tasksPlaced} tasks synced.`);
+        return { success: true, weekPeriod, mondayDate: mondayDateStr, tasksPlaced };
+      } catch (err: any) {
+        console.error("Error in syncWeeklyProgrammedTasks DB:", err);
+      }
+    }
+
+    // Fallback mode
+    if (!forceReset && fallbackWeeklyResets[weekPeriod]) {
+      return { success: true, alreadyReset: true, weekPeriod, mondayDate: mondayDateStr };
+    }
+
+    let tasksPlaced = 0;
+    for (const tpl of fallbackWeeklyTemplateTasks) {
+      if (tpl.isActive === false) continue;
+      const dayKey = tpl.dayId || "lunes";
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + (dayOffsets[dayKey] ?? 0));
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      const targetDayStr = `${yyyy}-${mm}-${dd}`;
+
+      const existing = fallbackAdminTasks.find(tk => tk.dueDate === targetDayStr && tk.title === tpl.title);
+      if (existing) {
+        if (forceReset) {
+          existing.status = "pending";
+          existing.isPriorityToday = tpl.isPriorityToday !== false;
+          existing.priority = tpl.priority || "high";
+          existing.updatedAt = new Date().toISOString();
+          tasksPlaced++;
+        }
+      } else {
+        const taskId = `task-prog-${dayKey}-${weekPeriod}-${tpl.slotOrder || 1}-${Math.random().toString(36).substring(2, 7)}`;
+        fallbackAdminTasks.push({
+          id: taskId,
+          title: tpl.title,
+          description: tpl.description || "",
+          type: "task",
+          priority: tpl.priority || "high",
+          status: "pending",
+          category: tpl.category || "otros",
+          dueDate: targetDayStr,
+          area: tpl.area || "crecer",
+          isPriorityToday: tpl.isPriorityToday !== false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+        tasksPlaced++;
+      }
+    }
+    fallbackWeeklyResets[weekPeriod] = {
+      weekPeriod,
+      mondayDate: mondayDateStr,
+      resetAt: new Date().toISOString(),
+      tasksPlaced
+    };
+    return { success: true, weekPeriod, mondayDate: mondayDateStr, tasksPlaced };
+  }
+
+  // POST /api/planning/week-reset (Reiniciar semana manualmente y colocar tareas programadas)
+  app.post("/api/planning/week-reset", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!isValidToken(authHeader)) {
+      return res.status(403).json({ success: false, message: "Acceso denegado." });
+    }
+    try {
+      const { targetDate, force } = req.body || {};
+      const target = targetDate ? new Date(targetDate) : new Date();
+      const result = await syncWeeklyProgrammedTasks(target, force !== false);
+      res.json({
+        success: true,
+        message: "Semana reiniciada correctamente y tareas programadas colocadas con estado pendiente.",
+        ...result
+      });
+    } catch (err: any) {
+      console.error("Error in /api/planning/week-reset:", err);
+      res.status(500).json({ success: false, message: "Error al reiniciar la semana.", error: err.message });
+    }
+  });
+
+  // GET /api/planning/template-tasks (Obtener plantilla de tareas programadas de la semana)
+  app.get("/api/planning/template-tasks", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!isValidToken(authHeader)) {
+      return res.status(403).json({ success: false, message: "Acceso denegado." });
+    }
+    try {
+      const pool = getDbPool();
+      if (pool && !dbUnavailable) {
+        const result = await pool.query(`
+          SELECT id, day_id, slot_order, title, description, area, priority, is_priority_today, category, is_active, created_at, updated_at
+          FROM public.admin_weekly_template_tasks
+          ORDER BY day_id, slot_order ASC;
+        `);
+        const templateTasks = result.rows.map(r => ({
+          id: r.id,
+          dayId: r.day_id,
+          slotOrder: r.slot_order,
+          title: r.title,
+          description: r.description || "",
+          area: r.area || "crecer",
+          priority: r.priority || "high",
+          isPriorityToday: r.is_priority_today !== false,
+          category: r.category || "otros",
+          isActive: r.is_active !== false,
+          createdAt: r.created_at,
+          updatedAt: r.updated_at
+        }));
+        return res.json({ success: true, templateTasks });
+      }
+      res.json({ success: true, templateTasks: fallbackWeeklyTemplateTasks });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // POST /api/planning/template-tasks (Crear o actualizar tarea en la plantilla programada)
+  app.post("/api/planning/template-tasks", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!isValidToken(authHeader)) {
+      return res.status(403).json({ success: false, message: "Acceso denegado." });
+    }
+    try {
+      const { id, dayId, slotOrder, title, description, area, priority, isPriorityToday, category, isActive } = req.body;
+      if (!title || !dayId) {
+        return res.status(400).json({ success: false, message: "Título y día de la semana son obligatorios." });
+      }
+      const tId = id || `tpl-${dayId}-${Date.now().toString(36)}`;
+      const pool = getDbPool();
+      if (pool && !dbUnavailable) {
+        await pool.query(`
+          INSERT INTO public.admin_weekly_template_tasks
+          (id, day_id, slot_order, title, description, area, priority, is_priority_today, category, is_active, updated_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+          ON CONFLICT (id) DO UPDATE SET
+            day_id = EXCLUDED.day_id,
+            slot_order = EXCLUDED.slot_order,
+            title = EXCLUDED.title,
+            description = EXCLUDED.description,
+            area = EXCLUDED.area,
+            priority = EXCLUDED.priority,
+            is_priority_today = EXCLUDED.is_priority_today,
+            category = EXCLUDED.category,
+            is_active = EXCLUDED.is_active,
+            updated_at = NOW();
+        `, [
+          tId,
+          dayId,
+          parseInt(slotOrder, 10) || 1,
+          sanitizeHtmlString(title).substring(0, 500),
+          sanitizeHtmlString(description || ""),
+          sanitizeHtmlString(area || "crecer").substring(0, 50),
+          sanitizeHtmlString(priority || "high").substring(0, 50),
+          isPriorityToday !== false,
+          sanitizeHtmlString(category || "otros").substring(0, 100),
+          isActive !== false
+        ]);
+        return res.json({ success: true, message: "Tarea programada guardada correctamente." });
+      }
+      const idx = fallbackWeeklyTemplateTasks.findIndex(t => t.id === tId);
+      const item = {
+        id: tId,
+        dayId,
+        slotOrder: parseInt(slotOrder, 10) || 1,
+        title,
+        description,
+        area: area || "crecer",
+        priority: priority || "high",
+        isPriorityToday: isPriorityToday !== false,
+        category: category || "otros",
+        isActive: isActive !== false
+      };
+      if (idx !== -1) fallbackWeeklyTemplateTasks[idx] = item;
+      else fallbackWeeklyTemplateTasks.push(item);
+      res.json({ success: true, message: "Tarea programada guardada correctamente." });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // DELETE /api/planning/template-tasks/:id
+  app.delete("/api/planning/template-tasks/:id", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!isValidToken(authHeader)) {
+      return res.status(403).json({ success: false, message: "Acceso denegado." });
+    }
+    try {
+      const { id } = req.params;
+      const pool = getDbPool();
+      if (pool && !dbUnavailable) {
+        await pool.query("DELETE FROM public.admin_weekly_template_tasks WHERE id = $1;", [id]);
+      }
+      const idx = fallbackWeeklyTemplateTasks.findIndex(t => t.id === id);
+      if (idx !== -1) fallbackWeeklyTemplateTasks.splice(idx, 1);
+      res.json({ success: true, message: "Tarea programada eliminada de la plantilla." });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // Check every 15 minutes in the background for automatic Monday week reset
+  setInterval(() => {
+    syncWeeklyProgrammedTasks().catch(err => {
+      // quiet background check
+    });
+  }, 15 * 60 * 1000);
+
   // ==========================================
   // 3D CALCULATOR & MANUFACTURING API ROUTES
   // ==========================================
@@ -7012,7 +7644,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     targetMarginPercent: parseFloat(r.target_margin_percent) || 50.00,
     defaultMarkupPercent: parseFloat(r.default_markup_percent) || 100.00,
     pricingMode: r.pricing_mode || "margin",
-    defaultPackagingCost: parseFloat(r.default_packaging_cost) || 25.00,
+    defaultPackagingCost: parseFloat(r.default_packaging_cost) !== undefined && !isNaN(parseFloat(r.default_packaging_cost)) ? parseFloat(r.default_packaging_cost) : 10.00,
     currency: r.currency || "UYU",
     exchangeRateUsdUyu: parseFloat(r.exchange_rate_usd_uyu) || 42.50,
     updatedAt: r.updated_at

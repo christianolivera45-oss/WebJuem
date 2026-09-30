@@ -34,7 +34,7 @@ import {
   Eye,
   Settings2
 } from "lucide-react";
-import { AdminGoal, AdminTask, DayFocus, AdminReview, WorkArea, GoalCategory, GoalStatus, GoalPriority, ShopState } from "../types";
+import { AdminGoal, AdminTask, DayFocus, AdminReview, WorkArea, GoalCategory, GoalStatus, GoalPriority, ShopState, WeeklyTemplateTask } from "../types";
 
 interface DashboardPlanningProps {
   store: ShopState;
@@ -91,6 +91,100 @@ export const DashboardPlanning: React.FC<DashboardPlanningProps> = ({
 
   // Work areas filter
   const [areaFilter, setAreaFilter] = useState<"todas" | WorkArea>("todas");
+
+  // Weekly reset and template tasks state
+  const [isResettingWeek, setIsResettingWeek] = useState(false);
+  const [resetSuccessToast, setResetSuccessToast] = useState<string | null>(null);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [templateTasks, setTemplateTasks] = useState<WeeklyTemplateTask[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const [editingTemplateTask, setEditingTemplateTask] = useState<Partial<WeeklyTemplateTask> | null>(null);
+
+  const fetchTemplateTasks = async () => {
+    if (!token) return;
+    setLoadingTemplates(true);
+    try {
+      const res = await fetch("/api/planning/template-tasks", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTemplateTasks(data.templateTasks || []);
+      }
+    } catch (e) {
+      console.warn("Error fetching template tasks:", e);
+    } finally {
+      setLoadingTemplates(false);
+    }
+  };
+
+  const handleWeekReset = async (force = true) => {
+    if (!token) return;
+    setIsResettingWeek(true);
+    try {
+      const target = new Date(Date.now() + weekOffset * 7 * 86400000);
+      const res = await fetch("/api/planning/week-reset", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          targetDate: target.toISOString(),
+          force
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setResetSuccessToast(`¡Semana reiniciada! Se han colocado ${data.tasksPlaced || 20} tareas programadas para esta semana.`);
+        setTimeout(() => setResetSuccessToast(null), 6000);
+        await fetchPlanningData(true);
+        if (onRefreshTasks) onRefreshTasks();
+      } else {
+        alert(data.message || "Error al reiniciar la semana.");
+      }
+    } catch (e: any) {
+      console.error("Error resetting week:", e);
+      alert("Error al conectar con el servidor para reiniciar la semana.");
+    } finally {
+      setIsResettingWeek(false);
+    }
+  };
+
+  const handleSaveTemplateTask = async (tpl: Partial<WeeklyTemplateTask>) => {
+    if (!token) return;
+    try {
+      const res = await fetch("/api/planning/template-tasks", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(tpl)
+      });
+      if (res.ok) {
+        await fetchTemplateTasks();
+        setEditingTemplateTask(null);
+      }
+    } catch (e) {
+      console.error("Error saving template task:", e);
+    }
+  };
+
+  const handleDeleteTemplateTask = async (id: string) => {
+    if (!token) return;
+    try {
+      const res = await fetch(`/api/planning/template-tasks/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        await fetchTemplateTasks();
+      }
+    } catch (e) {
+      console.error("Error deleting template task:", e);
+    }
+  };
 
   // Fetch planning overview
   const fetchPlanningData = async (isManualRefresh = false) => {
@@ -1151,7 +1245,7 @@ export const DashboardPlanning: React.FC<DashboardPlanningProps> = ({
       {activeLevel === "semana" && (
         <div className="space-y-6">
           {/* Week Navigation Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 sm:p-5 rounded-2xl bg-slate-900/90 border border-slate-800 shadow-xl">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 sm:p-5 rounded-2xl bg-slate-900/90 border border-slate-800 shadow-xl">
             <div>
               <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
                 <Calendar className="w-5 h-5 text-indigo-400" />
@@ -1165,38 +1259,97 @@ export const DashboardPlanning: React.FC<DashboardPlanningProps> = ({
               </p>
             </div>
             
-            {/* Week Navigation */}
-            <div className="flex items-center gap-1.5 bg-slate-800/80 p-1 rounded-xl border border-slate-700 shrink-0">
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Reset Week Button */}
               <button
                 type="button"
-                onClick={() => setWeekOffset(prev => prev - 1)}
-                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700/60 rounded-lg transition cursor-pointer"
-                title="Semana anterior"
+                disabled={isResettingWeek}
+                onClick={() => {
+                  if (confirm("¿Deseas reiniciar la semana y colocar de nuevo todas las tareas programadas con estado pendiente para Lunes a Domingo?")) {
+                    handleWeekReset(true);
+                  }
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold transition shadow-sm cursor-pointer disabled:opacity-50"
+                title="Reiniciar la semana ahora y colocar de nuevo las tareas programadas con estado pendiente"
               >
-                <ChevronLeft className="w-4 h-4" />
+                <RefreshCw className={`w-3.5 h-3.5 ${isResettingWeek ? "animate-spin text-amber-400" : ""}`} />
+                <span>{isResettingWeek ? "Reiniciando..." : "Reiniciar Semana"}</span>
               </button>
+
+              {/* Template Tasks Modal Button */}
               <button
                 type="button"
-                onClick={() => setWeekOffset(0)}
-                className={`text-xs px-3 py-1 rounded-lg font-bold transition cursor-pointer ${
-                  weekOffset === 0 
-                    ? "bg-indigo-600 text-white shadow-sm" 
-                    : "text-slate-300 hover:bg-slate-700/60"
-                }`}
+                onClick={() => {
+                  fetchTemplateTasks();
+                  setShowTemplateModal(true);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold transition shadow-sm cursor-pointer"
+                title="Ver y configurar la plantilla de tareas programadas que se colocan cada lunes"
               >
-                Semana #{currentWeekNumber} de {new Date(Date.now() + weekOffset * 7 * 86400000).getFullYear()}
-                {weekOffset === 0 ? " (Actual)" : ""}
+                <Layers className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Tareas Programadas</span>
               </button>
-              <button
-                type="button"
-                onClick={() => setWeekOffset(prev => prev + 1)}
-                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700/60 rounded-lg transition cursor-pointer"
-                title="Semana siguiente"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
+
+              {/* Week Navigation */}
+              <div className="flex items-center gap-1.5 bg-slate-800/80 p-1 rounded-xl border border-slate-700 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setWeekOffset(prev => prev - 1)}
+                  className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700/60 rounded-lg transition cursor-pointer"
+                  title="Semana anterior"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setWeekOffset(0)}
+                  className={`text-xs px-3 py-1 rounded-lg font-bold transition cursor-pointer ${
+                    weekOffset === 0 
+                      ? "bg-indigo-600 text-white shadow-sm" 
+                      : "text-slate-300 hover:bg-slate-700/60"
+                  }`}
+                >
+                  Semana #{currentWeekNumber} de {new Date(Date.now() + weekOffset * 7 * 86400000).getFullYear()}
+                  {weekOffset === 0 ? " (Actual)" : ""}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setWeekOffset(prev => prev + 1)}
+                  className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700/60 rounded-lg transition cursor-pointer"
+                  title="Semana siguiente"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           </div>
+
+          {/* Banner explicativo del ciclo semanal de los lunes */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 rounded-xl bg-indigo-950/40 border border-indigo-500/30 text-xs text-indigo-200 shadow-sm">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-indigo-400 shrink-0" />
+              <span>
+                <strong>Reinicio Automático los Lunes:</strong> Todos los lunes se reinicia el ciclo de la semana y se colocan de nuevo automáticamente las tareas programadas con estado pendiente.
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-[11px] px-2 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300 font-semibold border border-indigo-500/30">
+                Ciclo activo
+              </span>
+            </div>
+          </div>
+
+          {resetSuccessToast && (
+            <div className="p-3 bg-emerald-500/20 border border-emerald-500/30 rounded-xl text-emerald-300 text-xs flex items-center justify-between animate-fade-in">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>{resetSuccessToast}</span>
+              </div>
+              <button onClick={() => setResetSuccessToast(null)} className="text-emerald-400 hover:text-white cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
 
           {/* SECCIÓN: PRODUCTIVIDAD VS RESULTADOS */}
           <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/90 border border-slate-800 shadow-xl space-y-4">
@@ -2624,6 +2777,23 @@ export const DashboardPlanning: React.FC<DashboardPlanningProps> = ({
                     body: JSON.stringify(payload)
                   });
                   if (res.ok) {
+                    const saveToWeeklyTemplate = formData.get("saveToWeeklyTemplate") === "true";
+                    if (saveToWeeklyTemplate && payload.dueDate) {
+                      const parts = (payload.dueDate as string).split("-").map(Number);
+                      const dObj = new Date(parts[0], parts[1] - 1, parts[2]);
+                      const daysMap = ["domingo", "lunes", "martes", "miercoles", "jueves", "viernes", "sabado"];
+                      const dayId = daysMap[dObj.getDay()] as any;
+                      await handleSaveTemplateTask({
+                        dayId,
+                        title: String(payload.title),
+                        description: String(payload.description || ""),
+                        area: payload.area as any,
+                        priority: payload.priority as any,
+                        isPriorityToday: payload.isPriorityToday,
+                        isActive: true
+                      });
+                    }
+
                     setShowTaskModal(false);
                     fetchPlanningData();
                     if (onRefreshTasks) onRefreshTasks();
@@ -2748,6 +2918,24 @@ export const DashboardPlanning: React.FC<DashboardPlanningProps> = ({
                 </select>
               </div>
 
+              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-800/80 border border-slate-700">
+                <div>
+                  <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <RefreshCw className="w-3.5 h-3.5 text-indigo-400" />
+                    ¿Programar como rutina semanal?
+                  </span>
+                  <span className="text-[11px] text-slate-400">Se colocará automáticamente todos los lunes</span>
+                </div>
+                <select
+                  name="saveToWeeklyTemplate"
+                  defaultValue="false"
+                  className="bg-slate-900 text-xs text-indigo-300 px-2.5 py-1 rounded-lg border border-slate-700 font-bold"
+                >
+                  <option value="false">Solo para esta fecha</option>
+                  <option value="true">Sí (Todos los lunes)</option>
+                </select>
+              </div>
+
               <input type="hidden" name="status" value={editingTask?.status || "pending"} />
 
               <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-800">
@@ -2857,6 +3045,356 @@ export const DashboardPlanning: React.FC<DashboardPlanningProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: PLANTILLA SEMANAL DE TAREAS PROGRAMADAS */}
+      {/* ======================================================== */}
+      {showTemplateModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-fade-in">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-4xl rounded-2xl shadow-2xl p-4 sm:p-6 space-y-5 max-h-[90vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+              <div>
+                <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                  <Layers className="w-5 h-5 text-indigo-400" />
+                  Plantilla de Tareas Programadas Semanales
+                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 font-bold border border-indigo-500/20">
+                    {templateTasks.length} tareas configuradas
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Todos los <strong>lunes</strong> se reinicia la semana y se colocan de nuevo automáticamente estas tareas con estado pendiente.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={isResettingWeek}
+                  onClick={async () => {
+                    await handleWeekReset(true);
+                    setShowTemplateModal(false);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold transition cursor-pointer"
+                  title="Reiniciar la semana ahora con esta plantilla"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isResettingWeek ? "animate-spin" : ""}`} />
+                  <span>Aplicar a Esta Semana</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowTemplateModal(false);
+                    setEditingTemplateTask(null);
+                  }}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Content: 7 Days Grid */}
+            <div className="flex-1 overflow-y-auto pr-1 space-y-4">
+              {loadingTemplates ? (
+                <div className="p-12 text-center text-slate-400 text-sm">
+                  <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-indigo-400" />
+                  Cargando plantilla semanal...
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                  {[
+                    { id: "lunes", label: "Lunes", defaultFocus: "Planificación + ventas" },
+                    { id: "martes", label: "Martes", defaultFocus: "Diseño 3D" },
+                    { id: "miercoles", label: "Miércoles", defaultFocus: "Publicaciones" },
+                    { id: "jueves", label: "Jueves", defaultFocus: "Investigación comercial" },
+                    { id: "viernes", label: "Viernes", defaultFocus: "Producción + operativa" },
+                    { id: "sabado", label: "Sábado", defaultFocus: "Contenido + mejoras" },
+                    { id: "domingo", label: "Domingo", defaultFocus: "Revisión semanal" }
+                  ].map(day => {
+                    const focusItem = dayFocusList.find(d => d.id === day.id);
+                    const focusTitle = focusItem?.focusTitle || day.defaultFocus;
+                    const dayTemplates = templateTasks
+                      .filter(t => t.dayId === day.id)
+                      .sort((a, b) => (a.slotOrder || 1) - (b.slotOrder || 1));
+
+                    return (
+                      <div
+                        key={day.id}
+                        className="p-3.5 rounded-xl bg-slate-800/60 border border-slate-700/70 flex flex-col justify-between space-y-3"
+                      >
+                        <div>
+                          {/* Day Header */}
+                          <div className="flex items-center justify-between pb-2 border-b border-slate-700/50">
+                            <div>
+                              <span className="text-xs font-black uppercase text-white tracking-wider">
+                                {day.label}
+                              </span>
+                              <span className="text-[10px] text-indigo-300 font-semibold block">
+                                Foco: {focusTitle}
+                              </span>
+                            </div>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+                              {dayTemplates.length} tareas
+                            </span>
+                          </div>
+
+                          {/* Day Tasks List */}
+                          <div className="mt-2.5 space-y-2">
+                            {dayTemplates.length === 0 ? (
+                              <p className="text-[11px] text-slate-500 italic py-2 text-center">
+                                Sin tareas programadas para {day.label.toLowerCase()}
+                              </p>
+                            ) : (
+                              dayTemplates.map((t, idx) => (
+                                <div
+                                  key={t.id}
+                                  className="p-2.5 rounded-lg bg-slate-900/90 border border-slate-700/80 hover:border-slate-600 transition flex flex-col justify-between gap-1.5"
+                                >
+                                  <div className="flex items-start justify-between gap-1.5">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="text-[9px] font-black text-amber-400 shrink-0">
+                                          #{t.slotOrder || idx + 1}
+                                        </span>
+                                        <span className="text-xs font-bold text-white leading-tight truncate">
+                                          {t.title}
+                                        </span>
+                                      </div>
+                                      {t.description && (
+                                        <p className="text-[10px] text-slate-400 mt-1 line-clamp-2 leading-relaxed">
+                                          {t.description}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditingTemplateTask(t)}
+                                        className="text-slate-400 hover:text-indigo-300 p-1 rounded hover:bg-slate-800 transition cursor-pointer"
+                                        title="Editar tarea programada"
+                                      >
+                                        <Edit3 className="w-3 h-3" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (confirm(`¿Eliminar "${t.title}" de la plantilla de los ${day.label}?`)) {
+                                            handleDeleteTemplateTask(t.id);
+                                          }
+                                        }}
+                                        className="text-slate-400 hover:text-rose-400 p-1 rounded hover:bg-slate-800 transition cursor-pointer"
+                                        title="Eliminar de la plantilla"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-2 pt-1 border-t border-slate-800/80">
+                                    <span className={`text-[8px] px-1.5 py-0.5 rounded border font-semibold ${getAreaColor((t.area || "crecer") as any)}`}>
+                                      {(t.area || "crecer").toUpperCase()}
+                                    </span>
+                                    <span className="text-[8px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-semibold border border-slate-700 uppercase">
+                                      {t.priority || "high"}
+                                    </span>
+                                    {t.isPriorityToday && (
+                                      <span className="text-[8px] text-amber-400 font-bold flex items-center gap-0.5 ml-auto">
+                                        <Star className="w-2.5 h-2.5 fill-amber-400" /> Prioridad
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Add Task for Day Button */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingTemplateTask({
+                              dayId: day.id as any,
+                              slotOrder: dayTemplates.length + 1,
+                              title: "",
+                              description: "",
+                              area: "crecer",
+                              priority: "high",
+                              isPriorityToday: true,
+                              isActive: true
+                            });
+                          }}
+                          className="w-full py-1.5 px-2 rounded-lg border border-dashed border-slate-700 hover:border-indigo-500/60 bg-slate-900/40 hover:bg-indigo-950/20 text-slate-400 hover:text-indigo-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5 text-indigo-400" />
+                          <span>Agregar a {day.label}</span>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Sub-Modal / Drawer to Edit/Create Template Task */}
+            {editingTemplateTask && (
+              <div className="p-4 rounded-xl bg-slate-950 border border-indigo-500/40 space-y-3 animate-fade-in shadow-xl">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Edit3 className="w-4 h-4 text-indigo-400" />
+                    {editingTemplateTask.id ? "Editar Tarea Programada" : "Nueva Tarea Programada"}
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => setEditingTemplateTask(null)}
+                    className="text-slate-400 hover:text-white"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    const form = e.currentTarget;
+                    const fd = new FormData(form);
+                    await handleSaveTemplateTask({
+                      id: editingTemplateTask.id,
+                      dayId: (fd.get("dayId") as any) || editingTemplateTask.dayId,
+                      slotOrder: parseInt(fd.get("slotOrder") as string, 10) || 1,
+                      title: fd.get("title") as string,
+                      description: (fd.get("description") as string) || "",
+                      area: (fd.get("area") as any) || "crecer",
+                      priority: (fd.get("priority") as any) || "high",
+                      isPriorityToday: fd.get("isPriorityToday") === "true",
+                      isActive: true
+                    });
+                  }}
+                  className="space-y-3"
+                >
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-300 block mb-1">Día de la Semana</label>
+                      <select
+                        name="dayId"
+                        defaultValue={editingTemplateTask.dayId || "lunes"}
+                        className="w-full bg-slate-900 text-white text-xs px-3 py-2 rounded-xl border border-slate-700 font-bold"
+                      >
+                        <option value="lunes">Lunes</option>
+                        <option value="martes">Martes</option>
+                        <option value="miercoles">Miércoles</option>
+                        <option value="jueves">Jueves</option>
+                        <option value="viernes">Viernes</option>
+                        <option value="sabado">Sábado</option>
+                        <option value="domingo">Domingo</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-semibold text-slate-300 block mb-1">Área</label>
+                      <select
+                        name="area"
+                        defaultValue={editingTemplateTask.area || "crecer"}
+                        className="w-full bg-slate-900 text-white text-xs px-3 py-2 rounded-xl border border-slate-700"
+                      >
+                        <option value="crecer">Crecer</option>
+                        <option value="mantener">Mantener</option>
+                        <option value="mejorar">Mejorar</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-semibold text-slate-300 block mb-1">Prioridad</label>
+                      <select
+                        name="priority"
+                        defaultValue={editingTemplateTask.priority || "high"}
+                        className="w-full bg-slate-900 text-white text-xs px-3 py-2 rounded-xl border border-slate-700"
+                      >
+                        <option value="high">Alta</option>
+                        <option value="medium">Media</option>
+                        <option value="low">Baja</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-slate-300 block mb-1">Título de la Tarea Programada *</label>
+                    <input
+                      name="title"
+                      required
+                      defaultValue={editingTemplateTask.title || ""}
+                      placeholder="Ej: Revisar stock y preparar pedidos"
+                      className="w-full bg-slate-900 text-white text-xs px-3 py-2 rounded-xl border border-slate-700 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-slate-300 block mb-1">Descripción / Instrucciones</label>
+                    <textarea
+                      name="description"
+                      rows={2}
+                      defaultValue={editingTemplateTask.description || ""}
+                      placeholder="Detalles de la tarea..."
+                      className="w-full bg-slate-900 text-white text-xs px-3 py-2 rounded-xl border border-slate-700 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-300">
+                    <span className="flex items-center gap-1.5 font-semibold">
+                      <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                      ¿Incluir en las 3 Prioridades Principales del día?
+                    </span>
+                    <select
+                      name="isPriorityToday"
+                      defaultValue={editingTemplateTask.isPriorityToday !== false ? "true" : "false"}
+                      className="bg-slate-800 text-xs text-amber-300 px-2 py-1 rounded border border-slate-700 font-bold"
+                    >
+                      <option value="true">Sí</option>
+                      <option value="false">No</option>
+                    </select>
+                  </div>
+
+                  <input type="hidden" name="slotOrder" value={editingTemplateTask.slotOrder || 1} />
+
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => setEditingTemplateTask(null)}
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl"
+                    >
+                      Guardar en Plantilla
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-between border-t border-slate-800 pt-3">
+              <span className="text-[11px] text-slate-400">
+                Tip: Las tareas programadas se cargarán todos los lunes para cada día de la semana con estado pendiente.
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowTemplateModal(false);
+                  setEditingTemplateTask(null);
+                }}
+                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl"
+              >
+                Cerrar
+              </button>
+            </div>
           </div>
         </div>
       )}

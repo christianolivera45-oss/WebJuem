@@ -456,6 +456,21 @@ export interface AdminTask {
   updatedAt?: string;
 }
 
+export interface WeeklyTemplateTask {
+  id: string;
+  dayId: "lunes" | "martes" | "miercoles" | "jueves" | "viernes" | "sabado" | "domingo";
+  slotOrder: number;
+  title: string;
+  description?: string;
+  area?: WorkArea;
+  priority: "high" | "medium" | "low";
+  isPriorityToday: boolean;
+  category?: string;
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export function is3DProduct(product: Product): boolean {
   if (!product) return false;
   if (product.is3D === true) return true;

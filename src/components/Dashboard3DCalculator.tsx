@@ -59,7 +59,7 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
     targetMarginPercent: 50,
     defaultMarkupPercent: 100,
     pricingMode: "margin",
-    defaultPackagingCost: 25,
+    defaultPackagingCost: 10,
     currency: "UYU",
     exchangeRateUsdUyu: 42.5
   });
@@ -78,9 +78,9 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
   const [filamentWeightGrams, setFilamentWeightGrams] = useState(35);
   const [printHours, setPrintHours] = useState(2);
   const [printMinutes, setPrintMinutes] = useState(15);
-  const [prepMinutes, setPrepMinutes] = useState(5);
-  const [postMinutes, setPostMinutes] = useState(5);
-  const [packagingCost, setPackagingCost] = useState(25);
+  const [prepMinutes, setPrepMinutes] = useState(0);
+  const [postMinutes, setPostMinutes] = useState(0);
+  const [packagingCost, setPackagingCost] = useState(10);
   const [pricingMode, setPricingMode] = useState<"margin" | "markup">("margin");
   const [targetRatePercent, setTargetRatePercent] = useState(50);
   const [customFinalPrice, setCustomFinalPrice] = useState<number | null>(null);
@@ -211,7 +211,7 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
               ? data.settings.defaultMarkupPercent
               : data.settings.targetMarginPercent
           );
-          setPackagingCost(data.settings.defaultPackagingCost || 25);
+          setPackagingCost(data.settings.defaultPackagingCost !== undefined ? Number(data.settings.defaultPackagingCost) : 10);
         }
         setQuotes(data.quotes || []);
 
@@ -560,7 +560,7 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
     setPrintMinutes(q.printTimeMinutes || 0);
     setPrepMinutes(q.prepTimeMinutes || 0);
     setPostMinutes(q.postProcessTimeMinutes || 0);
-    setPackagingCost(q.packagingCost || 25);
+    setPackagingCost(q.packagingCost !== undefined ? Number(q.packagingCost) : 10);
     setPricingMode(q.pricingMode || "margin");
     setTargetRatePercent(q.targetRatePercent || 50);
     setCustomFinalPrice(q.finalPrice || null);
@@ -714,9 +714,9 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
                     setFilamentWeightGrams(35);
                     setPrintHours(2);
                     setPrintMinutes(15);
-                    setPrepMinutes(5);
-                    setPostMinutes(5);
-                    setPackagingCost(25);
+                    setPrepMinutes(0);
+                    setPostMinutes(0);
+                    setPackagingCost(10);
                     setTargetRatePercent(50);
                     setCustomFinalPrice(null);
                     setExtras([]);
@@ -1182,8 +1182,12 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
                         <input
                           type="number"
                           min="0"
-                          value={prepMinutes}
-                          onChange={(e) => setPrepMinutes(Math.max(0, parseInt(e.target.value) || 0))}
+                          placeholder="0"
+                          value={prepMinutes === 0 ? "" : prepMinutes}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            setPrepMinutes(raw === "" ? 0 : Math.max(0, parseInt(raw, 10) || 0));
+                          }}
                           className="w-full px-2.5 py-1.5 rounded-xl text-xs font-mono font-bold bg-[#0B1730] border border-[#D4A55A]/30 text-[#F4EAD7] focus:outline-none focus:border-[#E6BF76]"
                         />
                       </div>
@@ -1194,8 +1198,12 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
                         <input
                           type="number"
                           min="0"
-                          value={postMinutes}
-                          onChange={(e) => setPostMinutes(Math.max(0, parseInt(e.target.value) || 0))}
+                          placeholder="0"
+                          value={postMinutes === 0 ? "" : postMinutes}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            setPostMinutes(raw === "" ? 0 : Math.max(0, parseInt(raw, 10) || 0));
+                          }}
                           className="w-full px-2.5 py-1.5 rounded-xl text-xs font-mono font-bold bg-[#0B1730] border border-[#D4A55A]/30 text-[#F4EAD7] focus:outline-none focus:border-[#E6BF76]"
                         />
                       </div>
@@ -1206,8 +1214,12 @@ export const Dashboard3DCalculator: React.FC<Dashboard3DCalculatorProps> = ({
                         <input
                           type="number"
                           min="0"
-                          value={packagingCost}
-                          onChange={(e) => setPackagingCost(Math.max(0, parseFloat(e.target.value) || 0))}
+                          placeholder="10"
+                          value={packagingCost === 0 ? "" : packagingCost}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            setPackagingCost(raw === "" ? 0 : Math.max(0, parseFloat(raw) || 0));
+                          }}
                           className="w-full px-2.5 py-1.5 rounded-xl text-xs font-mono font-bold bg-[#0B1730] border border-[#D4A55A]/30 text-[#F4EAD7] focus:outline-none focus:border-[#E6BF76]"
                         />
                       </div>
