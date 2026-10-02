@@ -125,7 +125,11 @@ const DEFAULT_SHOP_STATE: ShopState = {
     ],
     freeShippingActive: true,
     freeShippingMinAmount: 2000,
-    freeShippingRegions: "Pinamar, Salinas, Marindia, Neptunia"
+    freeShippingRegions: "Pinamar, Salinas, Marindia, Neptunia",
+    bannerOpacity: 95,
+    bannerLightLeft: 75,
+    bannerLightCenter: 88,
+    bannerLightRight: 95
   },
   products: [
     {
@@ -1734,6 +1738,24 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
         settings.transferDetails.includes("Realiza tu transferencia") || 
         settings.transferDetails.includes("BROU, Itaú, Santander, BBVA")) {
       settings.transferDetails = newTransferDetails;
+      settingsUpdated = true;
+    }
+
+    // Default migration for carousel lighting so it never appears excessively dark
+    if (settings.bannerLightLeft === undefined) {
+      settings.bannerLightLeft = 85;
+      settingsUpdated = true;
+    }
+    if (settings.bannerLightCenter === undefined) {
+      settings.bannerLightCenter = 90;
+      settingsUpdated = true;
+    }
+    if (settings.bannerLightRight === undefined) {
+      settings.bannerLightRight = 95;
+      settingsUpdated = true;
+    }
+    if (settings.bannerOpacity === undefined || settings.bannerOpacity < 50) {
+      settings.bannerOpacity = 100;
       settingsUpdated = true;
     }
 

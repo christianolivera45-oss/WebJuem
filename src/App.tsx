@@ -109,7 +109,8 @@ import {
   Moon,
   Accessibility,
   GripVertical,
-  Target
+  Target,
+  Sun
 } from "lucide-react";
 import { Product, SiteSettings, ShopState, CartItem, Category, Subcategory, ProductVariant, is3DProduct, isGenericSize, isGenericColor, Shipping, ShippingOrigin, StockTransfer, StockAdjustment, AdminTask, Coupon } from "./types";
 import ThemeStyles from "./components/ThemeStyles";
@@ -9365,51 +9366,490 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                       </div>
                     </div>
 
-                    {/* Ajuste de Opacidad del Banner General */}
-                    <div className="border border-zinc-800/60 rounded-2xl p-5 bg-zinc-950/40 backdrop-blur-sm space-y-4">
-                      <div className="flex items-center gap-2 border-b border-zinc-800/40 pb-3">
-                        <Palette className="h-4 w-4 text-amber-500" />
-                        <h4 className="text-xs font-black uppercase tracking-wider text-zinc-300">
-                          Diseño y Opacidad del Banner
-                        </h4>
+                    {/* Ajuste de Opacidad y Luz del Banner General */}
+                    <div className="border border-zinc-800/60 rounded-2xl p-5 sm:p-6 bg-zinc-950/40 backdrop-blur-sm space-y-6">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-800/40 pb-3">
+                        <div className="flex items-center gap-2">
+                          <Sun className="h-4 w-4 text-amber-500" />
+                          <h4 className="text-xs font-black uppercase tracking-wider text-zinc-300">
+                            Diseño, Luz y Opacidad del Banner
+                          </h4>
+                        </div>
+                        <span className="text-[10px] font-mono text-zinc-400 bg-zinc-900 border border-zinc-800 px-2.5 py-0.5 rounded-full w-fit">
+                          Luz regulable en 3 zonas (Izq • Centro • Der)
+                        </span>
                       </div>
                       
-                      <div className="space-y-4">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                          <div>
-                            <label className="block text-xs font-bold text-zinc-200">
-                              Opacidad de las Imágenes del Carrusel
-                            </label>
-                            <p className="text-[10px] text-zinc-400 mt-0.5 max-w-xl">
-                              Ajusta la luminosidad de las imágenes de fondo en el carrusel de inicio. Un porcentaje menor oscurece la imagen para destacar el texto blanco; un porcentaje mayor hace el fondo más claro y visible.
-                            </p>
+                      <div className="space-y-6">
+                        {/* 1. Opacidad Global de la Imagen */}
+                        <div className="bg-zinc-900/60 border border-zinc-800/60 rounded-xl p-4 space-y-3">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <Palette className="w-3.5 h-3.5 text-amber-400" />
+                                <label className="block text-xs font-bold text-zinc-200">
+                                  Opacidad Base de las Imágenes del Carrusel
+                                </label>
+                              </div>
+                              <p className="text-[10px] text-zinc-400 mt-1 max-w-xl">
+                                Controla la transparencia base de la fotografía sobre el fondo. Al 100% la imagen se exhibe con toda su intensidad original sin atenuar.
+                              </p>
+                            </div>
+                            <span className="text-xs font-mono font-bold bg-amber-500/10 text-amber-400 border border-amber-500/25 px-2.5 py-1 rounded-lg shrink-0 self-start sm:self-center shadow-inner">
+                              {editingSettings.bannerOpacity !== undefined ? editingSettings.bannerOpacity : 95}%
+                            </span>
                           </div>
-                          <span className="text-[10px] font-mono font-bold bg-amber-500/10 text-amber-400 border border-amber-500/25 px-2.5 py-1 rounded-lg shrink-0 self-start sm:self-center shadow-inner">
-                            {editingSettings.bannerOpacity !== undefined ? editingSettings.bannerOpacity : 35}%
-                          </span>
-                        </div>
-                        
-                        <div className="flex items-center gap-4 py-1">
-                          <span className="text-[10px] text-zinc-500 font-medium">Más Oscuro (10%)</span>
-                          <input
-                            type="range"
-                            min="10"
-                            max="100"
-                            step="5"
-                            value={editingSettings.bannerOpacity !== undefined ? editingSettings.bannerOpacity : 35}
-                            onChange={(e) => {
-                              const val = parseInt(e.target.value);
-                              setEditingSettings({
-                                ...editingSettings,
-                                bannerOpacity: val
-                              });
-                            }}
-                            className="flex-1 cursor-pointer accent-amber-500 h-1.5 bg-zinc-850 rounded-lg appearance-none outline-none"
-                          />
-                          <span className="text-[10px] text-zinc-500 font-medium">Más Claro (100%)</span>
+                          
+                          <div className="flex items-center gap-4 py-1">
+                            <span className="text-[10px] text-zinc-500 font-medium">Atenuado (10%)</span>
+                            <input
+                              type="range"
+                              min="10"
+                              max="100"
+                              step="5"
+                              value={editingSettings.bannerOpacity !== undefined ? editingSettings.bannerOpacity : 95}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value);
+                                setEditingSettings({
+                                  ...editingSettings,
+                                  bannerOpacity: val
+                                });
+                              }}
+                              className="flex-1 cursor-pointer accent-amber-500 h-2 bg-zinc-800 rounded-lg appearance-none outline-none"
+                            />
+                            <span className="text-[10px] text-amber-400 font-bold">100% Radiante</span>
+                          </div>
                         </div>
 
-                        <div className="border-t border-zinc-800/60 pt-4 mt-3 space-y-2.5">
+                        {/* 2. Control de Luz por Zonas: Izquierda, Centro, Derecha */}
+                        <div className="space-y-3">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <Sun className="w-4 h-4 text-amber-400 animate-pulse" />
+                                <label className="block text-xs font-black uppercase tracking-wider text-amber-400">
+                                  Cantidad de Luz en Izquierda, Centro y Derecha
+                                </label>
+                              </div>
+                              <p className="text-[11px] text-zinc-300 mt-0.5 max-w-2xl font-normal leading-relaxed">
+                                Regula la cantidad de luz de forma independiente en cada tercio del banner. Si notas que la imagen queda muy oscura, aumenta la luz al 95% o 100% para que el banner se luzca brillante sin sombras que lo tapen.
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Preajustes rápidos de iluminación */}
+                          <div className="bg-zinc-950/70 border border-zinc-800/80 rounded-xl p-3 space-y-2">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                              <Sparkles className="w-3 h-3 text-amber-400" />
+                              Preajustes Rápidos de Luz en 1 Clic:
+                            </span>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingSettings({
+                                    ...editingSettings,
+                                    bannerLightLeft: 100,
+                                    bannerLightCenter: 100,
+                                    bannerLightRight: 100,
+                                    bannerOpacity: 100
+                                  });
+                                }}
+                                className="py-2 px-2.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 text-[11px] font-bold flex flex-col items-center justify-center gap-0.5 text-center transition-all cursor-pointer shadow-sm hover:scale-[1.02]"
+                              >
+                                <span className="flex items-center gap-1 font-black">
+                                  🌟 Luz Máxima 100%
+                                </span>
+                                <span className="text-[9px] text-amber-200/80 font-normal">
+                                  Sin ninguna sombra
+                                </span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingSettings({
+                                    ...editingSettings,
+                                    bannerLightLeft: 85,
+                                    bannerLightCenter: 92,
+                                    bannerLightRight: 98,
+                                    bannerOpacity: 95
+                                  });
+                                }}
+                                className="py-2 px-2.5 rounded-lg bg-zinc-900 hover:bg-zinc-850 border border-zinc-700/80 hover:border-amber-500/40 text-zinc-200 text-[11px] font-bold flex flex-col items-center justify-center gap-0.5 text-center transition-all cursor-pointer hover:scale-[1.02]"
+                              >
+                                <span className="flex items-center gap-1 text-[#F4EAD7] font-bold">
+                                  ✨ Claro & Radiante
+                                </span>
+                                <span className="text-[9px] text-zinc-400 font-normal">
+                                  (Recomendado)
+                                </span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingSettings({
+                                    ...editingSettings,
+                                    bannerLightLeft: 70,
+                                    bannerLightCenter: 85,
+                                    bannerLightRight: 95,
+                                    bannerOpacity: 90
+                                  });
+                                }}
+                                className="py-2 px-2.5 rounded-lg bg-zinc-900 hover:bg-zinc-850 border border-zinc-700/80 hover:border-zinc-600 text-zinc-300 text-[11px] font-bold flex flex-col items-center justify-center gap-0.5 text-center transition-all cursor-pointer hover:scale-[1.02]"
+                              >
+                                <span className="flex items-center gap-1 font-medium">
+                                  ⚖️ Equilibrado
+                                </span>
+                                <span className="text-[9px] text-zinc-400 font-normal">
+                                  Contraste suave
+                                </span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingSettings({
+                                    ...editingSettings,
+                                    bannerLightLeft: 45,
+                                    bannerLightCenter: 65,
+                                    bannerLightRight: 80,
+                                    bannerOpacity: 85
+                                  });
+                                }}
+                                className="py-2 px-2.5 rounded-lg bg-zinc-900 hover:bg-zinc-850 border border-zinc-700/80 hover:border-zinc-600 text-zinc-400 text-[11px] font-bold flex flex-col items-center justify-center gap-0.5 text-center transition-all cursor-pointer hover:scale-[1.02]"
+                              >
+                                <span className="flex items-center gap-1 font-medium">
+                                  🎬 Texto Intenso
+                                </span>
+                                <span className="text-[9px] text-zinc-500 font-normal">
+                                  Fondo más oscuro
+                                </span>
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* 3 Controles de Zonas: Izquierda, Centro, Derecha */}
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 pt-1">
+                            {/* Zona 1: Izquierda */}
+                            <div className="border border-zinc-800/80 bg-zinc-900/50 rounded-xl p-3.5 space-y-3 relative overflow-hidden">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-1.5">
+                                  <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                                  <span className="text-xs font-bold text-zinc-200">
+                                    Luz Izquierda
+                                  </span>
+                                </div>
+                                <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                                  {editingSettings.bannerLightLeft !== undefined ? editingSettings.bannerLightLeft : 75}%
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-zinc-400 leading-tight">
+                                Área donde van el título, subtítulo y botones. Si subes al 100%, no tendrá sombreado oscuro.
+                              </p>
+                              <div className="space-y-1.5">
+                                <div className="flex justify-between text-[9px] text-zinc-500 font-medium">
+                                  <span>0% Sombra</span>
+                                  <span>100% Luz Total</span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min="0"
+                                  max="100"
+                                  step="5"
+                                  value={editingSettings.bannerLightLeft !== undefined ? editingSettings.bannerLightLeft : 75}
+                                  onChange={(e) => {
+                                    setEditingSettings({
+                                      ...editingSettings,
+                                      bannerLightLeft: parseInt(e.target.value)
+                                    });
+                                  }}
+                                  className="w-full cursor-pointer accent-amber-500 h-2 bg-zinc-800 rounded-lg appearance-none outline-none"
+                                />
+                              </div>
+                              <div className="flex items-center gap-1.5 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const curr = editingSettings.bannerLightLeft !== undefined ? editingSettings.bannerLightLeft : 75;
+                                    setEditingSettings({
+                                      ...editingSettings,
+                                      bannerLightLeft: Math.max(0, curr - 5)
+                                    });
+                                  }}
+                                  className="flex-1 py-1 text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded font-mono font-bold cursor-pointer"
+                                >
+                                  -5%
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const curr = editingSettings.bannerLightLeft !== undefined ? editingSettings.bannerLightLeft : 75;
+                                    setEditingSettings({
+                                      ...editingSettings,
+                                      bannerLightLeft: Math.min(100, curr + 5)
+                                    });
+                                  }}
+                                  className="flex-1 py-1 text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded font-mono font-bold cursor-pointer"
+                                >
+                                  +5%
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingSettings({
+                                      ...editingSettings,
+                                      bannerLightLeft: 100
+                                    });
+                                  }}
+                                  className="py-1 px-2 text-[10px] bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded font-mono font-bold cursor-pointer border border-amber-500/30"
+                                >
+                                  100%
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Zona 2: Centro */}
+                            <div className="border border-zinc-800/80 bg-zinc-900/50 rounded-xl p-3.5 space-y-3 relative overflow-hidden">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-1.5">
+                                  <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                                  <span className="text-xs font-bold text-zinc-200">
+                                    Luz Centro
+                                  </span>
+                                </div>
+                                <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                                  {editingSettings.bannerLightCenter !== undefined ? editingSettings.bannerLightCenter : 88}%
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-zinc-400 leading-tight">
+                                Tercio medio del banner. Conecta la lectura del texto con la imagen sin cortes bruscos.
+                              </p>
+                              <div className="space-y-1.5">
+                                <div className="flex justify-between text-[9px] text-zinc-500 font-medium">
+                                  <span>0% Sombra</span>
+                                  <span>100% Luz Total</span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min="0"
+                                  max="100"
+                                  step="5"
+                                  value={editingSettings.bannerLightCenter !== undefined ? editingSettings.bannerLightCenter : 88}
+                                  onChange={(e) => {
+                                    setEditingSettings({
+                                      ...editingSettings,
+                                      bannerLightCenter: parseInt(e.target.value)
+                                    });
+                                  }}
+                                  className="w-full cursor-pointer accent-amber-500 h-2 bg-zinc-800 rounded-lg appearance-none outline-none"
+                                />
+                              </div>
+                              <div className="flex items-center gap-1.5 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const curr = editingSettings.bannerLightCenter !== undefined ? editingSettings.bannerLightCenter : 88;
+                                    setEditingSettings({
+                                      ...editingSettings,
+                                      bannerLightCenter: Math.max(0, curr - 5)
+                                    });
+                                  }}
+                                  className="flex-1 py-1 text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded font-mono font-bold cursor-pointer"
+                                >
+                                  -5%
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const curr = editingSettings.bannerLightCenter !== undefined ? editingSettings.bannerLightCenter : 88;
+                                    setEditingSettings({
+                                      ...editingSettings,
+                                      bannerLightCenter: Math.min(100, curr + 5)
+                                    });
+                                  }}
+                                  className="flex-1 py-1 text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded font-mono font-bold cursor-pointer"
+                                >
+                                  +5%
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingSettings({
+                                      ...editingSettings,
+                                      bannerLightCenter: 100
+                                    });
+                                  }}
+                                  className="py-1 px-2 text-[10px] bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded font-mono font-bold cursor-pointer border border-amber-500/30"
+                                >
+                                  100%
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Zona 3: Derecha */}
+                            <div className="border border-zinc-800/80 bg-zinc-900/50 rounded-xl p-3.5 space-y-3 relative overflow-hidden">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-1.5">
+                                  <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                                  <span className="text-xs font-bold text-zinc-200">
+                                    Luz Derecha
+                                  </span>
+                                </div>
+                                <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                                  {editingSettings.bannerLightRight !== undefined ? editingSettings.bannerLightRight : 95}%
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-zinc-400 leading-tight">
+                                Tercio derecho donde se luce la foto del producto o modelo. Ponlo al 95-100% para máxima claridad.
+                              </p>
+                              <div className="space-y-1.5">
+                                <div className="flex justify-between text-[9px] text-zinc-500 font-medium">
+                                  <span>0% Sombra</span>
+                                  <span>100% Luz Total</span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min="0"
+                                  max="100"
+                                  step="5"
+                                  value={editingSettings.bannerLightRight !== undefined ? editingSettings.bannerLightRight : 95}
+                                  onChange={(e) => {
+                                    setEditingSettings({
+                                      ...editingSettings,
+                                      bannerLightRight: parseInt(e.target.value)
+                                    });
+                                  }}
+                                  className="w-full cursor-pointer accent-amber-500 h-2 bg-zinc-800 rounded-lg appearance-none outline-none"
+                                />
+                              </div>
+                              <div className="flex items-center gap-1.5 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const curr = editingSettings.bannerLightRight !== undefined ? editingSettings.bannerLightRight : 95;
+                                    setEditingSettings({
+                                      ...editingSettings,
+                                      bannerLightRight: Math.max(0, curr - 5)
+                                    });
+                                  }}
+                                  className="flex-1 py-1 text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded font-mono font-bold cursor-pointer"
+                                >
+                                  -5%
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const curr = editingSettings.bannerLightRight !== undefined ? editingSettings.bannerLightRight : 95;
+                                    setEditingSettings({
+                                      ...editingSettings,
+                                      bannerLightRight: Math.min(100, curr + 5)
+                                    });
+                                  }}
+                                  className="flex-1 py-1 text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded font-mono font-bold cursor-pointer"
+                                >
+                                  +5%
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingSettings({
+                                      ...editingSettings,
+                                      bannerLightRight: 100
+                                    });
+                                  }}
+                                  className="py-1 px-2 text-[10px] bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded font-mono font-bold cursor-pointer border border-amber-500/30"
+                                >
+                                  100%
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 3. Simulador / Vista Previa en Vivo del Banner */}
+                        {(() => {
+                          const previewOpacity = (editingSettings.bannerOpacity !== undefined ? editingSettings.bannerOpacity : 95) / 100;
+                          const pLightL = editingSettings.bannerLightLeft !== undefined ? editingSettings.bannerLightLeft : 75;
+                          const pLightC = editingSettings.bannerLightCenter !== undefined ? editingSettings.bannerLightCenter : 88;
+                          const pLightR = editingSettings.bannerLightRight !== undefined ? editingSettings.bannerLightRight : 95;
+                          const pDarkL = Math.max(0, Math.min(0.95, ((100 - pLightL) / 100) * 0.95));
+                          const pDarkC = Math.max(0, Math.min(0.95, ((100 - pLightC) / 100) * 0.95));
+                          const pDarkR = Math.max(0, Math.min(0.95, ((100 - pLightR) / 100) * 0.95));
+                          const previewImage = (editingSettings.heroSlides && editingSettings.heroSlides.length > 0 && editingSettings.heroSlides[0].imageUrl)
+                            ? editingSettings.heroSlides[0].imageUrl
+                            : (editingSettings.bannerImageUrl || "https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=1600&q=80");
+
+                          return (
+                            <div className="space-y-2 pt-1">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="font-bold text-zinc-300 flex items-center gap-1.5">
+                                  <Eye className="w-3.5 h-3.5 text-amber-400" />
+                                  Simulador de Luz en Vivo del Carrusel:
+                                </span>
+                                <span className="text-[10px] text-zinc-400 font-mono">
+                                  Opacidad: {Math.round(previewOpacity * 100)}% | Izq: {pLightL}% • Centro: {pLightC}% • Der: {pLightR}%
+                                </span>
+                              </div>
+
+                              <div className="relative h-44 sm:h-52 w-full rounded-2xl overflow-hidden border border-zinc-800 bg-[#050B1A] shadow-2xl select-none">
+                                {/* Imagen con opacidad seleccionada */}
+                                <img
+                                  src={previewImage}
+                                  alt="Banner preview"
+                                  className="w-full h-full object-cover object-center filter brightness-105 contrast-[1.03]"
+                                  style={{ opacity: previewOpacity }}
+                                />
+
+                                {/* Gradiente Dinámico de Luz de 3 Zonas */}
+                                <div
+                                  className="absolute inset-0 pointer-events-none transition-all duration-300"
+                                  style={{
+                                    background: `linear-gradient(to right, rgba(5, 11, 26, ${pDarkL.toFixed(3)}) 0%, rgba(5, 11, 26, ${pDarkC.toFixed(3)}) 50%, rgba(5, 11, 26, ${pDarkR.toFixed(3)}) 100%)`
+                                  }}
+                                />
+
+                                {/* Indicadores de Zonas superpuestos en la vista previa */}
+                                <div className="absolute top-2.5 inset-x-3 flex justify-between z-20 pointer-events-none text-[9px] font-mono font-black">
+                                  <span className="bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-full border border-amber-500/40 text-amber-300 shadow">
+                                    ◀ IZQ: {pLightL}% LUZ
+                                  </span>
+                                  <span className="bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-full border border-amber-500/40 text-amber-300 shadow">
+                                    • CENTRO: {pLightC}% LUZ •
+                                  </span>
+                                  <span className="bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-full border border-amber-500/40 text-amber-300 shadow">
+                                    DER: {pLightR}% LUZ ▶
+                                  </span>
+                                </div>
+
+                                {/* Contenido simulado de muestra */}
+                                <div className="absolute inset-0 flex items-center px-4 sm:px-6 z-10">
+                                  <div className="max-w-xs space-y-1.5">
+                                    <h3 className="text-base sm:text-lg font-serif font-black text-[#F4EAD7] leading-tight drop-shadow-[0_2px_10px_rgba(0,0,0,0.85)]">
+                                      {editingSettings.heroSlides?.[0]?.title || editingSettings.bannerTitle || "Colección de Primavera"}
+                                    </h3>
+                                    <p className="text-[10px] text-zinc-300 leading-snug line-clamp-2 drop-shadow-[0_1px_6px_rgba(0,0,0,0.9)]">
+                                      {editingSettings.heroSlides?.[0]?.subtitle || editingSettings.bannerSubtitle || "Descubre las últimas tendencias con descuentos únicos."}
+                                    </p>
+                                    <div className="pt-1 flex items-center gap-2">
+                                      <span className="px-3.5 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider bg-gradient-to-r from-[#F3D287] via-[#D4A55A] to-[#B88730] text-[#050B1A] ring-1 ring-white/50 ring-inset shadow-md flex items-center gap-1.5">
+                                        <span>Explorar</span>
+                                        <span className="w-3.5 h-3.5 rounded-full bg-black/15 flex items-center justify-center">→</span>
+                                      </span>
+                                      <span className="px-3 py-1.5 rounded-xl text-[9px] font-bold border border-white/20 bg-black/40 text-[#F4EAD7] backdrop-blur-md">
+                                        Consultar
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* 4. Transición del Carrusel */}
+                        <div className="border-t border-zinc-800/60 pt-4 mt-2 space-y-2.5">
                           <label className="block text-xs font-bold text-zinc-200">
                             Estilo de Transición del Carrusel (Slider)
                           </label>

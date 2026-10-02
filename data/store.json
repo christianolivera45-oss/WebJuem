@@ -307,7 +307,10 @@
     "emailTemplateOrderCreatedBody": "Muchas gracias por realizar tu compra con nosotros. Tu pago ha sido aprobado correctamente y tu pedido ya está siendo preparado para entrega. Aquí tienes los detalles completos de tu compra:",
     "emailTemplateOrderCreatedSubject": "¡Gracias por tu compra! Tu pedido #{{orderId}} ha sido recibido",
     "emailTemplateOrderStatusChangedBody": "Te notificamos que el estado de tu pedido #{{orderId}} ha sido actualizado por nuestro equipo de logística.",
-    "emailTemplateOrderStatusChangedSubject": "Actualización de tu pedido #{{orderId}} - {{statusText}}"
+    "emailTemplateOrderStatusChangedSubject": "Actualización de tu pedido #{{orderId}} - {{statusText}}",
+    "bannerLightLeft": 85,
+    "bannerLightCenter": 90,
+    "bannerLightRight": 95
   },
   "products": [
     {

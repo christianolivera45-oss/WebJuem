@@ -186,6 +186,9 @@ export interface SiteSettings {
   emailTemplateOrderStatusChangedBody?: string;
   emailHeaderImageUrl?: string;
   bannerOpacity?: number;
+  bannerLightLeft?: number;
+  bannerLightCenter?: number;
+  bannerLightRight?: number;
   featuredSliderSpeed?: number;
   googleAnalyticsId?: string;
   googleTagManagerId?: string;

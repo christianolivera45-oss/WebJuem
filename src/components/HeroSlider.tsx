@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { ChevronLeft, ChevronRight, Sparkles, MessageCircle, Play, Pause } from "lucide-react";
+import { ChevronLeft, ChevronRight, MessageCircle, ArrowRight } from "lucide-react";
 import { SiteSettings, HeroSlide } from "../types";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -194,6 +194,19 @@ export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderPro
   const slideVariants = getVariants();
   const slideTransition = getTransition();
 
+  // Zone light percentages configured in admin settings (0% = dark shade, 100% = full light / no shadow)
+  const lightLeft = settings.bannerLightLeft !== undefined ? settings.bannerLightLeft : 75;
+  const lightCenter = settings.bannerLightCenter !== undefined ? settings.bannerLightCenter : 88;
+  const lightRight = settings.bannerLightRight !== undefined ? settings.bannerLightRight : 95;
+
+  // Convert light to dark overlay opacity (100% light = 0 dark overlay, 0% light = 0.95 dark overlay)
+  const darkLeft = Math.max(0, Math.min(0.95, ((100 - lightLeft) / 100) * 0.95));
+  const darkCenter = Math.max(0, Math.min(0.95, ((100 - lightCenter) / 100) * 0.95));
+  const darkRight = Math.max(0, Math.min(0.95, ((100 - lightRight) / 100) * 0.95));
+
+  // Overall banner image opacity (0.1 to 1.0)
+  const imageOpacity = (settings.bannerOpacity !== undefined ? Math.max(settings.bannerOpacity, 10) : 95) / 100;
+
   return (
     <div 
       className="relative h-[280px] sm:h-[380px] md:h-[480px] lg:h-[560px] w-full overflow-hidden bg-[#050B1A] text-white select-none group transform-gpu"
@@ -217,50 +230,43 @@ export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderPro
             className="absolute inset-0 w-full h-full transform-gpu"
             style={{ willChange: "transform, opacity" }}
           >
-            {/* Background Image - Boosted with visual filters to guarantee brightness even for dark images */}
+            {/* Background Image - Boosted with visual filters to guarantee brightness and vibrancy */}
             <img
               src={optimizeImageUrl(slides[currentIndex].imageUrl)}
               alt={slides[currentIndex].title}
-              className="w-full h-full object-cover object-center transition-opacity duration-500 filter brightness-110 contrast-105 saturate-[1.05]"
-              style={{ opacity: (settings.bannerOpacity !== undefined ? Math.max(settings.bannerOpacity, 85) : 95) / 100 }}
+              className="w-full h-full object-cover object-center transition-opacity duration-500 filter brightness-105 contrast-[1.03] saturate-[1.05]"
+              style={{ opacity: imageOpacity }}
               referrerPolicy="no-referrer"
               loading="eager"
               fetchPriority="high"
             />
             
-            {/* Premium Soft Ambient Gradient Overlays */}
-            <div className="absolute inset-0 bg-gradient-to-r from-[#050B1A]/95 via-[#050B1A]/60 to-transparent md:block hidden animate-fade-in"></div>
-            <div className="absolute inset-0 bg-gradient-to-t from-[#050B1A]/95 via-[#050B1A]/50 to-transparent md:hidden block"></div>
-            <div className="absolute inset-0 bg-gradient-to-tr from-[#050B1A]/30 via-transparent to-transparent"></div>
+            {/* Customizable 3-Zone Light Overlays (Left, Center, Right) */}
+            {/* Desktop View: Horizontal gradient matching Left, Center, Right light controls */}
+            <div 
+              className="absolute inset-0 md:block hidden animate-fade-in pointer-events-none transition-all duration-300"
+              style={{
+                background: `linear-gradient(to right, rgba(5, 11, 26, ${darkLeft.toFixed(3)}) 0%, rgba(5, 11, 26, ${darkCenter.toFixed(3)}) 50%, rgba(5, 11, 26, ${darkRight.toFixed(3)}) 100%)`
+              }}
+            />
+
+            {/* Mobile View: Vertical gradient matching Left/Bottom, Center, Right/Top light controls */}
+            <div 
+              className="absolute inset-0 md:hidden block animate-fade-in pointer-events-none transition-all duration-300"
+              style={{
+                background: `linear-gradient(to top, rgba(5, 11, 26, ${darkLeft.toFixed(3)}) 0%, rgba(5, 11, 26, ${darkCenter.toFixed(3)}) 55%, rgba(5, 11, 26, ${darkRight.toFixed(3)}) 100%)`
+              }}
+            />
 
             {/* Slide Content */}
             <div className="absolute inset-0 flex items-center justify-center md:justify-start">
               <div className="max-w-7xl mx-auto px-6 sm:px-8 md:px-12 w-full text-center md:text-left relative z-10">
                 <div className="max-w-2xl transform-gpu">
-                  {/* Premium Micro Category Badge */}
-                  <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.1, duration: 0.4 }}
-                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#D4A55A]/15 border border-[#D4A55A]/30 text-[#D4A55A] text-[9px] sm:text-[10px] font-black uppercase tracking-widest mb-3.5 sm:mb-5 shadow-lg shadow-black/20"
-                  >
-                    <Sparkles className="w-3.5 h-3.5 text-[#D4A55A] animate-pulse shrink-0" />
-                    <span>
-                      {slides[currentIndex].title.toLowerCase().includes("niño")
-                        ? "Día del Niño 🎁"
-                        : slides[currentIndex].title.toLowerCase().includes("3d") || slides[currentIndex].title.toLowerCase().includes("impresión")
-                        ? "Innovación 3D ⚙️"
-                        : slides[currentIndex].title.toLowerCase().includes("invierno")
-                        ? "Temporada Invierno ❄️"
-                        : "Colección Exclusiva ✨"}
-                    </span>
-                  </motion.div>
-
                   <motion.h1 
                     initial={{ opacity: 0, y: 15 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.2, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-                    className="text-2xl sm:text-4xl md:text-5xl lg:text-6xl font-serif font-extrabold text-[#F4EAD7] tracking-tight leading-[1.1] drop-shadow-md mb-3 md:mb-5 transform-gpu"
+                    className="text-2xl sm:text-4xl md:text-5xl lg:text-6xl font-serif font-extrabold text-[#F4EAD7] tracking-tight leading-[1.1] drop-shadow-[0_2px_14px_rgba(0,0,0,0.85)] mb-3 md:mb-5 transform-gpu"
                     style={{ willChange: "opacity, transform" }}
                   >
                     {slides[currentIndex].title}
@@ -270,7 +276,7 @@ export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderPro
                     initial={{ opacity: 0, y: 15 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.3, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-                    className="text-[12px] sm:text-sm md:text-base text-zinc-350 font-sans tracking-wide leading-relaxed max-w-xl font-light line-clamp-2 md:line-clamp-none transform-gpu"
+                    className="text-[12px] sm:text-sm md:text-base text-zinc-350 font-sans tracking-wide leading-relaxed max-w-xl font-light line-clamp-2 md:line-clamp-none transform-gpu drop-shadow-[0_1px_8px_rgba(0,0,0,0.9)]"
                     style={{ color: "#D8D2C4", willChange: "opacity, transform" }}
                   >
                     {slides[currentIndex].subtitle}
@@ -287,19 +293,27 @@ export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderPro
                       {!slides[currentIndex].hideButton && (
                         <button
                           onClick={() => onExploreCatalog(slides[currentIndex].buttonLink)}
-                          className="py-2.5 px-6 sm:py-3.5 sm:px-9 rounded-xl font-sans font-black text-[10px] sm:text-xs uppercase tracking-widest bg-[#D4A55A] text-[#050B1A] hover:bg-[#E6BF76] hover:scale-[1.03] shadow-lg shadow-[#D4A55A]/10 cursor-pointer active:scale-95 transition duration-300 flex items-center gap-2"
+                          className="group/btn relative overflow-hidden py-3 px-6 sm:py-3.5 sm:px-8 rounded-2xl font-sans font-black text-[11px] sm:text-xs uppercase tracking-widest bg-gradient-to-r from-[#F3D287] via-[#D4A55A] to-[#B88730] text-[#050B1A] ring-1 ring-white/50 ring-inset hover:scale-[1.035] active:scale-[0.98] shadow-[0_8px_25px_-5px_rgba(212,165,90,0.5),0_4px_12px_rgba(0,0,0,0.3)] hover:shadow-[0_12px_35px_-4px_rgba(212,165,90,0.7),0_6px_16px_rgba(0,0,0,0.4)] cursor-pointer transition-all duration-300 flex items-center gap-3"
                         >
-                          <Play className="w-3 h-3 fill-current shrink-0" />
-                          <span>{slides[currentIndex].buttonText || "Explorar Colección"}</span>
+                          {/* Shimmer light effect passing on hover */}
+                          <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/40 to-transparent -translate-x-full group-hover/btn:translate-x-full transition-transform duration-700 pointer-events-none" />
+                          
+                          <span className="relative z-10 drop-shadow-sm">
+                            {slides[currentIndex].buttonText || "Explorar Colección"}
+                          </span>
+
+                          <span className="relative z-10 w-6 h-6 rounded-full bg-black/15 flex items-center justify-center shrink-0 transition-all duration-300 group-hover/btn:bg-black/25 group-hover/btn:translate-x-1 shadow-inner">
+                            <ArrowRight className="w-3.5 h-3.5 text-[#050B1A] transition-transform duration-300 group-hover/btn:translate-x-0.5" />
+                          </span>
                         </button>
                       )}
 
                       {!slides[currentIndex].hideWhatsAppButton && (
                         <button
                           onClick={() => handleWhatsAppContact(slides[currentIndex].title)}
-                          className="py-2.5 px-5 sm:py-3.5 sm:px-8 rounded-xl font-sans font-black text-[10px] sm:text-xs uppercase tracking-widest border border-zinc-700 bg-[#050B1A]/40 backdrop-blur-md text-[#F4EAD7] hover:border-[#D4A55A] hover:text-[#D4A55A] hover:bg-white/5 cursor-pointer active:scale-95 transition duration-300 flex items-center gap-2"
+                          className="group/wapp py-3 px-5 sm:py-3.5 sm:px-7 rounded-2xl font-sans font-bold text-[11px] sm:text-xs uppercase tracking-widest border border-white/15 bg-[#050B1A]/60 backdrop-blur-md text-[#F4EAD7] hover:border-[#D4A55A]/70 hover:text-[#F3D287] hover:bg-white/10 hover:scale-[1.02] cursor-pointer active:scale-95 transition-all duration-300 flex items-center gap-2.5 shadow-lg shadow-black/20"
                         >
-                          <MessageCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          <MessageCircle className="w-4 h-4 text-emerald-400 group-hover/wapp:scale-110 transition-transform duration-300 shrink-0" />
                           <span>Consultar</span>
                         </button>
                       )}
@@ -310,25 +324,6 @@ export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderPro
             </div>
           </motion.div>
         </AnimatePresence>
-      </div>
-
-      {/* Slide Indicators - Premium Horizontal Bars */}
-      <div className="absolute bottom-5 sm:bottom-6 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 bg-[#050B1A]/40 backdrop-blur-md px-3 py-1.5 rounded-full border border-zinc-800/60">
-        {slides.map((slide, idx) => (
-          <button
-            key={slide.id || idx}
-            onClick={() => {
-              setDirection(idx > currentIndex ? 1 : -1);
-              setCurrentIndex(idx);
-            }}
-            className={`h-1.5 rounded-full transition-all duration-500 cursor-pointer ${
-              idx === currentIndex 
-                ? "w-8 bg-[#D4A55A]" 
-                : "w-2 bg-zinc-600 hover:bg-[#D4A55A]/50"
-            }`}
-            aria-label={`Ir a banner ${idx + 1}`}
-          />
-        ))}
       </div>
 
       {/* Slide Navigation Left/Right Arrows - visible on hover desktop, stylized like luxury jewelry store interface */}
