@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
-import { X, ShoppingCart, MessageSquare, ShieldCheck, Truck, RefreshCw, ChevronLeft, ChevronRight, AlertCircle, Share2, Maximize2, Cpu, Wrench, Clock, Calendar, Home, Ruler, Palette, Sun, MapPin, Package, CheckCircle2 } from "lucide-react";
+import { X, ShoppingCart, MessageSquare, ShieldCheck, Truck, RefreshCw, ChevronLeft, ChevronRight, AlertCircle, Share2, Maximize2, Minimize2, ZoomIn, ZoomOut, Scan, Cpu, Wrench, Clock, Calendar, Home, Ruler, Palette, Sun, MapPin, Package, CheckCircle2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Product, SiteSettings, is3DProduct, isGenericSize, isGenericColor } from "../types";
 import ProductCard from "./ProductCard";
@@ -552,6 +552,28 @@ export default function ProductDetails({
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [imageBgMode, setImageBgMode] = useState<"default" | "light" | "gold" | "contrast">("default");
   const [imageExposureMode, setImageExposureMode] = useState<"normal" | "boosted">("normal");
+  const [mainImageFit, setMainImageFit] = useState<"auto" | "contain" | "cover">("auto");
+  const [lightboxFitMode, setLightboxFitMode] = useState<"auto" | "fill" | "height" | "contain">("auto");
+  const [lightboxZoom, setLightboxZoom] = useState<number>(1);
+  const [imageAspectRatio, setImageAspectRatio] = useState<number | null>(null);
+
+  // Keyboard navigation for Lightbox
+  useEffect(() => {
+    if (!isLightboxOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setIsLightboxOpen(false);
+      } else if (e.key === "ArrowLeft") {
+        setActiveImgIndex((prev) => (prev === 0 ? allImages.length - 1 : prev - 1));
+        setLightboxZoom(1);
+      } else if (e.key === "ArrowRight") {
+        setActiveImgIndex((prev) => (prev === allImages.length - 1 ? 0 : prev + 1));
+        setLightboxZoom(1);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isLightboxOpen, allImages.length]);
 
   // Touch Swiping state for Mobiles
   const [swipeStartX, setSwipeStartX] = useState<number | null>(null);
@@ -628,10 +650,12 @@ export default function ProductDetails({
 
   const handlePrevImg = () => {
     setActiveImgIndex((prev) => (prev === 0 ? allImages.length - 1 : prev - 1));
+    setLightboxZoom(1);
   };
 
   const handleNextImg = () => {
     setActiveImgIndex((prev) => (prev === allImages.length - 1 ? 0 : prev + 1));
+    setLightboxZoom(1);
   };
 
   const handleAddToCart = () => {
@@ -918,15 +942,15 @@ Me gustaría coordinar stock, fabricación y envío.`;
         </button>
  
         {/* Left Column: Image Area without separating borders for unified visual integration */}
-        <div className={`flex flex-col p-4 sm:p-5 md:p-6 justify-start items-center relative gap-3.5 sm:gap-4 overflow-hidden w-full shrink-0 ${
+        <div className={`flex flex-col p-2.5 sm:p-4 md:p-5 justify-start items-center relative gap-2.5 sm:gap-3.5 overflow-hidden w-full shrink-0 ${
           isThemeDark ? "bg-[#09090b]" : "bg-white"
         }`}>
           
-          {/* Main card for product details */}
+          {/* Main card for product details - Dynamically adapts height to the image to eliminate empty space */}
           <div 
             onTouchStart={handleSwipeStart}
             onTouchEnd={handleSwipeEnd}
-            className={`relative w-full h-[280px] sm:h-[360px] md:h-[460px] rounded-[24px] flex items-center justify-center p-4 sm:p-5 select-none overflow-hidden transition-all duration-500 ${
+            className={`relative w-full rounded-[24px] flex items-center justify-center p-0 select-none overflow-hidden transition-all duration-300 shadow-sm ${
               imageBgMode === "light"
                 ? "bg-[#efeff2]"
                 : imageBgMode === "contrast"
@@ -935,6 +959,11 @@ Me gustaría coordinar stock, fabricación y envío.`;
                 ? (isThemeDark ? "bg-gradient-to-br from-[#121c2c] via-[#050b1a] to-[#04060c] border border-[#D4A55A]/25" : "bg-gradient-to-br from-amber-50/60 via-slate-50 to-[#fcfaf4] border border-amber-200/50")
                 : (isThemeDark ? "bg-[#0c0c0e]/30 border border-zinc-800/40" : "bg-[#fcfbfc] border border-slate-100")
             }`}
+            style={{
+              height: imageAspectRatio && imageAspectRatio > 1.35
+                ? "clamp(260px, 48vw, 420px)"
+                : "clamp(320px, 60vw, 490px)"
+            }}
           >
             
             {/* Ambient centered lighting glow for Studio Glow effect */}
@@ -942,8 +971,18 @@ Me gustaría coordinar stock, fabricación y envío.`;
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(212,165,90,0.14)_0%,transparent_75%)] pointer-events-none select-none animate-pulse duration-[6000ms]" />
             )}
 
+            {/* Subtle soft image ambient glow behind image to gracefully eliminate harsh letterboxing */}
+            <div className="absolute inset-0 pointer-events-none select-none overflow-hidden opacity-20">
+              <img
+                src={optimizeImageUrlForDetail(allImages[activeImgIndex], 120, 20)}
+                alt=""
+                className="w-full h-full object-cover blur-2xl scale-125"
+                referrerPolicy="no-referrer"
+              />
+            </div>
+
             {/* Floating interactive helper controls in top-left */}
-            <div className="absolute top-3 left-3 flex items-center gap-1.5 z-20 select-none">
+            <div className="absolute top-2.5 left-2.5 sm:top-3 sm:left-3 flex items-center gap-1.5 z-20 select-none">
               {/* Backdrop Switcher menu */}
               <div className="relative group/opt">
                 <button 
@@ -1018,28 +1057,71 @@ Me gustaría coordinar stock, fabricación y envío.`;
                 <Sun className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline text-[9px] font-black uppercase tracking-wider pr-0.5">Iluminar</span>
               </button>
+
+              {/* Image Fit Mode toggle: Auto (Centrado óptimo sin bordes vacíos), Cover (Llenar), Contain (Completo) */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMainImageFit(prev => prev === "auto" ? "cover" : prev === "cover" ? "contain" : "auto");
+                }}
+                className={`p-1.5 sm:p-2 rounded-full backdrop-blur-md hover:scale-[1.05] active:scale-95 transition-all flex items-center gap-1.5 shadow-lg border ${
+                  mainImageFit === "auto"
+                    ? "bg-amber-500 text-[#050B1A] border-amber-400 font-bold"
+                    : mainImageFit === "cover"
+                    ? "bg-emerald-500 text-white border-emerald-400 font-bold"
+                    : "bg-black/65 text-zinc-300 border-white/10 hover:text-[#E6BF76]"
+                }`}
+                title={
+                  mainImageFit === "auto"
+                    ? "Ajuste Automático Centrado (Clic para Llenar Marco)"
+                    : mainImageFit === "cover"
+                    ? "Llenando Marco Completo (Clic para Mostrar Todo)"
+                    : "Mostrando Todo Centrado (Clic para Ajuste Automático)"
+                }
+              >
+                <Scan className="w-3.5 h-3.5" />
+                <span className="text-[9px] font-black uppercase tracking-wider pr-0.5">
+                  {mainImageFit === "auto" ? "Auto-Ajuste" : mainImageFit === "cover" ? "Llenar" : "Contener"}
+                </span>
+              </button>
             </div>
 
             <div 
-              onClick={() => setIsLightboxOpen(true)}
+              onClick={() => {
+                setIsLightboxOpen(true);
+                setLightboxZoom(1);
+              }}
               className="relative w-full h-full flex items-center justify-center overflow-hidden cursor-zoom-in group/main-img"
-              title="Haz clic para ampliar la imagen"
+              title="Haz clic para ampliar la imagen y verla al 100%"
             >
-              <AnimatePresence>
+              <AnimatePresence mode="wait">
                 <motion.img
                   key={activeImgIndex}
-                  src={optimizeImageUrlForDetail(allImages[activeImgIndex], 800, 75)}
+                  src={optimizeImageUrlForDetail(allImages[activeImgIndex], 1200, 85)}
                   alt={product.name}
+                  onLoad={(e) => {
+                    const img = e.currentTarget;
+                    if (img.naturalWidth && img.naturalHeight) {
+                      setImageAspectRatio(img.naturalWidth / img.naturalHeight);
+                    }
+                  }}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
-                  transition={{ duration: 0.45, ease: "easeInOut" }}
+                  transition={{ duration: 0.35, ease: "easeInOut" }}
                   style={{
                     filter: imageExposureMode === "boosted"
                       ? "brightness(1.18) contrast(1.08) saturate(1.03)"
                       : "none"
                   }}
-                  className="absolute max-h-full max-w-full object-contain select-none transition-transform duration-300 group-hover/main-img:scale-[1.025]"
+                  className={`select-none transition-all duration-300 group-hover/main-img:scale-[1.02] ${
+                    mainImageFit === "cover"
+                      ? "w-full h-full object-cover rounded-2xl"
+                      : mainImageFit === "contain"
+                      ? "max-h-full max-w-full w-auto h-auto object-contain"
+                      : "w-full h-full object-contain p-1 rounded-2xl"
+                  }`}
                   referrerPolicy="no-referrer"
                   loading="eager"
                   fetchPriority="high"
@@ -1047,8 +1129,9 @@ Me gustaría coordinar stock, fabricación y envío.`;
               </AnimatePresence>
 
               {/* Floating expand indicator */}
-              <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-md rounded-full p-2 text-white/90 opacity-0 group-hover/main-img:opacity-100 transition-all duration-300 z-10 shadow-lg hover:scale-105 hover:bg-black/80">
-                <Maximize2 className="w-3.5 h-3.5" />
+              <div className="absolute top-2.5 right-2.5 sm:top-3 sm:right-3 bg-black/70 backdrop-blur-md rounded-full p-2 text-white/90 opacity-0 group-hover/main-img:opacity-100 transition-all duration-300 z-10 shadow-lg hover:scale-105 hover:bg-black/90 flex items-center gap-1.5 px-2.5">
+                <Maximize2 className="w-3.5 h-3.5 text-[#E6BF76]" />
+                <span className="text-[10px] font-bold text-white hidden sm:inline">Ampliar</span>
               </div>
             </div>
             
@@ -1508,42 +1591,156 @@ Me gustaría coordinar stock, fabricación y envío.`;
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/95 backdrop-blur-md p-4 sm:p-6 text-white"
+            className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/95 text-white select-none overflow-hidden"
             onClick={() => setIsLightboxOpen(false)}
           >
-            {/* Upper control strip */}
-            <div className="absolute top-4 left-4 right-4 flex items-center justify-between pointer-events-none z-[110]">
-              <span className="text-white/60 font-mono text-xs font-semibold bg-black/45 backdrop-blur-md px-3 py-1.5 rounded-full select-none">
-                {activeImgIndex + 1} / {allImages.length}
-              </span>
-              <button
-                type="button"
-                onClick={() => setIsLightboxOpen(false)}
-                className="pointer-events-auto p-2.5 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer shadow-lg border border-white/10"
-                title="Cerrar vista ampliada"
-              >
-                <X className="w-6 h-6" />
-              </button>
+            {/* Ambient glowing backdrop of the current product photo to eliminate dark empty voids */}
+            <div className="absolute inset-0 pointer-events-none select-none overflow-hidden z-0">
+              <img
+                src={optimizeImageUrlForDetail(allImages[activeImgIndex], 400, 30)}
+                alt=""
+                className="w-full h-full object-cover blur-3xl opacity-35 scale-125 saturate-150 transition-all duration-500"
+                referrerPolicy="no-referrer"
+              />
+              <div className="absolute inset-0 bg-black/65 backdrop-blur-md" />
             </div>
 
-            {/* Main content viewport */}
+            {/* Upper control strip (Floating Glass Bar) */}
             <div 
-              className="relative w-full max-w-5xl h-[70vh] sm:h-[80vh] flex items-center justify-center"
-              onClick={(e) => e.stopPropagation()} // Prevent clicking the image from closing the lightbox
+              className="absolute top-3 sm:top-5 left-3 sm:left-6 right-3 sm:right-6 flex items-center justify-between pointer-events-auto z-[120]"
+              onClick={(e) => e.stopPropagation()}
             >
-              <AnimatePresence>
-                <motion.img
-                  key={activeImgIndex}
-                  src={optimizeImageUrlForDetail(allImages[activeImgIndex], 1200, 80)}
-                  alt={product.name}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.45, ease: "easeInOut" }}
-                  className="absolute max-h-full max-w-full object-contain rounded-xl select-none"
-                  referrerPolicy="no-referrer"
-                />
-              </AnimatePresence>
+              {/* Product Info & Image Counter */}
+              <div className="flex items-center gap-2 sm:gap-3 bg-black/60 backdrop-blur-xl border border-white/10 px-3 sm:px-4 py-1.5 sm:py-2 rounded-2xl shadow-xl max-w-[55%] sm:max-w-md">
+                <span className="text-[#E6BF76] font-mono text-[11px] sm:text-xs font-black bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 rounded-lg shrink-0">
+                  {activeImgIndex + 1} / {allImages.length}
+                </span>
+                <span className="text-xs sm:text-sm font-bold text-zinc-200 truncate">
+                  {product.name}
+                </span>
+              </div>
+
+              {/* Action tools: Fit toggle, Zoom In, Zoom Out, Close */}
+              <div className="flex items-center gap-1.5 sm:gap-2 bg-black/60 backdrop-blur-xl border border-white/10 p-1 sm:p-1.5 rounded-2xl shadow-xl">
+                {/* Fit Mode Toggle: Auto, Fill, Height, Contain */}
+                <button
+                  type="button"
+                  onClick={() => setLightboxFitMode(prev => 
+                    prev === "auto" ? "fill" : prev === "fill" ? "height" : prev === "height" ? "contain" : "auto"
+                  )}
+                  className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                    lightboxFitMode === "auto"
+                      ? "bg-amber-500 text-[#050B1A] font-black shadow-md"
+                      : lightboxFitMode === "fill"
+                      ? "bg-emerald-500 text-white font-black shadow-md"
+                      : "bg-white/10 hover:bg-white/20 text-zinc-200"
+                  }`}
+                  title={
+                    lightboxFitMode === "auto"
+                      ? "Ajuste Automático Centrado (Clic para Llenar Pantalla)"
+                      : lightboxFitMode === "fill"
+                      ? "Llenando Pantalla Sin Bordes (Clic para Ajustar a Altura)"
+                      : lightboxFitMode === "height"
+                      ? "Ajustado a la Altura de Pantalla (Clic para Vista Completa)"
+                      : "Vista Completa (Clic para Ajuste Automático)"
+                  }
+                >
+                  <Scan className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">
+                    {lightboxFitMode === "auto" ? "Auto-Ajuste" : lightboxFitMode === "fill" ? "Llenar Pantalla" : lightboxFitMode === "height" ? "100% Altura" : "Contener"}
+                  </span>
+                </button>
+
+                {/* Zoom out */}
+                <button
+                  type="button"
+                  onClick={() => setLightboxZoom(prev => Math.max(1, +(prev - 0.25).toFixed(2)))}
+                  disabled={lightboxZoom <= 1}
+                  className="p-1.5 sm:p-2 bg-white/10 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-xl transition cursor-pointer"
+                  title="Reducir zoom (-)"
+                >
+                  <ZoomOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                </button>
+
+                {/* Current Zoom Indicator / Reset */}
+                <button
+                  type="button"
+                  onClick={() => setLightboxZoom(1)}
+                  className="px-2 py-1 bg-white/10 hover:bg-white/20 text-white rounded-xl text-[10px] font-mono font-bold transition cursor-pointer"
+                  title="Restablecer zoom al 100%"
+                >
+                  {Math.round(lightboxZoom * 100)}%
+                </button>
+
+                {/* Zoom in */}
+                <button
+                  type="button"
+                  onClick={() => setLightboxZoom(prev => Math.min(3, +(prev + 0.25).toFixed(2)))}
+                  disabled={lightboxZoom >= 3}
+                  className="p-1.5 sm:p-2 bg-white/10 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-xl transition cursor-pointer"
+                  title="Aumentar zoom (+)"
+                >
+                  <ZoomIn className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                </button>
+
+                <div className="w-[1px] h-5 bg-white/15 mx-0.5" />
+
+                {/* Close Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsLightboxOpen(false)}
+                  className="p-1.5 sm:p-2 bg-red-500/20 hover:bg-red-500/40 text-red-200 hover:text-white rounded-xl transition cursor-pointer border border-red-500/30"
+                  title="Cerrar (Esc)"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Main content viewport - Expands to occupy full viewport cleanly and centers image */}
+            <div 
+              className="relative w-full h-full flex-1 flex items-center justify-center overflow-hidden p-2 sm:p-4 z-10"
+              onClick={(e) => {
+                if (e.target === e.currentTarget) setIsLightboxOpen(false);
+              }}
+            >
+              <div 
+                className="relative w-full h-full flex items-center justify-center"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <AnimatePresence mode="wait">
+                  <motion.img
+                    key={activeImgIndex}
+                    src={optimizeImageUrlForDetail(allImages[activeImgIndex], 1600, 85)}
+                    alt={product.name}
+                    initial={{ opacity: 0, scale: 0.98 }}
+                    animate={{ 
+                      opacity: 1, 
+                      scale: lightboxZoom
+                    }}
+                    exit={{ opacity: 0, scale: 0.98 }}
+                    transition={{ duration: 0.25, ease: "easeOut" }}
+                    onDoubleClick={() => {
+                      if (lightboxZoom === 1) {
+                        setLightboxZoom(1.85);
+                      } else {
+                        setLightboxZoom(1);
+                      }
+                    }}
+                    className={`select-none rounded-2xl transition-all duration-300 shadow-2xl drop-shadow-[0_20px_50px_rgba(0,0,0,0.85)] ${
+                      lightboxFitMode === "fill"
+                        ? "w-full h-full max-h-[88vh] sm:max-h-[92vh] max-w-[96vw] sm:max-w-[92vw] object-cover sm:object-contain"
+                        : lightboxFitMode === "height"
+                        ? "h-[80vh] sm:h-[86vh] w-auto max-w-none object-contain"
+                        : lightboxFitMode === "contain"
+                        ? "max-h-[78vh] sm:max-h-[84vh] max-w-[90vw] sm:max-w-[88vw] w-auto h-auto object-contain"
+                        : "max-h-[84vh] sm:max-h-[88vh] max-w-[96vw] sm:max-w-[92vw] w-auto h-auto object-contain"
+                    } ${lightboxZoom > 1 ? "cursor-zoom-out" : "cursor-zoom-in"}`}
+                    referrerPolicy="no-referrer"
+                    loading="eager"
+                  />
+                </AnimatePresence>
+              </div>
 
               {/* Prev/Next inside lightbox */}
               {allImages.length > 1 && (
@@ -1551,14 +1748,16 @@ Me gustaría coordinar stock, fabricación y envío.`;
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); handlePrevImg(); }}
-                    className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 p-3 sm:p-4 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white transition-all cursor-pointer z-50 shadow-md border border-white/5"
+                    className="absolute left-3 sm:left-6 top-1/2 -translate-y-1/2 p-3 sm:p-4 rounded-2xl bg-black/60 hover:bg-black/90 active:scale-95 text-white transition-all cursor-pointer z-[115] shadow-2xl border border-white/10 hover:border-[#D4A55A]/50 backdrop-blur-md hover:scale-105"
+                    title="Imagen anterior (Flecha Izquierda)"
                   >
                     <ChevronLeft className="h-6 w-6 stroke-[2.5]" />
                   </button>
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); handleNextImg(); }}
-                    className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 p-3 sm:p-4 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white transition-all cursor-pointer z-50 shadow-md border border-white/5"
+                    className="absolute right-3 sm:right-6 top-1/2 -translate-y-1/2 p-3 sm:p-4 rounded-2xl bg-black/60 hover:bg-black/90 active:scale-95 text-white transition-all cursor-pointer z-[115] shadow-2xl border border-white/10 hover:border-[#D4A55A]/50 backdrop-blur-md hover:scale-105"
+                    title="Imagen siguiente (Flecha Derecha)"
                   >
                     <ChevronRight className="h-6 w-6 stroke-[2.5]" />
                   </button>
@@ -1566,24 +1765,27 @@ Me gustaría coordinar stock, fabricación y envío.`;
               )}
             </div>
 
-            {/* Bottom thumbnail selector inside fullscreen overlay */}
+            {/* Floating bottom thumbnail selector dock */}
             {allImages.length > 1 && (
               <div 
-                className="mt-6 flex flex-wrap gap-2.5 justify-center max-w-full overflow-x-auto no-scrollbar py-2 shrink-0 relative z-[110]"
+                className="absolute bottom-3 sm:bottom-5 left-1/2 -translate-x-1/2 z-[120] flex items-center gap-2 bg-black/70 backdrop-blur-xl border border-white/15 px-3 py-2 rounded-2xl shadow-2xl max-w-[92vw] overflow-x-auto no-scrollbar pointer-events-auto"
                 onClick={(e) => e.stopPropagation()}
               >
                 {allImages.map((imgUrl, idx) => (
                   <button
                     key={idx}
                     type="button"
-                    onClick={() => setActiveImgIndex(idx)}
-                    className={`relative w-12 h-12 sm:w-16 sm:h-16 rounded-xl overflow-hidden border-2 transition-all duration-300 shrink-0 cursor-pointer ${
+                    onClick={() => {
+                      setActiveImgIndex(idx);
+                      setLightboxZoom(1);
+                    }}
+                    className={`relative w-11 h-11 sm:w-14 sm:h-14 rounded-xl overflow-hidden border-2 transition-all duration-300 shrink-0 cursor-pointer ${
                       activeImgIndex === idx 
-                        ? "border-[#D4A55A] scale-[1.05] shadow-lg bg-[#0B1730]" 
+                        ? "border-[#D4A55A] scale-[1.08] shadow-lg bg-[#0B1730]" 
                         : "border-white/10 bg-black/40 hover:border-white/30 opacity-70 hover:opacity-100"
                     }`}
                   >
-                    <img src={optimizeImageUrlForDetail(imgUrl, 120, 60)} alt={`${product.name} - Galería Completa ${idx + 1}`} className="w-full h-full object-contain p-0.5" referrerPolicy="no-referrer" loading="lazy" />
+                    <img src={optimizeImageUrlForDetail(imgUrl, 120, 60)} alt={`${product.name} - Miniatura ${idx + 1}`} className="w-full h-full object-contain p-0.5" referrerPolicy="no-referrer" loading="lazy" />
                   </button>
                 ))}
               </div>

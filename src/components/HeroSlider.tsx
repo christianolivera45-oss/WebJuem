@@ -207,9 +207,24 @@ export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderPro
   // Overall banner image opacity (0.1 to 1.0)
   const imageOpacity = (settings.bannerOpacity !== undefined ? Math.max(settings.bannerOpacity, 10) : 95) / 100;
 
+  // Dynamic height configuration
+  // Compact default: removes excessive black space above and below, bringing the product slider right up close
+  const heightClass = settings.bannerHeight === "tall"
+    ? "h-[260px] sm:h-[360px] md:h-[440px] lg:h-[500px]"
+    : settings.bannerHeight === "normal"
+    ? "h-[220px] sm:h-[300px] md:h-[380px] lg:h-[430px]"
+    : "h-[180px] sm:h-[250px] md:h-[310px] lg:h-[360px]"; // Compact / Clean (Default)
+
+  const currentSlide = slides[currentIndex];
+  const hasText = Boolean(
+    (currentSlide?.title && currentSlide.title.trim() !== "") ||
+    (currentSlide?.subtitle && currentSlide.subtitle.trim() !== "") ||
+    (!currentSlide?.hideButton)
+  );
+
   return (
     <div 
-      className="relative h-[280px] sm:h-[380px] md:h-[480px] lg:h-[560px] w-full overflow-hidden bg-[#050B1A] text-white select-none group transform-gpu"
+      className={`relative ${heightClass} w-full overflow-hidden bg-[#050B1A] text-white select-none group transform-gpu`}
       onMouseEnter={() => setIsPlaying(false)}
       onMouseLeave={() => setIsPlaying(true)}
       onTouchStart={onTouchStart}
@@ -230,10 +245,10 @@ export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderPro
             className="absolute inset-0 w-full h-full transform-gpu"
             style={{ willChange: "transform, opacity" }}
           >
-            {/* Background Image - Boosted with visual filters to guarantee brightness and vibrancy */}
+            {/* Background Image - Centered and scaled cleanly to eliminate vertical voids */}
             <img
               src={optimizeImageUrl(slides[currentIndex].imageUrl)}
-              alt={slides[currentIndex].title}
+              alt={slides[currentIndex].title || "Banner"}
               className="w-full h-full object-cover object-center transition-opacity duration-500 filter brightness-105 contrast-[1.03] saturate-[1.05]"
               style={{ opacity: imageOpacity }}
               referrerPolicy="no-referrer"
@@ -241,107 +256,121 @@ export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderPro
               fetchPriority="high"
             />
             
-            {/* Customizable 3-Zone Light Overlays (Left, Center, Right) */}
-            {/* Desktop View: Horizontal gradient matching Left, Center, Right light controls */}
-            <div 
-              className="absolute inset-0 md:block hidden animate-fade-in pointer-events-none transition-all duration-300"
-              style={{
-                background: `linear-gradient(to right, rgba(5, 11, 26, ${darkLeft.toFixed(3)}) 0%, rgba(5, 11, 26, ${darkCenter.toFixed(3)}) 50%, rgba(5, 11, 26, ${darkRight.toFixed(3)}) 100%)`
-              }}
-            />
+            {/* Customizable 3-Zone Light Overlays (Left, Center, Right) - Only applied if there is textual content */}
+            {hasText && (
+              <>
+                {/* Desktop View: Horizontal gradient matching Left, Center, Right light controls */}
+                <div 
+                  className="absolute inset-0 md:block hidden animate-fade-in pointer-events-none transition-all duration-300"
+                  style={{
+                    background: `linear-gradient(to right, rgba(5, 11, 26, ${darkLeft.toFixed(3)}) 0%, rgba(5, 11, 26, ${darkCenter.toFixed(3)}) 50%, rgba(5, 11, 26, ${darkRight.toFixed(3)}) 100%)`
+                  }}
+                />
 
-            {/* Mobile View: Vertical gradient matching Left/Bottom, Center, Right/Top light controls */}
-            <div 
-              className="absolute inset-0 md:hidden block animate-fade-in pointer-events-none transition-all duration-300"
-              style={{
-                background: `linear-gradient(to top, rgba(5, 11, 26, ${darkLeft.toFixed(3)}) 0%, rgba(5, 11, 26, ${darkCenter.toFixed(3)}) 55%, rgba(5, 11, 26, ${darkRight.toFixed(3)}) 100%)`
-              }}
-            />
+                {/* Mobile View: Vertical gradient matching Left/Bottom, Center, Right/Top light controls */}
+                <div 
+                  className="absolute inset-0 md:hidden block animate-fade-in pointer-events-none transition-all duration-300"
+                  style={{
+                    background: `linear-gradient(to top, rgba(5, 11, 26, ${darkLeft.toFixed(3)}) 0%, rgba(5, 11, 26, ${darkCenter.toFixed(3)}) 55%, rgba(5, 11, 26, ${darkRight.toFixed(3)}) 100%)`
+                  }}
+                />
+              </>
+            )}
 
             {/* Slide Content */}
-            <div className="absolute inset-0 flex items-center justify-center md:justify-start">
-              <div className="max-w-7xl mx-auto px-6 sm:px-8 md:px-12 w-full text-center md:text-left relative z-10">
-                <div className="max-w-2xl transform-gpu">
-                  <motion.h1 
-                    initial={{ opacity: 0, y: 15 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.2, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-                    className="text-2xl sm:text-4xl md:text-5xl lg:text-6xl font-serif font-extrabold text-[#F4EAD7] tracking-tight leading-[1.1] drop-shadow-[0_2px_14px_rgba(0,0,0,0.85)] mb-3 md:mb-5 transform-gpu"
-                    style={{ willChange: "opacity, transform" }}
-                  >
-                    {slides[currentIndex].title}
-                  </motion.h1>
-                  
-                  <motion.p 
-                    initial={{ opacity: 0, y: 15 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.3, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-                    className="text-[12px] sm:text-sm md:text-base text-zinc-350 font-sans tracking-wide leading-relaxed max-w-xl font-light line-clamp-2 md:line-clamp-none transform-gpu drop-shadow-[0_1px_8px_rgba(0,0,0,0.9)]"
-                    style={{ color: "#D8D2C4", willChange: "opacity, transform" }}
-                  >
-                    {slides[currentIndex].subtitle}
-                  </motion.p>
+            {hasText && (
+              <div className="absolute inset-0 flex items-center justify-center md:justify-start">
+                <div className="max-w-7xl mx-auto px-6 sm:px-8 md:px-12 w-full text-center md:text-left relative z-10">
+                  <div className="max-w-2xl transform-gpu">
+                    {slides[currentIndex].title && slides[currentIndex].title.trim() !== "" && (
+                      <motion.h1 
+                        initial={{ opacity: 0, y: 15 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.2, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+                        className="text-xl sm:text-3xl md:text-4xl lg:text-5xl font-serif font-extrabold text-[#F4EAD7] tracking-tight leading-[1.1] drop-shadow-[0_2px_14px_rgba(0,0,0,0.85)] mb-2 md:mb-3 transform-gpu"
+                        style={{ willChange: "opacity, transform" }}
+                      >
+                        {slides[currentIndex].title}
+                      </motion.h1>
+                    )}
+                    
+                    {slides[currentIndex].subtitle && slides[currentIndex].subtitle.trim() !== "" && (
+                      <motion.p 
+                        initial={{ opacity: 0, y: 15 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.3, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+                        className="text-[11px] sm:text-xs md:text-sm text-zinc-350 font-sans tracking-wide leading-relaxed max-w-xl font-light line-clamp-2 md:line-clamp-none transform-gpu drop-shadow-[0_1px_8px_rgba(0,0,0,0.9)]"
+                        style={{ color: "#D8D2C4", willChange: "opacity, transform" }}
+                      >
+                        {slides[currentIndex].subtitle}
+                      </motion.p>
+                    )}
 
-                  {(!slides[currentIndex].hideButton || !slides[currentIndex].hideWhatsAppButton) && (
-                    <motion.div 
-                      initial={{ opacity: 0, y: 15 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.4, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-                      className="mt-5 sm:mt-8 flex flex-wrap items-center justify-center md:justify-start gap-3 sm:gap-4 transform-gpu"
-                      style={{ willChange: "opacity, transform" }}
-                    >
-                      {!slides[currentIndex].hideButton && (
-                        <button
-                          onClick={() => onExploreCatalog(slides[currentIndex].buttonLink)}
-                          className="group/btn relative overflow-hidden py-3 px-6 sm:py-3.5 sm:px-8 rounded-2xl font-sans font-black text-[11px] sm:text-xs uppercase tracking-widest bg-gradient-to-r from-[#F3D287] via-[#D4A55A] to-[#B88730] text-[#050B1A] ring-1 ring-white/50 ring-inset hover:scale-[1.035] active:scale-[0.98] shadow-[0_8px_25px_-5px_rgba(212,165,90,0.5),0_4px_12px_rgba(0,0,0,0.3)] hover:shadow-[0_12px_35px_-4px_rgba(212,165,90,0.7),0_6px_16px_rgba(0,0,0,0.4)] cursor-pointer transition-all duration-300 flex items-center gap-3"
-                        >
-                          {/* Shimmer light effect passing on hover */}
-                          <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/40 to-transparent -translate-x-full group-hover/btn:translate-x-full transition-transform duration-700 pointer-events-none" />
-                          
-                          <span className="relative z-10 drop-shadow-sm">
-                            {slides[currentIndex].buttonText || "Explorar Colección"}
-                          </span>
+                    {(!slides[currentIndex].hideButton || !slides[currentIndex].hideWhatsAppButton) && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: 15 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.4, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+                        className="mt-3 sm:mt-5 flex flex-wrap items-center justify-center md:justify-start gap-2.5 sm:gap-3 transform-gpu"
+                        style={{ willChange: "opacity, transform" }}
+                      >
+                        {!slides[currentIndex].hideButton && (
+                          <button
+                            onClick={() => onExploreCatalog(slides[currentIndex].buttonLink)}
+                            className="group/btn relative overflow-hidden py-2.5 px-5 sm:py-3 sm:px-7 rounded-2xl font-sans font-black text-[10px] sm:text-[11px] uppercase tracking-widest bg-gradient-to-r from-[#F3D287] via-[#D4A55A] to-[#B88730] text-[#050B1A] ring-1 ring-white/50 ring-inset hover:scale-[1.035] active:scale-[0.98] shadow-[0_8px_25px_-5px_rgba(212,165,90,0.5),0_4px_12px_rgba(0,0,0,0.3)] hover:shadow-[0_12px_35px_-4px_rgba(212,165,90,0.7),0_6px_16px_rgba(0,0,0,0.4)] cursor-pointer transition-all duration-300 flex items-center gap-2.5"
+                          >
+                            {/* Shimmer light effect passing on hover */}
+                            <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/40 to-transparent -translate-x-full group-hover/btn:translate-x-full transition-transform duration-700 pointer-events-none" />
+                            
+                            <span className="relative z-10 drop-shadow-sm">
+                              {slides[currentIndex].buttonText || "Explorar Colección"}
+                            </span>
 
-                          <span className="relative z-10 w-6 h-6 rounded-full bg-black/15 flex items-center justify-center shrink-0 transition-all duration-300 group-hover/btn:bg-black/25 group-hover/btn:translate-x-1 shadow-inner">
-                            <ArrowRight className="w-3.5 h-3.5 text-[#050B1A] transition-transform duration-300 group-hover/btn:translate-x-0.5" />
-                          </span>
-                        </button>
-                      )}
+                            <span className="relative z-10 w-5 h-5 rounded-full bg-black/15 flex items-center justify-center shrink-0 transition-all duration-300 group-hover/btn:bg-black/25 group-hover/btn:translate-x-1 shadow-inner">
+                              <ArrowRight className="w-3 h-3 text-[#050B1A] transition-transform duration-300 group-hover/btn:translate-x-0.5" />
+                            </span>
+                          </button>
+                        )}
 
-                      {!slides[currentIndex].hideWhatsAppButton && (
-                        <button
-                          onClick={() => handleWhatsAppContact(slides[currentIndex].title)}
-                          className="group/wapp py-3 px-5 sm:py-3.5 sm:px-7 rounded-2xl font-sans font-bold text-[11px] sm:text-xs uppercase tracking-widest border border-white/15 bg-[#050B1A]/60 backdrop-blur-md text-[#F4EAD7] hover:border-[#D4A55A]/70 hover:text-[#F3D287] hover:bg-white/10 hover:scale-[1.02] cursor-pointer active:scale-95 transition-all duration-300 flex items-center gap-2.5 shadow-lg shadow-black/20"
-                        >
-                          <MessageCircle className="w-4 h-4 text-emerald-400 group-hover/wapp:scale-110 transition-transform duration-300 shrink-0" />
-                          <span>Consultar</span>
-                        </button>
-                      )}
-                    </motion.div>
-                  )}
+                        {!slides[currentIndex].hideWhatsAppButton && (
+                          <button
+                            onClick={() => handleWhatsAppContact(slides[currentIndex].title)}
+                            className="group/wapp py-2.5 px-4 sm:py-3 sm:px-6 rounded-2xl font-sans font-bold text-[10px] sm:text-[11px] uppercase tracking-widest border border-white/15 bg-[#050B1A]/60 backdrop-blur-md text-[#F4EAD7] hover:border-[#D4A55A]/70 hover:text-[#F3D287] hover:bg-white/10 hover:scale-[1.02] cursor-pointer active:scale-95 transition-all duration-300 flex items-center gap-2 shadow-lg shadow-black/20"
+                          >
+                            <MessageCircle className="w-3.5 h-3.5 text-emerald-400 group-hover/wapp:scale-110 transition-transform duration-300 shrink-0" />
+                            <span>Consultar</span>
+                          </button>
+                        )}
+                      </motion.div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </motion.div>
         </AnimatePresence>
       </div>
 
-      {/* Slide Navigation Left/Right Arrows - visible on hover desktop, stylized like luxury jewelry store interface */}
-      <button
-        onClick={handlePrev}
-        aria-label="Anterior"
-        className="absolute left-6 top-1/2 -translate-y-1/2 z-20 w-11 h-11 rounded-xl bg-[#050B1A]/70 hover:bg-[#D4A55A] border border-zinc-800 hover:border-[#D4A55A] md:flex hidden items-center justify-center text-[#F4EAD7] hover:text-[#050B1A] transition-all duration-300 opacity-0 group-hover:opacity-100 cursor-pointer active:scale-95 shadow-xl"
-      >
-        <ChevronLeft className="h-5 w-5" />
-      </button>
+      {/* Slide Navigation Left/Right Arrows - visible on hover desktop if multiple slides */}
+      {slides.length > 1 && (
+        <>
+          <button
+            onClick={handlePrev}
+            aria-label="Anterior"
+            className="absolute left-6 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-xl bg-[#050B1A]/70 hover:bg-[#D4A55A] border border-zinc-800 hover:border-[#D4A55A] md:flex hidden items-center justify-center text-[#F4EAD7] hover:text-[#050B1A] transition-all duration-300 opacity-0 group-hover:opacity-100 cursor-pointer active:scale-95 shadow-xl"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
 
-      <button
-        onClick={handleNext}
-        aria-label="Siguiente"
-        className="absolute right-6 top-1/2 -translate-y-1/2 z-20 w-11 h-11 rounded-xl bg-[#050B1A]/70 hover:bg-[#D4A55A] border border-zinc-800 hover:border-[#D4A55A] md:flex hidden items-center justify-center text-[#F4EAD7] hover:text-[#050B1A] transition-all duration-300 opacity-0 group-hover:opacity-100 cursor-pointer active:scale-95 shadow-xl"
-      >
-        <ChevronRight className="h-5 w-5" />
-      </button>
+          <button
+            onClick={handleNext}
+            aria-label="Siguiente"
+            className="absolute right-6 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-xl bg-[#050B1A]/70 hover:bg-[#D4A55A] border border-zinc-800 hover:border-[#D4A55A] md:flex hidden items-center justify-center text-[#F4EAD7] hover:text-[#050B1A] transition-all duration-300 opacity-0 group-hover:opacity-100 cursor-pointer active:scale-95 shadow-xl"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
+        </>
+      )}
 
 
     </div>

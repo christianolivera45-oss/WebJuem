@@ -127,6 +127,7 @@ const DEFAULT_SHOP_STATE: ShopState = {
     freeShippingMinAmount: 2000,
     freeShippingRegions: "Pinamar, Salinas, Marindia, Neptunia",
     bannerOpacity: 95,
+    bannerHeight: "compact",
     bannerLightLeft: 75,
     bannerLightCenter: 88,
     bannerLightRight: 95
@@ -1752,6 +1753,10 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
     }
     if (settings.bannerLightRight === undefined) {
       settings.bannerLightRight = 95;
+      settingsUpdated = true;
+    }
+    if (settings.bannerHeight === undefined) {
+      settings.bannerHeight = "compact";
       settingsUpdated = true;
     }
     if (settings.bannerOpacity === undefined || settings.bannerOpacity < 50) {

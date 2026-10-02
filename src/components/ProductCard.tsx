@@ -199,8 +199,18 @@ Precio: $${Math.round(product.price)}
           layoutMode === "list" 
             ? "w-[110px] shrink-0 border-r border-[#D4A55A]/15 sm:w-auto sm:shrink sm:border-r-0 aspect-[3/4]" 
             : "aspect-[3/4]"
-        } overflow-hidden bg-gradient-to-br from-[#050B1A]/80 via-[#0B1730]/40 to-[#050B1A]/75 cursor-pointer flex items-center justify-center p-2.5`}
+        } overflow-hidden bg-gradient-to-br from-[#050B1A]/80 via-[#0B1730]/40 to-[#050B1A]/75 cursor-pointer flex items-center justify-center p-1 sm:p-1.5`}
       >
+        {/* Subtle ambient image glow to remove empty contrast bars */}
+        <div className="absolute inset-0 pointer-events-none select-none overflow-hidden opacity-20">
+          <img
+            src={optimizeImageUrl(currentImage || "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=600&q=80")}
+            alt=""
+            className="w-full h-full object-cover blur-xl scale-110"
+            referrerPolicy="no-referrer"
+          />
+        </div>
+
         <AnimatePresence>
           <motion.img
             key={currentImage || "default"}
@@ -210,7 +220,7 @@ Precio: $${Math.round(product.price)}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.8, ease: "easeInOut" }}
-            className="absolute inset-0 w-full h-full object-contain p-2.5 transition-transform duration-700 ease-out group-hover:scale-106"
+            className="absolute inset-0 w-full h-full object-contain p-1 sm:p-1.5 transition-transform duration-700 ease-out group-hover:scale-106"
             referrerPolicy="no-referrer"
             loading="lazy"
             onError={handleImageError}

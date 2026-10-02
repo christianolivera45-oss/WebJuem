@@ -186,6 +186,7 @@ export interface SiteSettings {
   emailTemplateOrderStatusChangedBody?: string;
   emailHeaderImageUrl?: string;
   bannerOpacity?: number;
+  bannerHeight?: 'compact' | 'normal' | 'tall';
   bannerLightLeft?: number;
   bannerLightCenter?: number;
   bannerLightRight?: number;

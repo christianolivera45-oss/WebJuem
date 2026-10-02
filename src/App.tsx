@@ -5949,8 +5949,8 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
     <div 
       className={
         bannerSlides.length > 0
-          ? "h-[92px] lg:h-[100px]"
-          : "h-[56px] lg:h-[64px]"
+          ? "h-[80px] sm:h-[84px] lg:h-[86px]"
+          : "h-[54px] lg:h-[60px]"
       }
     />
 
@@ -6032,8 +6032,8 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
             />
           )}
 
-          {/* Search bar container */}
-          <section id="catalog-view" className="py-8 max-w-7xl mx-auto px-6 w-full flex-1">
+          {/* Search bar container - Compact top padding so the product gallery is close to the banner */}
+          <section id="catalog-view" className="pt-1.5 sm:pt-2.5 pb-8 max-w-7xl mx-auto px-4 sm:px-6 w-full flex-1">
 
 
             {/* Subcategory Pills Bar (Shown when a specific category is selected and contains subcategories) */}
@@ -6419,10 +6419,10 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
 
             {/* Featured Showcase if there are products marked featured */}
             {featuredProducts.length > 0 && selectedCategory === "todos" && !showAllProductsFlat && !searchQuery && (
-              <div className="mb-12">
-                <div className="flex items-center gap-2 mb-6">
-                  <div className="w-1.5 h-6 theme-btn-primary rounded-full"></div>
-                  <h3 className="text-xl font-bold tracking-tight">Destacados</h3>
+              <div className="mb-6 sm:mb-8">
+                <div className="flex items-center gap-2 mb-2 sm:mb-2.5">
+                  <div className="w-1.5 h-5 theme-btn-primary rounded-full"></div>
+                  <h3 className="text-lg sm:text-xl font-bold tracking-tight">Destacados</h3>
                   <span className="text-[10px] uppercase font-bold text-yellow-400 animate-pulse">¡Los más buscados!</span>
                 </div>
                 <ProductSlider
@@ -9418,6 +9418,56 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                               className="flex-1 cursor-pointer accent-amber-500 h-2 bg-zinc-800 rounded-lg appearance-none outline-none"
                             />
                             <span className="text-[10px] text-amber-400 font-bold">100% Radiante</span>
+                          </div>
+                        </div>
+
+                        {/* Control de Altura y Encuadre del Banner */}
+                        <div className="bg-zinc-900/60 border border-zinc-800/60 rounded-xl p-4 space-y-3">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <Maximize2 className="w-3.5 h-3.5 text-amber-400" />
+                                <label className="block text-xs font-bold text-zinc-200">
+                                  Altura y Encuadre del Banner (Espacio Superior e Inferior)
+                                </label>
+                              </div>
+                              <p className="text-[10px] text-zinc-400 mt-1 max-w-xl">
+                                Define la altura vertical del carrusel. La opción &quot;Ajustado / Compacto&quot; elimina el espacio sobrante arriba y abajo, centrando la imagen y dejando la barra de productos destacados bien pegada al banner.
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                            {[
+                              { id: "compact", label: "Ajustado / Compacto", desc: "Recomendado: Sin espacio sobrante, acerca los productos de abajo" },
+                              { id: "normal", label: "Estándar", desc: "Altura equilibrada para imágenes estándar" },
+                              { id: "tall", label: "Amplio / Alto", desc: "Mayor presencia vertical de fondo" }
+                            ].map((mode) => {
+                              const isSelected = (editingSettings.bannerHeight || "compact") === mode.id;
+                              return (
+                                <button
+                                  key={mode.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingSettings({
+                                      ...editingSettings,
+                                      bannerHeight: mode.id as any
+                                    });
+                                  }}
+                                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                                    isSelected
+                                      ? "bg-amber-500/15 border-amber-500 text-amber-300 shadow-md ring-1 ring-amber-500/40"
+                                      : "bg-zinc-950/60 border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700"
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between w-full mb-1">
+                                    <span className="text-xs font-bold">{mode.label}</span>
+                                    {isSelected && <span className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_#f59e0b]"></span>}
+                                  </div>
+                                  <span className="text-[10px] text-zinc-400 leading-snug">{mode.desc}</span>
+                                </button>
+                              );
+                            })}
                           </div>
                         </div>
 
@@ -22829,11 +22879,19 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
               className="relative max-w-3xl w-full bg-white dark:bg-zinc-950 rounded-2xl overflow-hidden shadow-2xl border border-slate-200 dark:border-zinc-800 flex flex-col md:flex-row cursor-default"
             >
               {/* Imagen principal */}
-              <div className="relative flex-1 bg-zinc-900 flex items-center justify-center min-h-[300px] md:min-h-[450px]">
+              <div className="relative flex-1 bg-zinc-950 flex items-center justify-center overflow-hidden min-h-[260px] md:min-h-[400px]">
+                <div className="absolute inset-0 pointer-events-none select-none overflow-hidden opacity-25">
+                  <img
+                    src={lightboxImage.src}
+                    alt=""
+                    className="w-full h-full object-cover blur-2xl scale-125"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
                 <img
                   src={lightboxImage.src}
                   alt={lightboxImage.name}
-                  className="max-h-[70vh] md:max-h-[80vh] w-full object-contain p-2"
+                  className="relative z-10 max-h-[75vh] md:max-h-[80vh] w-full object-contain p-1 drop-shadow-xl"
                   referrerPolicy="no-referrer"
                 />
                 <button
