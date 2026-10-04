@@ -3596,7 +3596,9 @@ export default function App() {
             "returnPolicyCategory": "https://schema.org/MerchantReturnFiniteReturnWindow",
             "merchantReturnDays": 30,
             "returnMethod": "https://schema.org/ReturnByMail",
-            "returnFees": "https://schema.org/FreeReturn"
+            "returnFees": "https://schema.org/FreeReturn",
+            "refundType": "https://schema.org/FullRefund",
+            "merchantReturnLink": typeof window !== "undefined" ? window.location.origin : "https://juem.com.uy"
           }
         }
       };

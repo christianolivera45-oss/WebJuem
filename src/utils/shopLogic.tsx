@@ -408,6 +408,7 @@ export const DEFAULT_SETTINGS: SiteSettings = {
   bannerSubtitle: "Descubre las últimas tendencias con descuentos de hasta el 40%.",
   bannerImageUrl: "https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=1600&q=80",
   bannerOpacity: 95,
+  bannerHeight: "compact",
   bannerLightLeft: 85,
   bannerLightCenter: 90,
   bannerLightRight: 95,

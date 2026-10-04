@@ -772,7 +772,7 @@ Me gustaría coordinar stock, fabricación y envío.`;
     const selectedReviewText = reviewsList[charSum % reviewsList.length];
 
     return {
-      "@context": "https://schema.org/",
+      "@context": "https://schema.org",
       "@type": "Product",
       "name": product.name,
       "image": imageUrls,
@@ -851,7 +851,9 @@ Me gustaría coordinar stock, fabricación y envío.`;
           "returnPolicyCategory": "https://schema.org/MerchantReturnFiniteReturnWindow",
           "merchantReturnDays": 30,
           "returnMethod": "https://schema.org/ReturnByMail",
-          "returnFees": "https://schema.org/FreeReturn"
+          "returnFees": "https://schema.org/FreeReturn",
+          "refundType": "https://schema.org/FullRefund",
+          "merchantReturnLink": typeof window !== "undefined" ? window.location.origin : "https://juem.com.uy"
         }
       }
     };
@@ -942,7 +944,7 @@ Me gustaría coordinar stock, fabricación y envío.`;
         </button>
  
         {/* Left Column: Image Area without separating borders for unified visual integration */}
-        <div className={`flex flex-col p-2.5 sm:p-4 md:p-5 justify-start items-center relative gap-2.5 sm:gap-3.5 overflow-hidden w-full shrink-0 ${
+        <div className={`flex flex-col p-2 sm:p-3 md:p-4 justify-start items-center relative gap-1.5 sm:gap-2 overflow-hidden w-full shrink-0 ${
           isThemeDark ? "bg-[#09090b]" : "bg-white"
         }`}>
           
@@ -950,7 +952,7 @@ Me gustaría coordinar stock, fabricación y envío.`;
           <div 
             onTouchStart={handleSwipeStart}
             onTouchEnd={handleSwipeEnd}
-            className={`relative w-full rounded-[24px] flex items-center justify-center p-0 select-none overflow-hidden transition-all duration-300 shadow-sm ${
+            className={`relative w-full rounded-[20px] sm:rounded-[24px] flex items-center justify-center p-0 select-none overflow-hidden transition-all duration-300 shadow-sm ${
               imageBgMode === "light"
                 ? "bg-[#efeff2]"
                 : imageBgMode === "contrast"
@@ -961,8 +963,10 @@ Me gustaría coordinar stock, fabricación y envío.`;
             }`}
             style={{
               height: imageAspectRatio && imageAspectRatio > 1.35
-                ? "clamp(260px, 48vw, 420px)"
-                : "clamp(320px, 60vw, 490px)"
+                ? "clamp(230px, 42vw, 370px)"
+                : imageAspectRatio && imageAspectRatio < 0.85
+                ? "clamp(310px, 58vw, 470px)"
+                : "clamp(260px, 48vw, 400px)"
             }}
           >
             
@@ -1120,7 +1124,7 @@ Me gustaría coordinar stock, fabricación y envío.`;
                       ? "w-full h-full object-cover rounded-2xl"
                       : mainImageFit === "contain"
                       ? "max-h-full max-w-full w-auto h-auto object-contain"
-                      : "w-full h-full object-contain p-1 rounded-2xl"
+                      : "w-full h-full object-contain p-0 rounded-2xl"
                   }`}
                   referrerPolicy="no-referrer"
                   loading="eager"
@@ -1157,13 +1161,13 @@ Me gustaría coordinar stock, fabricación y envío.`;
 
             {/* Dots indicator inside the image area */}
             {allImages.length > 1 && (
-              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 z-10 select-none bg-black/30 backdrop-blur-xs px-3.5 py-1.5 rounded-full">
+              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-2 z-10 select-none bg-black/35 backdrop-blur-xs px-3 py-1 rounded-full">
                 {allImages.map((_, idx) => (
                   <button
                     key={idx}
                     onClick={(e) => { e.stopPropagation(); setActiveImgIndex(idx); }}
-                    className={`h-2 w-2 rounded-full transition-all duration-300 ${
-                      activeImgIndex === idx ? "bg-white w-4" : "bg-white/40 hover:bg-white/70"
+                    className={`h-1.5 w-1.5 rounded-full transition-all duration-300 ${
+                      activeImgIndex === idx ? "bg-white w-3.5" : "bg-white/40 hover:bg-white/70"
                     }`}
                   />
                 ))}
@@ -1171,22 +1175,22 @@ Me gustaría coordinar stock, fabricación y envío.`;
             )}
           </div>
 
-          {/* Thumbnail selector strips - crisp borders and scale transitions */}
+          {/* Thumbnail selector strips - right close to the main image */}
           {allImages.length > 1 && (
-            <div className="hidden sm:flex flex-wrap gap-2.5 sm:gap-3 py-1 select-none w-full justify-center max-w-full overflow-x-auto no-scrollbar shrink-0">
+            <div className="flex items-center gap-2 sm:gap-2.5 pt-0.5 pb-1 select-none w-full justify-center max-w-full overflow-x-auto no-scrollbar shrink-0">
               {allImages.map((imgUrl, idx) => (
                 <button
                   key={idx}
                   onClick={() => setActiveImgIndex(idx)}
-                  className={`relative w-[72px] h-[72px] sm:w-[84px] sm:h-[84px] rounded-2xl overflow-hidden border-2 transition-all duration-300 shrink-0 cursor-pointer ${
+                  className={`relative w-[58px] h-[58px] sm:w-[74px] sm:h-[74px] rounded-xl sm:rounded-2xl overflow-hidden border-2 transition-all duration-300 shrink-0 cursor-pointer ${
                     activeImgIndex === idx 
-                      ? "border-[#D4A55A] scale-[1.04] shadow-md shadow-[#D4A55A]/15 bg-[#0B1730]" 
+                      ? "border-[#D4A55A] scale-[1.04] shadow-md shadow-[#D4A55A]/20 bg-[#0B1730]" 
                       : isThemeDark
                       ? "border-zinc-800 bg-[#0c0c0e]/40 hover:border-zinc-700 opacity-80"
-                      : "border-slate-205 bg-white hover:border-slate-350 opacity-85"
+                      : "border-slate-200 bg-white hover:border-slate-350 opacity-85"
                   }`}
                 >
-                  <img src={optimizeImageUrlForDetail(imgUrl, 150, 65)} alt={`${product.name} - Miniatura ${idx + 1}`} className="w-full h-full object-contain p-1" referrerPolicy="no-referrer" loading="lazy" />
+                  <img src={optimizeImageUrlForDetail(imgUrl, 150, 65)} alt={`${product.name} - Miniatura ${idx + 1}`} className="w-full h-full object-contain p-0.5" referrerPolicy="no-referrer" loading="lazy" />
                 </button>
               ))}
             </div>

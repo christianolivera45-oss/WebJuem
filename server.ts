@@ -1755,7 +1755,7 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
       settings.bannerLightRight = 95;
       settingsUpdated = true;
     }
-    if (settings.bannerHeight === undefined) {
+    if (settings.bannerHeight === undefined || settings.bannerHeight === "tall") {
       settings.bannerHeight = "compact";
       settingsUpdated = true;
     }
@@ -11478,7 +11478,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
 
         // Google Structured Data (JSON-LD Product Spec) - Fully Compliant with Merchant Listings
         schemaJson = JSON.stringify({
-          "@context": "https://schema.org/",
+          "@context": "https://schema.org",
           "@type": "Product",
           "name": product.name,
           "image": imageUrls,
@@ -11557,7 +11557,9 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
               "returnPolicyCategory": "https://schema.org/MerchantReturnFiniteReturnWindow",
               "merchantReturnDays": 30,
               "returnMethod": "https://schema.org/ReturnByMail",
-              "returnFees": "https://schema.org/FreeReturn"
+              "returnFees": "https://schema.org/FreeReturn",
+              "refundType": "https://schema.org/FullRefund",
+              "merchantReturnLink": baseUrl
             }
           }
         }, null, 2);
@@ -11621,6 +11623,16 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
           ],
           "opens": "09:00",
           "closes": "20:00"
+        },
+        "hasMerchantReturnPolicy": {
+          "@type": "MerchantReturnPolicy",
+          "applicableCountry": "UY",
+          "returnPolicyCategory": "https://schema.org/MerchantReturnFiniteReturnWindow",
+          "merchantReturnDays": 30,
+          "returnMethod": "https://schema.org/ReturnByMail",
+          "returnFees": "https://schema.org/FreeReturn",
+          "refundType": "https://schema.org/FullRefund",
+          "merchantReturnLink": baseUrl
         }
       }, null, 2);
     }

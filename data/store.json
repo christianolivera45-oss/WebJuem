@@ -310,7 +310,8 @@
     "emailTemplateOrderStatusChangedSubject": "Actualización de tu pedido #{{orderId}} - {{statusText}}",
     "bannerLightLeft": 85,
     "bannerLightCenter": 90,
-    "bannerLightRight": 95
+    "bannerLightRight": 95,
+    "bannerHeight": "compact"
   },
   "products": [
     {
