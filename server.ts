@@ -11454,22 +11454,29 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         const selectedReviewText = reviewsList[charSum % reviewsList.length];
         const sku = product.codigo || `JUEM-${product.id}`;
         
-        // GS1 Uruguay GTIN-13 barcode generation with modulo-10 check digit
-        let hash = 0;
-        const seedStr = `${product.id}-${product.name}-${sku}`;
-        for (let i = 0; i < seedStr.length; i++) {
-          hash = (hash * 31 + seedStr.charCodeAt(i)) % 1000000000;
+        // Only include genuine, verified GTIN if provided by merchant/manufacturer.
+        // Google checks GS1 GEPIR registry; never emit fabricated or synthetic GTIN barcodes.
+        function getValidProductGtin(prod: any): string | undefined {
+          const candidate = prod?.gtin || prod?.barcode;
+          if (!candidate || typeof candidate !== "string") return undefined;
+          const clean = candidate.trim().replace(/[-\s]/g, "");
+          if (!/^\d{8}$|^\d{12}$|^\d{13}$|^\d{14}$/.test(clean)) return undefined;
+          if (/^0+$/.test(clean) || /^12345678/.test(clean)) return undefined;
+          const len = clean.length;
+          const digits = clean.split("").map(Number);
+          const checkDigit = digits[len - 1];
+          let sum = 0;
+          let weight = 3;
+          for (let i = len - 2; i >= 0; i--) {
+            sum += digits[i] * weight;
+            weight = weight === 3 ? 1 : 3;
+          }
+          const calculatedCheck = (10 - (sum % 10)) % 10;
+          if (checkDigit !== calculatedCheck) return undefined;
+          return clean;
         }
-        const body9 = String(Math.abs(hash)).padStart(9, "0");
-        const first12 = "773" + body9;
 
-        let checksum = 0;
-        for (let i = 0; i < 12; i++) {
-          const d = parseInt(first12[i], 10);
-          checksum += (i % 2 === 0) ? d : d * 3;
-        }
-        const checkDigit = (10 - (checksum % 10)) % 10;
-        const gtin13 = first12 + checkDigit.toString();
+        const validGtin = getValidProductGtin(product);
 
         const productUrl = `${baseUrl}/producto/${generateSlug(product.name)}`;
         const imageUrls = product.imagenes && product.imagenes.length > 0
@@ -11485,8 +11492,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
           "description": product.description || `${product.name} - Disponible en Ventas Juem con envío rápido a todo el país.`,
           "sku": sku,
           "mpn": sku,
-          "gtin13": gtin13,
-          "gtin": gtin13,
+          ...(validGtin ? { gtin: validGtin, ...(validGtin.length === 13 ? { gtin13: validGtin } : {}) } : {}),
           "brand": {
             "@type": "Brand",
             "name": "Juem"
