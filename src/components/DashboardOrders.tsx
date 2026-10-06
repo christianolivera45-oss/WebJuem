@@ -315,7 +315,7 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
     }
   };
 
-  // Autocomplete / suggestions search inside the modal
+  // Autocomplete / suggestions search inside the modal (supports loose words like "funda turquesa" or "funda y turquesa")
   const handleProductSearch = (query: string) => {
     setProductSearchQuery(query);
     if (!query.trim()) {
@@ -323,45 +323,99 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
       return;
     }
 
+    const normalize = (text: string) =>
+      (text || "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim();
+
+    const normalizedQuery = normalize(query);
+    const rawTokens = normalizedQuery
+      .split(/[\s,+/]+/)
+      .map(t => t.trim())
+      .filter(Boolean);
+
+    // Stop words to ignore when searching multiple terms (e.g. "funda y turquesa")
+    const stopWords = new Set(["y", "de", "del", "la", "el", "los", "las", "en", "con", "a", "para", "o"]);
+    const tokens = rawTokens.length > 1 ? rawTokens.filter(t => !stopWords.has(t)) : rawTokens;
+    if (tokens.length === 0) {
+      setSearchResults([]);
+      return;
+    }
+
     const matches: any[] = [];
-    const normalizedQuery = query.toLowerCase();
 
     for (const prod of productsList) {
       if (prod.active === false) continue;
       
-      const prodNameMatches = prod.name.toLowerCase().includes(normalizedQuery);
-      const prodCodeMatches = (prod.codigo || "").toLowerCase().includes(normalizedQuery);
+      const normProdName = normalize(prod.name);
+      const normProdCode = normalize(prod.codigo || "");
+      const normProdCat = normalize(prod.category || "");
 
       if (prod.variants && prod.variants.length > 0) {
-        // Search in variants
+        // Search across variants including their color, size and sku combined with product name
         for (const variant of prod.variants) {
-          const varSkuMatches = (variant.sku || "").toLowerCase().includes(normalizedQuery);
-          if (prodNameMatches || prodCodeMatches || varSkuMatches) {
+          const normVarSku = normalize(variant.sku || "");
+          const normVarSize = normalize(variant.size || "");
+          const normVarColor = normalize(variant.color || "");
+
+          const fullVariantText = `${normProdName} ${normProdCode} ${normVarSku} ${normVarSize} ${normVarColor} ${normProdCat}`;
+
+          const allTokensMatch = tokens.every(token => fullVariantText.includes(token));
+          if (allTokensMatch) {
+            let score = 0;
+            // Exact SKU / code match
+            if (normVarSku === normalizedQuery || normProdCode === normalizedQuery) score += 1000;
+            // Full phrase matched inside name
+            if (normProdName.includes(normalizedQuery)) score += 400;
+            // Name matches all tokens
+            if (tokens.every(t => normProdName.includes(t))) score += 200;
+            // Variant color matches a token
+            if (tokens.some(t => normVarColor.includes(t))) score += 150;
+            // Variant size matches a token
+            if (tokens.some(t => normVarSize.includes(t))) score += 100;
+            // In-stock items prioritized
+            if ((variant.stock || 0) > 0) score += 20;
+
+            const variantLabelParts = [variant.size, variant.color].filter(Boolean);
+            const variantSuffix = variantLabelParts.length > 0 ? ` (${variantLabelParts.join(" / ")})` : "";
+
             matches.push({
               product: prod,
               variant: variant,
-              displayName: `${prod.name} (${variant.size} / ${variant.color})`,
+              displayName: `${prod.name}${variantSuffix}`,
               sku: variant.sku || prod.codigo,
               price: variant.price || prod.precioWeb || prod.price || 0,
-              cost: prod.precioCompra || 0
+              cost: prod.precioCompra || 0,
+              score
             });
           }
         }
       } else {
-        if (prodNameMatches || prodCodeMatches) {
+        const fullProdText = `${normProdName} ${normProdCode} ${normProdCat}`;
+        const allTokensMatch = tokens.every(token => fullProdText.includes(token));
+        if (allTokensMatch) {
+          let score = 0;
+          if (normProdCode === normalizedQuery) score += 1000;
+          if (normProdName.includes(normalizedQuery)) score += 400;
+          if ((prod.stock || 0) > 0) score += 20;
+
           matches.push({
             product: prod,
             variant: null,
             displayName: prod.name,
             sku: prod.codigo,
             price: prod.precioWeb || prod.price || 0,
-            cost: prod.precioCompra || 0
+            cost: prod.precioCompra || 0,
+            score
           });
         }
       }
     }
 
-    setSearchResults(matches.slice(0, 8)); // Max 8 suggestions
+    matches.sort((a, b) => b.score - a.score);
+    setSearchResults(matches.slice(0, 12)); // Max 12 suggestions
   };
 
   // Add suggestion to transaction cart
@@ -1669,7 +1723,7 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
                     type="text"
                     value={productSearchQuery}
                     onChange={(e) => handleProductSearch(e.target.value)}
-                    placeholder="Escriba nombre de producto, código o SKU para agregar..."
+                    placeholder="Buscar por palabras sueltas (ej: funda turquesa), código o SKU..."
                     className="w-full px-4 py-3 bg-zinc-950/60 border border-zinc-800 focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/30 rounded-xl text-xs outline-none text-white placeholder-zinc-500 font-bold shadow-inner transition-all"
                   />
                   
