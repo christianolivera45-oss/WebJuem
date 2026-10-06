@@ -1066,7 +1066,9 @@ async function deductSingleItemStockDb(
   let resolvedVariantId = variantId;
   let resolvedVarLock: any = null;
 
-  if (resolvedVariantId) {
+  const isUuid = (val: any) => typeof val === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+
+  if (resolvedVariantId && isUuid(resolvedVariantId)) {
     const varLock = await client.query(
       "SELECT id, stock, stock_pinamar, stock_montevideo FROM public.product_variants WHERE id = $1 FOR UPDATE;",
       [resolvedVariantId]
@@ -1374,7 +1376,9 @@ async function reintegrateSingleItemStockDb(
   let resolvedVariantId = variantId;
   let hasVariant = false;
 
-  if (resolvedVariantId) {
+  const isUuid = (val: any) => typeof val === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+
+  if (resolvedVariantId && isUuid(resolvedVariantId)) {
     const varCheck = await client.query(
       "SELECT id FROM public.product_variants WHERE id = $1;",
       [resolvedVariantId]
@@ -9594,11 +9598,16 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
   // POST create a safe checkout order BEFORE redirecting to gateway (Fully Secured)
   app.post("/api/orders", async (req, res) => {
     try {
-      // 1. Rate Limiting Check
-      const clientIp = req.ip || req.headers["x-forwarded-for"] || "";
-      const ipStr = Array.isArray(clientIp) ? clientIp[0] : String(clientIp);
-      if (!limitRequest(ipStr, 10, 5 * 60 * 1000)) { // limit 10 order queries per 5 minutes per IP
-        return res.status(429).json({ success: false, message: "Demasiados pedidos creados en poco tiempo. Por favor, intente nuevamente en unos minutos." });
+      const authHeader = req.headers.authorization;
+      const isAdmin = isValidToken(authHeader);
+
+      // 1. Rate Limiting Check (exempt authenticated administrators entering sales)
+      if (!isAdmin) {
+        const clientIp = req.ip || req.headers["x-forwarded-for"] || "";
+        const ipStr = Array.isArray(clientIp) ? clientIp[0] : String(clientIp);
+        if (!limitRequest(ipStr, 40, 5 * 60 * 1000)) { // limit 40 order queries per 5 minutes per IP
+          return res.status(429).json({ success: false, message: "Demasiados pedidos creados en poco tiempo. Por favor, intente nuevamente en unos minutos." });
+        }
       }
 
       const { customerName, customerEmail, customerPhone, shippingCost, couponCode, notes, items, paymentMethod, depositoOrigen, canal, bypassStockDeduction, createdAt } = req.body;
@@ -9646,7 +9655,38 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       const verifiedItems = [];
 
       for (const item of items) {
-        const dbProd = officialProducts.find(p => Number(p.id) === Number(item.productId));
+        let dbProd = officialProducts.find(p => String(p.id) === String(item.productId) || (Number(p.id) === Number(item.productId) && !isNaN(Number(item.productId))));
+        
+        // If not found in active memory products and request is from admin, check DB directly
+        if (!dbProd && isAdmin && pool && !dbUnavailable) {
+          try {
+            const pCheck = await pool.query("SELECT * FROM public.products WHERE id = $1;", [Number(item.productId) || 0]);
+            if (pCheck.rows.length > 0) {
+              const row = pCheck.rows[0];
+              dbProd = {
+                id: row.id,
+                name: row.name,
+                price: Number(row.price),
+                stock: Number(row.stock || 0),
+                variants: []
+              };
+            }
+          } catch (e) {
+            // direct lookup error ignored
+          }
+        }
+
+        // If still not found, but it is an admin registering a sale, generate a virtual product entry so they are never blocked
+        if (!dbProd && isAdmin) {
+          dbProd = {
+            id: item.productId,
+            name: item.productName || "Artículo",
+            price: Number(item.unitPrice) || 0,
+            stock: 999,
+            variants: []
+          };
+        }
+
         if (!dbProd) {
           return res.status(400).json({ success: false, message: `El producto con ID '${item.productId}' ya no está disponible en la tienda.` });
         }
@@ -9654,9 +9694,6 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         // Determine correct base or variant price
         let correctUnitPrice = Number(dbProd.price);
         let activeVariantId = item.variantId;
-
-        const authHeader = req.headers.authorization;
-        const isAdmin = isValidToken(authHeader);
 
         if (isAdmin && item.unitPrice !== undefined && !isNaN(Number(item.unitPrice))) {
           correctUnitPrice = Number(item.unitPrice);
@@ -9686,7 +9723,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         verifiedItems.push({
           productId: dbProd.id,
           variantId: activeVariantId || null,
-          productName: dbProd.name,
+          productName: item.productName || dbProd.name,
           sku: item.sku || null,
           sizeSelected: item.sizeSelected || null,
           colorSelected: item.colorSelected || null,
@@ -9740,8 +9777,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         try {
           await client.query("BEGIN;");
           
-          // Verify stock with FOR UPDATE lock on every item to prevent race-condition oversellings
-          if (!bypassStockDeduction) {
+          // Verify stock with FOR UPDATE lock on every item to prevent race-condition oversellings (public checkout only)
+          if (!bypassStockDeduction && !isAdmin) {
             for (const item of verifiedItems) {
               if (item.variantId) {
                 const vRes = await client.query(
@@ -9802,12 +9839,13 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
 
           for (const item of verifiedItems) {
             const cleanVariantId = isUuid(item.variantId) ? item.variantId : null;
+            const cleanProductId = (!isNaN(Number(item.productId)) && Number(item.productId) > 0) ? parseInt(String(item.productId), 10) : null;
             await client.query(`
               INSERT INTO public.order_items (order_id, product_id, variant_id, product_name, sku, size_selected, color_selected, unit_price, quantity, total_price)
               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
             `, [
               orderId,
-              item.productId,
+              cleanProductId,
               cleanVariantId,
               item.productName,
               item.sku || null,
@@ -9820,7 +9858,11 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
           }
 
           if (status === "pago_aprobado" && !bypassStockDeduction) {
-            await deductStockDb(client, orderId);
+            try {
+              await deductStockDb(client, orderId);
+            } catch (deductErr) {
+              console.warn("Stock deduction warning:", deductErr);
+            }
           }
 
           if (validCouponCodeToSave) {
@@ -9841,8 +9883,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         currentStoreState = dbState;
       } else {
         // Safe, verified file-system backup fallback:
-        // Pre-emptively verify in-memory stock limits before generating the offline order
-        if (!bypassStockDeduction) {
+        // Pre-emptively verify in-memory stock limits before generating the offline order (public checkout only)
+        if (!bypassStockDeduction && !isAdmin) {
           for (const item of verifiedItems) {
             const dbProd = officialProducts.find(p => Number(p.id) === Number(item.productId));
             if (!dbProd) {

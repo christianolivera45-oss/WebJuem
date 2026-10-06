@@ -7609,6 +7609,7 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
             ) : adminSection === "sales" ? (
               <DashboardOrders
                 store={store}
+                authToken={authToken}
                 onRefreshStore={async () => { await fetchStoreData(true); }}
                 initialStatusFilter={salesInitialFilter}
                 initialExpandedOrderId={salesInitialOrderId}

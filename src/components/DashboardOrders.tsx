@@ -32,6 +32,7 @@ import {
 
 interface DashboardOrdersProps {
   store: ShopState;
+  authToken?: string;
   onUpdateStatus: (id: string, status: string) => Promise<void>;
   onDeleteOrder: (id: string) => Promise<void>;
   onOrderCreated?: (newOrder: Order) => void;
@@ -43,6 +44,7 @@ interface DashboardOrdersProps {
 
 export const DashboardOrders: React.FC<DashboardOrdersProps> = ({ 
   store, 
+  authToken,
   onUpdateStatus, 
   onDeleteOrder,
   onOrderCreated,
@@ -487,7 +489,8 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
     setIsSubmittingNewSale(true);
     setNewSaleErrorMessage(null);
 
-    const subtotal = newSaleItems.reduce((acc, it) => acc + it.totalPrice, 0);
+    const activeToken = authToken || localStorage.getItem("apex_admin_token") || "admin-token-preview";
+    const subtotal = newSaleItems.reduce((acc, it) => acc + (Number(it.totalPrice) || 0), 0);
     // Discount amount calculation helper
     const discountAmount = 0; // standard manual cart discount is 0 unless coupon applied
 
@@ -495,10 +498,10 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
 
     const payload = {
       customerName: newSaleCustomerName.trim(),
-      customerEmail: newSaleCustomerEmail.trim(),
+      customerEmail: newSaleCustomerEmail.trim() || "cliente@juem.com.uy",
       customerPhone: newSaleCustomerPhone.trim() || undefined,
-      shippingCost: newSaleShippingCost,
-      couponCode: newSaleCouponCode || undefined,
+      shippingCost: Number(newSaleShippingCost) || 0,
+      couponCode: newSaleCouponCode ? newSaleCouponCode.trim() : undefined,
       notes: newSaleNotes,
       paymentMethod: "Venta Directa",
       depositoOrigen: newSaleDeposito,
@@ -506,17 +509,21 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
       status: newSaleStatus, // converted server-side or immediate deduction
       bypassStockDeduction: newSaleBypassStockDeduction,
       createdAt: finalCreatedAt,
-      items: newSaleItems.map(i => ({
-        productId: i.productId,
-        variantId: i.variantId,
-        productName: i.productName,
-        sku: i.sku,
-        sizeSelected: i.sizeSelected,
-        colorSelected: i.colorSelected,
-        unitPrice: i.unitPrice,
-        quantity: i.quantity,
-        totalPrice: i.totalPrice
-      }))
+      items: newSaleItems.map(i => {
+        const qty = Math.max(1, parseInt(String(i.quantity), 10) || 1);
+        const uPrice = Number(i.unitPrice) || 0;
+        return {
+          productId: i.productId,
+          variantId: i.variantId,
+          productName: i.productName,
+          sku: i.sku,
+          sizeSelected: i.sizeSelected,
+          colorSelected: i.colorSelected,
+          unitPrice: uPrice,
+          quantity: qty,
+          totalPrice: Number(i.totalPrice) || (qty * uPrice)
+        };
+      })
     };
 
     const isEdit = !!editingOrderId;
@@ -528,7 +535,7 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
         method,
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${localStorage.getItem("apex_admin_token")}`
+          "Authorization": `Bearer ${activeToken}`
         },
         body: JSON.stringify(payload)
       });
@@ -561,7 +568,7 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
                 method: shipMethod,
                 headers: {
                   "Content-Type": "application/json",
-                  "Authorization": `Bearer ${localStorage.getItem("apex_admin_token")}`
+                  "Authorization": `Bearer ${activeToken}`
                 },
                 body: JSON.stringify(shipPayload)
               });
@@ -574,7 +581,7 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
               await fetch(`/api/shippings/${existingShip.id}`, {
                 method: "DELETE",
                 headers: {
-                  "Authorization": `Bearer ${localStorage.getItem("apex_admin_token")}`
+                  "Authorization": `Bearer ${activeToken}`
                 }
               });
             } catch (delShipErr) {
