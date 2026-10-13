@@ -1936,7 +1936,7 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
     try {
       const ordersRes = await pool.query("SELECT id, customer_email, customer_name, customer_phone, subtotal, discount_amount, shipping_cost, total, applied_coupon_code, current_status, notes, payment_method, deposito_origen, canal, bypass_stock_deduction, created_at, updated_at, surcharge_amount FROM public.orders ORDER BY created_at DESC;");
       
-      const itemsRes = await pool.query("SELECT id, order_id, product_id, variant_id, product_name, sku, size_selected, color_selected, unit_price, quantity, total_price FROM public.order_items;");
+      const itemsRes = await pool.query("SELECT id, order_id, product_id, variant_id, product_name, sku, size_selected, color_selected, unit_price, quantity, total_price, comision_ml FROM public.order_items;");
       const orderItemsMap: Record<string, any[]> = {};
       for (const item of itemsRes.rows) {
         const oid = item.order_id;
@@ -1953,7 +1953,8 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
           colorSelected: item.color_selected || undefined,
           unitPrice: Number(item.unit_price),
           quantity: Number(item.quantity),
-          totalPrice: Number(item.total_price)
+          totalPrice: Number(item.total_price),
+          comisionML: item.comision_ml !== null && item.comision_ml !== undefined ? Number(item.comision_ml) : undefined
         });
       }
  
@@ -2770,6 +2771,7 @@ async function initPostgresStore(): Promise<ShopState | null> {
         quantity INTEGER NOT NULL,
         total_price NUMERIC(10, 2) NOT NULL
       );
+      ALTER TABLE public.order_items ADD COLUMN IF NOT EXISTS comision_ml NUMERIC(10, 2) DEFAULT 0.00;
     `);
 
     await pool.query(`
@@ -9655,7 +9657,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       const verifiedItems = [];
 
       for (const item of items) {
-        let dbProd = officialProducts.find(p => String(p.id) === String(item.productId) || (Number(p.id) === Number(item.productId) && !isNaN(Number(item.productId))));
+        let dbProd: any = officialProducts.find(p => String(p.id) === String(item.productId) || (Number(p.id) === Number(item.productId) && !isNaN(Number(item.productId))));
         
         // If not found in active memory products and request is from admin, check DB directly
         if (!dbProd && isAdmin && pool && !dbUnavailable) {
@@ -9720,6 +9722,10 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         const itemTot = correctUnitPrice * qty;
         serverSubtotal += itemTot;
 
+        const commML = item.comisionML !== undefined && !isNaN(Number(item.comisionML))
+          ? Number(item.comisionML)
+          : Number((dbProd as any).comisionML || (dbProd as any).comision_ml || 0);
+
         verifiedItems.push({
           productId: dbProd.id,
           variantId: activeVariantId || null,
@@ -9729,7 +9735,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
           colorSelected: item.colorSelected || null,
           unitPrice: correctUnitPrice,
           quantity: qty,
-          totalPrice: itemTot
+          totalPrice: itemTot,
+          comisionML: commML
         });
       }
 
@@ -9841,8 +9848,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
             const cleanVariantId = isUuid(item.variantId) ? item.variantId : null;
             const cleanProductId = (!isNaN(Number(item.productId)) && Number(item.productId) > 0) ? parseInt(String(item.productId), 10) : null;
             await client.query(`
-              INSERT INTO public.order_items (order_id, product_id, variant_id, product_name, sku, size_selected, color_selected, unit_price, quantity, total_price)
-              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
+              INSERT INTO public.order_items (order_id, product_id, variant_id, product_name, sku, size_selected, color_selected, unit_price, quantity, total_price, comision_ml)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11);
             `, [
               orderId,
               cleanProductId,
@@ -9853,7 +9860,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
               item.colorSelected || null,
               item.unitPrice,
               item.quantity,
-              item.totalPrice
+              item.totalPrice,
+              Number(item.comisionML || 0)
             ]);
           }
 
@@ -10053,6 +10061,10 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       const itemTot = correctUnitPrice * qty;
       serverSubtotal += itemTot;
 
+      const commML = item.comisionML !== undefined && !isNaN(Number(item.comisionML))
+        ? Number(item.comisionML)
+        : Number((dbProd as any).comisionML || (dbProd as any).comision_ml || 0);
+
       verifiedItems.push({
         productId: dbProd.id,
         variantId: activeVariantId || null,
@@ -10063,7 +10075,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         unitPrice: correctUnitPrice,
         quantity: qty,
         totalPrice: itemTot,
-        costPrice: Number(dbProd.precioCompra || 0)
+        costPrice: Number(dbProd.precioCompra || 0),
+        comisionML: commML
       });
     }
 
@@ -10146,8 +10159,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
           for (const item of verifiedItems) {
             const cleanVariantId = isUuid(item.variantId) ? item.variantId : null;
             await client.query(`
-              INSERT INTO public.order_items (order_id, product_id, variant_id, product_name, sku, size_selected, color_selected, unit_price, quantity, total_price)
-              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
+              INSERT INTO public.order_items (order_id, product_id, variant_id, product_name, sku, size_selected, color_selected, unit_price, quantity, total_price, comision_ml)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11);
             `, [
               id,
               item.productId,
@@ -10158,7 +10171,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
               item.colorSelected || null,
               item.unitPrice,
               item.quantity,
-              item.totalPrice
+              item.totalPrice,
+              Number(item.comisionML || 0)
             ]);
           }
 

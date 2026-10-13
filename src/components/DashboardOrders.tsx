@@ -1264,7 +1264,9 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
                   const statusInfo = getStatusLabelAndStyle(order.status);
                   
                   // Math breakdowns
-                  const { totalCost, gananciaNeta, totalPriceProducts } = getOrderCostAndProfit(order, productsList);
+                  const { totalCost, gananciaNeta, totalPriceProducts, totalComisionML } = getOrderCostAndProfit(order, productsList);
+                  const isML = (order.canal || "").toLowerCase().trim() === "mercado libre";
+                  const mlNetTotal = isML ? (totalPriceProducts - totalComisionML + (order.shippingCost || 0)) : null;
                   const isMvd = (order.depositoOrigen || "Pinamar") === "Montevideo";
                   
                   const rowFran = isMvd ? ((0.4 * gananciaNeta) + (order.shippingCost || 0)) : 0;
@@ -1330,7 +1332,20 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
 
                         {/* P. VENTA */}
                         <td className="p-4 text-right font-mono text-xs font-black text-zinc-100">
-                          $ {totalPriceProducts.toLocaleString("es-AR")}
+                          <div>$ {totalPriceProducts.toLocaleString("es-AR")}</div>
+                          {isML && mlNetTotal !== null && (
+                            <div 
+                              className="mt-1 flex items-center justify-end gap-1"
+                              title={`Total a cobrar en Mercado Libre: Venta ($${totalPriceProducts.toLocaleString("es-AR")}) - Comisión ($${totalComisionML.toLocaleString("es-AR")}) + Envío ($${(order.shippingCost || 0).toLocaleString("es-AR")}) = $${mlNetTotal.toLocaleString("es-AR")}`}
+                            >
+                              <span className="px-1.5 py-0.5 text-[8px] bg-amber-500/15 text-amber-400 border border-amber-500/30 rounded font-black uppercase">
+                                Total ML
+                              </span>
+                              <span className="text-[11px] font-black text-amber-300">
+                                $ {mlNetTotal.toLocaleString("es-AR")}
+                              </span>
+                            </div>
+                          )}
                         </td>
 
                         {/* COSTO PROD. */}
@@ -1491,6 +1506,44 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
                                     </p>
                                   )}
                                 </div>
+
+                                {/* MERCADO LIBRE DETAILED SETTLEMENT BREAKDOWN */}
+                                {isML && mlNetTotal !== null && (
+                                  <div className="p-4 bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-transparent border border-amber-500/35 rounded-xl space-y-2.5 shadow-md">
+                                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-500/20 pb-2">
+                                      <div className="flex items-center gap-2">
+                                        <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-amber-400 text-black shadow-sm">
+                                          Mercado Libre
+                                        </span>
+                                        <span className="text-xs font-black text-amber-300">
+                                          Cobro Aprobado / Liquidación Neta a Cobrar
+                                        </span>
+                                      </div>
+                                      <span className="text-[10px] text-zinc-400 font-mono font-medium">
+                                        Fórmula: Precio Producto - Cargos por Venta + Envío
+                                      </span>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono pt-1">
+                                      <div className="p-2.5 bg-zinc-950/60 rounded-xl border border-zinc-800">
+                                        <span className="block text-[9.5px] font-sans font-bold text-zinc-400 uppercase">1. Precio del Producto</span>
+                                        <span className="text-sm font-black text-white">$ {totalPriceProducts.toLocaleString("es-AR")}</span>
+                                      </div>
+                                      <div className="p-2.5 bg-zinc-950/60 rounded-xl border border-amber-500/20">
+                                        <span className="block text-[9.5px] font-sans font-bold text-amber-400 uppercase">2. Cargos por Venta</span>
+                                        <span className="text-sm font-black text-amber-400">-$ {totalComisionML.toLocaleString("es-AR")}</span>
+                                      </div>
+                                      <div className="p-2.5 bg-zinc-950/60 rounded-xl border border-sky-500/20">
+                                        <span className="block text-[9.5px] font-sans font-bold text-sky-400 uppercase">3. Envíos</span>
+                                        <span className="text-sm font-black text-sky-400">+$ {(order.shippingCost || 0).toLocaleString("es-AR")}</span>
+                                      </div>
+                                      <div className="p-2.5 bg-amber-500/15 rounded-xl border border-amber-500/40 shadow-inner">
+                                        <span className="block text-[9.5px] font-sans font-black text-amber-300 uppercase">Total a Cobrar ML</span>
+                                        <span className="text-base font-black text-amber-300">$ {mlNetTotal.toLocaleString("es-AR")} UYU</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
 
                               {/* Manual Status updates and other data */}
@@ -2163,7 +2216,7 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
                     <p className="text-[10.5px] font-black uppercase tracking-wider text-indigo-400">
                       Simulación de Distribución de Comisión para esta Operación {isMLCanal && "(Teniendo en cuenta Comisión ML)"}
                     </p>
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4 pt-1 font-mono">
+                    <div className="grid grid-cols-2 md:grid-cols-6 gap-3.5 pt-1 font-mono">
                       <div>
                         <span className="block text-[9.5px] text-zinc-500 uppercase font-sans font-bold">Monto Venta</span>
                         <span className="text-sm font-black text-zinc-100">
@@ -2180,7 +2233,20 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
                         <div>
                           <span className="block text-[9.5px] text-amber-500 uppercase font-sans font-bold">Comisión ML</span>
                           <span className="text-sm font-black text-amber-500">
-                            $ {totalComisionML.toLocaleString("es-AR")} UYU
+                            -$ {totalComisionML.toLocaleString("es-AR")} UYU
+                          </span>
+                        </div>
+                      )}
+                      {isMLCanal && (
+                        <div className="bg-amber-500/15 p-2 rounded-xl border border-amber-500/40 shadow-inner flex flex-col justify-between">
+                          <span className="block text-[9px] text-amber-300 uppercase font-sans font-black">
+                            Total a Cobrar ML
+                          </span>
+                          <span className="text-sm font-black text-amber-300">
+                            $ {Math.round(totalMontoVenta - totalComisionML + Number(newSaleShippingCost || 0)).toLocaleString("es-AR")} UYU
+                          </span>
+                          <span className="text-[8px] text-amber-400/80 font-sans font-bold">
+                            Venta - Com. + Envío
                           </span>
                         </div>
                       )}
