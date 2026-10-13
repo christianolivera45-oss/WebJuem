@@ -61,6 +61,7 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
   const nowRef = new Date();
   const [selectedMonth, setSelectedMonth] = useState<number>(nowRef.getMonth());
   const [selectedYear, setSelectedYear] = useState<number>(nowRef.getFullYear());
+  const [isHistoricView, setIsHistoricView] = useState<boolean>(false);
   
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -879,15 +880,42 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
             <Calendar className="h-4 w-4" />
           </div>
           <div>
-            <h4 className="text-xs font-black text-white uppercase tracking-wider">Período de Ventas</h4>
-            <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">Explora las métricas mensuales de la tienda</p>
+            <h4 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
+              <span>Período de Ventas</span>
+              {isHistoricView && (
+                <span className="text-[9px] font-black uppercase tracking-wider bg-amber-500 text-black px-2 py-0.5 rounded-full font-mono shadow-sm">
+                  Histórico Completo
+                </span>
+              )}
+            </h4>
+            <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">
+              {isHistoricView
+                ? "Mostrando acumulado histórico total de todas las ventas aprobadas"
+                : `Explorando las métricas de ${selectedMonthName} ${selectedYear}`}
+            </p>
           </div>
         </div>
         
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* BOTÓN HISTÓRICO */}
+          <button
+            type="button"
+            onClick={() => setIsHistoricView(!isHistoricView)}
+            className={`px-3.5 py-1.5 rounded-xl border transition-all text-[11px] font-bold cursor-pointer flex items-center gap-1.5 shadow-sm ${
+              isHistoricView
+                ? "bg-amber-500 text-black border-amber-400 font-black shadow-[0_0_12px_rgba(245,158,11,0.3)] ring-1 ring-amber-400 scale-[1.02]"
+                : "bg-zinc-950/60 hover:bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white"
+            }`}
+            title="Mostrar en los 5 cuadrados los datos históricos acumulados"
+          >
+            <Clock className="h-3.5 w-3.5" />
+            <span>{isHistoricView ? "✓ Viendo Histórico" : "Histórico"}</span>
+          </button>
+
           {/* Previous Month button */}
           <button
             onClick={() => {
+              setIsHistoricView(false);
               const currentIndex = monthYearOptions.findIndex(o => o.year === selectedYear && o.month === selectedMonth);
               if (currentIndex < monthYearOptions.length - 1) {
                 const prevOpt = monthYearOptions[currentIndex + 1];
@@ -905,6 +933,7 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
           <select
             value={`${selectedYear}-${selectedMonth}`}
             onChange={(e) => {
+              setIsHistoricView(false);
               const [y, m] = e.target.value.split("-").map(Number);
               setSelectedYear(y);
               setSelectedMonth(m);
@@ -921,6 +950,7 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
           {/* Next Month button */}
           <button
             onClick={() => {
+              setIsHistoricView(false);
               const currentIndex = monthYearOptions.findIndex(o => o.year === selectedYear && o.month === selectedMonth);
               if (currentIndex > 0) {
                 const nextOpt = monthYearOptions[currentIndex - 1];
@@ -943,7 +973,9 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
         <div className="bg-zinc-900/50 backdrop-blur-md p-5 rounded-2xl border border-zinc-850/85 hover:border-indigo-500/40 shadow-[0_8px_30px_rgba(0,0,0,0.15)] hover:shadow-[0_8px_30px_rgba(99,102,241,0.06)] hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between space-y-3 group relative overflow-hidden">
           <div className="absolute top-0 left-0 right-0 h-[2px] bg-indigo-500/20 group-hover:bg-indigo-500/50 transition-colors duration-300" />
           <div className="flex items-center justify-between">
-            <span className="text-[10px] sm:text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Registros</span>
+            <span className="text-[10px] sm:text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
+              {isHistoricView ? "Registros (Histórico)" : "Registros"}
+            </span>
             <div className="p-2 bg-indigo-950/40 text-indigo-400 rounded-lg border border-indigo-900/30 group-hover:scale-110 transition-transform duration-300">
               <ShoppingBag className="h-4 w-4" />
             </div>
@@ -951,14 +983,22 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
           <div>
             <div className="flex items-baseline gap-1.5 flex-wrap">
               <h3 className="text-xl sm:text-2xl font-black text-white font-sans">
-                {monthlyApprovedCount}
+                {isHistoricView ? totalApprovedCount : monthlyApprovedCount}
               </h3>
-              <span className="text-[9px] font-extrabold text-indigo-400 uppercase tracking-wider font-mono bg-indigo-500/10 px-1.5 py-0.5 rounded border border-indigo-500/25">
-                {selectedMonthName}
+              <span className={`text-[9px] font-extrabold uppercase tracking-wider font-mono px-1.5 py-0.5 rounded border ${
+                isHistoricView 
+                  ? "bg-amber-500/15 text-amber-400 border-amber-500/30" 
+                  : "bg-indigo-500/10 text-indigo-400 border-indigo-500/25"
+              }`}>
+                {isHistoricView ? "HISTÓRICO" : selectedMonthName}
               </span>
             </div>
             <p className="text-[10px] text-zinc-500 font-bold mt-1.5">
-              Total histórico: <span className="text-zinc-300 font-black">{totalApprovedCount}</span>
+              {isHistoricView ? (
+                <>Mes {selectedMonthName}: <span className="text-zinc-300 font-black">{monthlyApprovedCount}</span></>
+              ) : (
+                <>Total histórico: <span className="text-zinc-300 font-black">{totalApprovedCount}</span></>
+              )}
             </p>
           </div>
         </div>
@@ -967,7 +1007,9 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
         <div className="bg-zinc-900/50 backdrop-blur-md p-5 rounded-2xl border border-zinc-850/85 hover:border-emerald-500/40 shadow-[0_8px_30px_rgba(0,0,0,0.15)] hover:shadow-[0_8px_30px_rgba(16,185,129,0.06)] hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between space-y-3 group relative overflow-hidden">
           <div className="absolute top-0 left-0 right-0 h-[2px] bg-emerald-500/20 group-hover:bg-emerald-500/50 transition-colors duration-300" />
           <div className="flex items-center justify-between">
-            <span className="text-[10px] sm:text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Total Facturado</span>
+            <span className="text-[10px] sm:text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
+              {isHistoricView ? "Total Facturado (Histórico)" : "Total Facturado"}
+            </span>
             <div className="p-2 bg-emerald-950/40 text-emerald-400 rounded-lg border border-emerald-900/30 group-hover:scale-110 transition-transform duration-300">
               <DollarSign className="h-4 w-4" />
             </div>
@@ -975,14 +1017,22 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
           <div>
             <div className="flex items-baseline gap-1.5 flex-wrap">
               <h3 className="text-xl sm:text-2xl font-black text-white font-sans">
-                $ {monthlyFacturado.toLocaleString("es-AR")}
+                $ {(isHistoricView ? totalFacturado : monthlyFacturado).toLocaleString("es-AR")}
               </h3>
-              <span className="text-[9px] font-extrabold text-emerald-400 uppercase tracking-wider font-mono bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/25">
-                {selectedMonthName}
+              <span className={`text-[9px] font-extrabold uppercase tracking-wider font-mono px-1.5 py-0.5 rounded border ${
+                isHistoricView 
+                  ? "bg-amber-500/15 text-amber-400 border-amber-500/30" 
+                  : "bg-emerald-500/10 text-emerald-400 border-emerald-500/25"
+              }`}>
+                {isHistoricView ? "HISTÓRICO" : selectedMonthName}
               </span>
             </div>
             <p className="text-[10px] text-zinc-500 font-bold mt-1.5">
-              Total histórico: <span className="text-zinc-300 font-black">$ {totalFacturado.toLocaleString("es-AR")}</span>
+              {isHistoricView ? (
+                <>Mes {selectedMonthName}: <span className="text-zinc-300 font-black">$ {monthlyFacturado.toLocaleString("es-AR")}</span></>
+              ) : (
+                <>Total histórico: <span className="text-zinc-300 font-black">$ {totalFacturado.toLocaleString("es-AR")}</span></>
+              )}
             </p>
           </div>
         </div>
@@ -991,7 +1041,9 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
         <div className="bg-zinc-900/50 backdrop-blur-md p-5 rounded-2xl border border-zinc-850/85 hover:border-sky-500/40 shadow-[0_8px_30px_rgba(0,0,0,0.15)] hover:shadow-[0_8px_30px_rgba(14,165,233,0.06)] hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between space-y-3 group relative overflow-hidden">
           <div className="absolute top-0 left-0 right-0 h-[2px] bg-sky-500/20 group-hover:bg-sky-500/50 transition-colors duration-300" />
           <div className="flex items-center justify-between">
-            <span className="text-[10px] sm:text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Ganancia Neta</span>
+            <span className="text-[10px] sm:text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
+              {isHistoricView ? "Ganancia Neta (Histórico)" : "Ganancia Neta"}
+            </span>
             <div className="p-2 bg-sky-950/40 text-sky-400 rounded-lg border border-sky-900/30 group-hover:scale-110 transition-transform duration-300">
               <Percent className="h-4 w-4" />
             </div>
@@ -999,14 +1051,22 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
           <div>
             <div className="flex items-baseline gap-1.5 flex-wrap">
               <h3 className="text-xl sm:text-2xl font-black text-white font-sans">
-                $ {monthlyGananciaNeta.toLocaleString("es-AR")}
+                $ {(isHistoricView ? totalGananciaNeta : monthlyGananciaNeta).toLocaleString("es-AR")}
               </h3>
-              <span className="text-[9px] font-extrabold text-sky-400 uppercase tracking-wider font-mono bg-sky-500/10 px-1.5 py-0.5 rounded border border-sky-500/25">
-                {selectedMonthName}
+              <span className={`text-[9px] font-extrabold uppercase tracking-wider font-mono px-1.5 py-0.5 rounded border ${
+                isHistoricView 
+                  ? "bg-amber-500/15 text-amber-400 border-amber-500/30" 
+                  : "bg-sky-500/10 text-sky-400 border-sky-500/25"
+              }`}>
+                {isHistoricView ? "HISTÓRICO" : selectedMonthName}
               </span>
             </div>
             <p className="text-[10px] text-zinc-500 font-bold mt-1.5">
-              Total histórico: <span className="text-zinc-300 font-black">$ {totalGananciaNeta.toLocaleString("es-AR")}</span>
+              {isHistoricView ? (
+                <>Mes {selectedMonthName}: <span className="text-zinc-300 font-black">$ {monthlyGananciaNeta.toLocaleString("es-AR")}</span></>
+              ) : (
+                <>Total histórico: <span className="text-zinc-300 font-black">$ {totalGananciaNeta.toLocaleString("es-AR")}</span></>
+              )}
             </p>
           </div>
         </div>
@@ -1015,7 +1075,9 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
         <div className="bg-zinc-900/50 backdrop-blur-md p-5 rounded-2xl border border-zinc-850/85 hover:border-amber-500/40 shadow-[0_8px_30px_rgba(0,0,0,0.15)] hover:shadow-[0_8px_30px_rgba(245,158,11,0.06)] hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between space-y-3 group relative overflow-hidden">
           <div className="absolute top-0 left-0 right-0 h-[2px] bg-amber-500/20 group-hover:bg-amber-500/50 transition-colors duration-300" />
           <div className="flex items-center justify-between">
-            <span className="text-[10px] sm:text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Total Franquicia</span>
+            <span className="text-[10px] sm:text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
+              {isHistoricView ? "Total Franquicia (Histórico)" : "Total Franquicia"}
+            </span>
             <div className="p-2 bg-amber-950/40 text-amber-400 rounded-lg border border-amber-900/30 group-hover:scale-110 transition-transform duration-300">
               <Store className="h-4 w-4" />
             </div>
@@ -1023,14 +1085,22 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
           <div>
             <div className="flex items-baseline gap-1.5 flex-wrap">
               <h3 className="text-xl sm:text-2xl font-black text-white font-sans">
-                $ {monthlyFranquicia.toLocaleString("es-AR")}
+                $ {(isHistoricView ? totalFranquicia : monthlyFranquicia).toLocaleString("es-AR")}
               </h3>
-              <span className="text-[9px] font-extrabold text-amber-400 uppercase tracking-wider font-mono bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/25">
-                {selectedMonthName}
+              <span className={`text-[9px] font-extrabold uppercase tracking-wider font-mono px-1.5 py-0.5 rounded border ${
+                isHistoricView 
+                  ? "bg-amber-500/15 text-amber-400 border-amber-500/30" 
+                  : "bg-amber-500/10 text-amber-400 border-amber-500/25"
+              }`}>
+                {isHistoricView ? "HISTÓRICO" : selectedMonthName}
               </span>
             </div>
             <p className="text-[10px] text-zinc-500 font-bold mt-1.5">
-              Total histórico: <span className="text-zinc-300 font-black">$ {totalFranquicia.toLocaleString("es-AR")}</span>
+              {isHistoricView ? (
+                <>Mes {selectedMonthName}: <span className="text-zinc-300 font-black">$ {monthlyFranquicia.toLocaleString("es-AR")}</span></>
+              ) : (
+                <>Total histórico: <span className="text-zinc-300 font-black">$ {totalFranquicia.toLocaleString("es-AR")}</span></>
+              )}
             </p>
           </div>
         </div>
@@ -1039,7 +1109,9 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
         <div className="bg-zinc-900/50 backdrop-blur-md p-5 rounded-2xl border border-zinc-850/85 hover:border-[#D4A55A]/40 shadow-[0_8px_30px_rgba(0,0,0,0.15)] hover:shadow-[0_8px_30px_rgba(212,165,90,0.06)] hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between space-y-3 group relative overflow-hidden">
           <div className="absolute top-0 left-0 right-0 h-[2px] bg-[#D4A55A]/20 group-hover:bg-[#D4A55A]/50 transition-colors duration-300" />
           <div className="flex items-center justify-between">
-            <span className="text-[10px] sm:text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Total JUEM</span>
+            <span className="text-[10px] sm:text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
+              {isHistoricView ? "Total JUEM (Histórico)" : "Total JUEM"}
+            </span>
             <div className="p-2 bg-[#D4A55A]/10 text-[#E6BF76] rounded-lg border border-[#D4A55A]/20 group-hover:scale-110 transition-transform duration-300">
               <Store className="h-4 w-4" />
             </div>
@@ -1047,14 +1119,22 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
           <div>
             <div className="flex items-baseline gap-1.5 flex-wrap">
               <h3 className="text-xl sm:text-2xl font-black text-white font-sans">
-                $ {monthlyJuem.toLocaleString("es-AR")}
+                $ {(isHistoricView ? totalJuem : monthlyJuem).toLocaleString("es-AR")}
               </h3>
-              <span className="text-[9px] font-extrabold text-[#E6BF76] uppercase tracking-wider font-mono bg-[#D4A55A]/10 px-1.5 py-0.5 rounded border border-[#D4A55A]/25">
-                {selectedMonthName}
+              <span className={`text-[9px] font-extrabold uppercase tracking-wider font-mono px-1.5 py-0.5 rounded border ${
+                isHistoricView 
+                  ? "bg-amber-500/15 text-amber-400 border-amber-500/30" 
+                  : "bg-[#D4A55A]/10 text-[#E6BF76] border-[#D4A55A]/25"
+              }`}>
+                {isHistoricView ? "HISTÓRICO" : selectedMonthName}
               </span>
             </div>
             <p className="text-[10px] text-zinc-500 font-bold mt-1.5">
-              Total histórico: <span className="text-zinc-300 font-black">$ {totalJuem.toLocaleString("es-AR")}</span>
+              {isHistoricView ? (
+                <>Mes {selectedMonthName}: <span className="text-zinc-300 font-black">$ {monthlyJuem.toLocaleString("es-AR")}</span></>
+              ) : (
+                <>Total histórico: <span className="text-zinc-300 font-black">$ {totalJuem.toLocaleString("es-AR")}</span></>
+              )}
             </p>
           </div>
         </div>
