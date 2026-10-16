@@ -162,8 +162,10 @@ Precio: $${Math.round(product.price)}
     return `$${Math.round(cheapestOption.price)}`;
   };
 
-  const optimizeImageUrl = (url: string) => {
-    if (!url) return "";
+  const optimizeImageUrl = (url: string | undefined | null): string => {
+    if (!url || typeof url !== "string" || !url.trim()) {
+      return "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=600&q=80";
+    }
     if (url.includes("unsplash.com")) {
       let optimized = url.replace("auto=format", "fm=webp");
       // Remove any existing width or quality params to prevent duplication

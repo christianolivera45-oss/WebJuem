@@ -420,7 +420,7 @@ export default function AIAssistant({ store, showToast, onClose, adminSection = 
               className="p-3 bg-zinc-900/90 border border-zinc-800/80 rounded-xl space-y-2.5 hover:border-indigo-500/30 transition-all shadow-lg"
             >
               <div className="flex items-center gap-2.5">
-                {p.imageUrl ? (
+                {p.imageUrl && p.imageUrl.trim() ? (
                   <img src={p.imageUrl} alt={p.name} className="w-9 h-9 object-cover rounded-lg border border-zinc-800 shrink-0" referrerPolicy="no-referrer" />
                 ) : (
                   <div className="w-9 h-9 bg-zinc-800 rounded-lg flex items-center justify-center text-xs shrink-0">📦</div>

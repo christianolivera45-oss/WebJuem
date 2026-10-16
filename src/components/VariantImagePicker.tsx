@@ -86,7 +86,7 @@ export default function VariantImagePicker({
           </div>
           
           <div className="flex flex-wrap gap-1.5">
-            {galleryImages.map((img, idx) => {
+            {galleryImages.filter((img): img is string => Boolean(img && img.trim())).map((img, idx) => {
               const active = isSelected(img);
               return (
                 <button
@@ -101,7 +101,7 @@ export default function VariantImagePicker({
                   }`}
                 >
                   <img
-                    src={img}
+                    src={img || undefined}
                     alt={`Galería ${idx}`}
                     className="w-full h-full object-cover"
                     referrerPolicy="no-referrer"
@@ -129,10 +129,10 @@ export default function VariantImagePicker({
         </span>
         
         <div className="flex items-center gap-1.5">
-          {selectedUrl && !galleryImages.includes(selectedUrl) && (
+          {selectedUrl && selectedUrl.trim() && !galleryImages.includes(selectedUrl) && (
             <div className="w-8 h-8 rounded border border-indigo-500/65 overflow-hidden shrink-0 shadow-sm">
               <img
-                src={selectedUrl}
+                src={selectedUrl || undefined}
                 alt="Imagen personalizada"
                 className="w-full h-full object-cover"
                 referrerPolicy="no-referrer"

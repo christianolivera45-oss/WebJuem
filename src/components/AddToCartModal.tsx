@@ -139,7 +139,7 @@ export default function AddToCartModal({
                 : "bg-slate-50 border-slate-100"
             }`}>
               <img
-                src={product.imageUrl}
+                src={product.imageUrl || "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=600&q=80"}
                 alt={product.name}
                 className="w-14 h-14 rounded-lg object-contain bg-[#050B1A]/40 shrink-0 border border-[#D4A55A]/10 p-0.5"
                 referrerPolicy="no-referrer"
@@ -185,7 +185,7 @@ export default function AddToCartModal({
                         }`}
                       >
                         <img
-                          src={item.imageUrl}
+                          src={item.imageUrl || "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=600&q=80"}
                           alt={item.name}
                           className="w-10 h-10 rounded-md object-contain bg-[#050B1A]/40 shrink-0 border border-[#D4A55A]/10 p-0.5"
                           referrerPolicy="no-referrer"

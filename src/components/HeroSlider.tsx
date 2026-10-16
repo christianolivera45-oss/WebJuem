@@ -34,8 +34,10 @@ export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderPro
     ? settings.heroSlides 
     : defaultSlides;
 
-  const optimizeImageUrl = (url: string) => {
-    if (!url) return "";
+  const optimizeImageUrl = (url: string | undefined | null): string => {
+    if (!url || typeof url !== "string" || !url.trim()) {
+      return "https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=1600&q=80";
+    }
     if (url.includes("unsplash.com")) {
       let optimized = url.replace("auto=format", "fm=webp");
       // On mobile devices we load a much smaller/lighter banner image
@@ -280,14 +282,14 @@ export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderPro
             {/* Slide Content */}
             {hasText && (
               <div className="absolute inset-0 flex items-center justify-center md:justify-start">
-                <div className="max-w-7xl mx-auto px-4 sm:px-8 md:px-12 w-full text-center md:text-left relative z-10">
+                <div className="max-w-7xl mx-auto px-6 sm:px-8 md:px-12 w-full text-center md:text-left relative z-10">
                   <div className="max-w-2xl transform-gpu">
                     {slides[currentIndex].title && slides[currentIndex].title.trim() !== "" && (
                       <motion.h1 
                         initial={{ opacity: 0, y: 15 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.2, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-                        className="text-lg sm:text-2xl md:text-4xl lg:text-5xl font-serif font-extrabold text-[#F4EAD7] tracking-tight leading-[1.1] drop-shadow-[0_2px_14px_rgba(0,0,0,0.85)] mb-1 sm:mb-2 md:mb-3 transform-gpu"
+                        className="text-xl sm:text-3xl md:text-4xl lg:text-5xl font-serif font-extrabold text-[#F4EAD7] tracking-tight leading-[1.1] drop-shadow-[0_2px_14px_rgba(0,0,0,0.85)] mb-2 md:mb-3 transform-gpu"
                         style={{ willChange: "opacity, transform" }}
                       >
                         {slides[currentIndex].title}
@@ -299,7 +301,7 @@ export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderPro
                         initial={{ opacity: 0, y: 15 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.3, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-                        className="text-[10px] sm:text-xs md:text-sm text-zinc-350 font-sans tracking-wide leading-relaxed max-w-xl font-light line-clamp-2 md:line-clamp-none transform-gpu drop-shadow-[0_1px_8px_rgba(0,0,0,0.9)]"
+                        className="text-[11px] sm:text-xs md:text-sm text-zinc-350 font-sans tracking-wide leading-relaxed max-w-xl font-light line-clamp-2 md:line-clamp-none transform-gpu drop-shadow-[0_1px_8px_rgba(0,0,0,0.9)]"
                         style={{ color: "#D8D2C4", willChange: "opacity, transform" }}
                       >
                         {slides[currentIndex].subtitle}
@@ -311,13 +313,13 @@ export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderPro
                         initial={{ opacity: 0, y: 15 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.4, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-                        className="mt-2 sm:mt-4 md:mt-5 flex flex-wrap items-center justify-center md:justify-start gap-2 sm:gap-3 transform-gpu"
+                        className="mt-2 sm:mt-5 flex flex-wrap items-center justify-center md:justify-start gap-2 sm:gap-3 transform-gpu"
                         style={{ willChange: "opacity, transform" }}
                       >
                         {!slides[currentIndex].hideButton && (
                           <button
                             onClick={() => onExploreCatalog(slides[currentIndex].buttonLink)}
-                            className="group/btn relative overflow-hidden py-1.5 px-3.5 sm:py-2.5 sm:px-6 md:py-3 md:px-7 rounded-xl sm:rounded-2xl font-sans font-black text-[9px] sm:text-[10px] md:text-[11px] uppercase tracking-wider sm:tracking-widest bg-gradient-to-r from-[#F3D287] via-[#D4A55A] to-[#B88730] text-[#050B1A] ring-1 ring-white/50 ring-inset hover:scale-[1.035] active:scale-[0.98] shadow-[0_8px_25px_-5px_rgba(212,165,90,0.5),0_4px_12px_rgba(0,0,0,0.3)] hover:shadow-[0_12px_35px_-4px_rgba(212,165,90,0.7),0_6px_16px_rgba(0,0,0,0.4)] cursor-pointer transition-all duration-300 flex items-center gap-1.5 sm:gap-2.5"
+                            className="group/btn relative overflow-hidden py-1.5 px-3.5 sm:py-3 sm:px-7 rounded-xl sm:rounded-2xl font-sans font-black text-[9px] sm:text-[11px] uppercase tracking-wider sm:tracking-widest bg-gradient-to-r from-[#F3D287] via-[#D4A55A] to-[#B88730] text-[#050B1A] ring-1 ring-white/50 ring-inset hover:scale-[1.035] active:scale-[0.98] shadow-[0_4px_16px_-4px_rgba(212,165,90,0.5),0_2px_8px_rgba(0,0,0,0.3)] sm:shadow-[0_8px_25px_-5px_rgba(212,165,90,0.5),0_4px_12px_rgba(0,0,0,0.3)] hover:shadow-[0_8px_25px_-4px_rgba(212,165,90,0.7),0_4px_16px_rgba(0,0,0,0.4)] cursor-pointer transition-all duration-300 flex items-center gap-1.5 sm:gap-2.5"
                           >
                             {/* Shimmer light effect passing on hover */}
                             <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/40 to-transparent -translate-x-full group-hover/btn:translate-x-full transition-transform duration-700 pointer-events-none" />
@@ -335,7 +337,7 @@ export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderPro
                         {!slides[currentIndex].hideWhatsAppButton && (
                           <button
                             onClick={() => handleWhatsAppContact(slides[currentIndex].title)}
-                            className="group/wapp py-1.5 px-3 sm:py-2.5 sm:px-5 md:py-3 md:px-6 rounded-xl sm:rounded-2xl font-sans font-bold text-[9px] sm:text-[10px] md:text-[11px] uppercase tracking-wider sm:tracking-widest border border-white/15 bg-[#050B1A]/60 backdrop-blur-md text-[#F4EAD7] hover:border-[#D4A55A]/70 hover:text-[#F3D287] hover:bg-white/10 hover:scale-[1.02] cursor-pointer active:scale-95 transition-all duration-300 flex items-center gap-1.5 sm:gap-2 shadow-lg shadow-black/20"
+                            className="group/wapp py-1.5 px-3 sm:py-3 sm:px-6 rounded-xl sm:rounded-2xl font-sans font-bold text-[9px] sm:text-[11px] uppercase tracking-wider sm:tracking-widest border border-white/15 bg-[#050B1A]/60 backdrop-blur-md text-[#F4EAD7] hover:border-[#D4A55A]/70 hover:text-[#F3D287] hover:bg-white/10 hover:scale-[1.02] cursor-pointer active:scale-95 transition-all duration-300 flex items-center gap-1.5 sm:gap-2 shadow-lg shadow-black/20"
                           >
                             <MessageCircle className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400 group-hover/wapp:scale-110 transition-transform duration-300 shrink-0" />
                             <span>Consultar</span>

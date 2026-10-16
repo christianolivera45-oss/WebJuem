@@ -129,6 +129,7 @@ import { DashboardShippings } from "./components/DashboardShippings";
 import { DashboardTasks } from "./components/DashboardTasks";
 import { DashboardPlanning } from "./components/DashboardPlanning";
 import { Dashboard3DCalculator } from "./components/Dashboard3DCalculator";
+import { DashboardTraceability } from "./components/DashboardTraceability";
 import AIAssistant from "./components/AIAssistant";
 import WhatsAppWidget from "./components/WhatsAppWidget";
 import A11yAssistant from "./components/A11yAssistant";
@@ -478,7 +479,9 @@ export default function App() {
 
   // Search & Navigation
   const [activeTab, setActiveTab] = useState<"storefront" | "admin" | "checkout">("storefront");
-  const [adminSection, setAdminSection] = useState<"general" | "products" | "categories" | "promos" | "security" | "stock" | "dashboard" | "banner" | "footer" | "payments" | "checkout_config" | "sales" | "reviews" | "bills" | "finances" | "shippings" | "assistant" | "calculator_3d" | "cloudinary_explorer">("dashboard");
+  const [adminSection, setAdminSection] = useState<"general" | "products" | "categories" | "promos" | "security" | "stock" | "dashboard" | "banner" | "footer" | "payments" | "checkout_config" | "sales" | "reviews" | "bills" | "finances" | "shippings" | "assistant" | "calculator_3d" | "cloudinary_explorer" | "traceability">("dashboard");
+  const [traceabilityProductId, setTraceabilityProductId] = useState<string | null>(null);
+  const [traceabilitySku, setTraceabilitySku] = useState<string | null>(null);
   const [showAIAssistantSidebar, setShowAIAssistantSidebar] = useState(false);
   const [showAdminDevicePreview, setShowAdminDevicePreview] = useState(true);
   const [mobileAdminMenuOpen, setMobileAdminMenuOpen] = useState(false);
@@ -716,7 +719,7 @@ export default function App() {
     }
   };
 
-  const navigateAdminSection = (section: "general" | "products" | "categories" | "promos" | "security" | "stock" | "dashboard" | "banner" | "footer" | "payments" | "checkout_config" | "sales" | "reviews" | "emails" | "bills" | "finances" | "shippings" | "assistant" | "cloudinary_explorer" | "calculator_3d") => {
+  const navigateAdminSection = (section: "general" | "products" | "categories" | "promos" | "security" | "stock" | "dashboard" | "banner" | "footer" | "payments" | "checkout_config" | "sales" | "reviews" | "emails" | "bills" | "finances" | "shippings" | "assistant" | "cloudinary_explorer" | "calculator_3d" | "traceability") => {
     setAdminSection(section as any);
     setEditingProduct(null);
     setIsNewProductMode(false);
@@ -5482,9 +5485,9 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
             className="flex items-center gap-2 md:gap-4 shrink-0 cursor-pointer border-none bg-transparent text-left outline-none p-0"
           >
             {/* Elegant Circular Logo inspired by Juem logo from design HTML */}
-            {store.settings.logoType === "image" && !!store.settings.logoImageUrl ? (
+            {store.settings.logoType === "image" && Boolean(store.settings.logoImageUrl?.trim()) ? (
               <img
-                src={store.settings.logoImageUrl}
+                src={store.settings.logoImageUrl || null}
                 alt={store.settings.siteTitle}
                 className="w-8 h-8 rounded-xl object-cover shadow-sm"
                 referrerPolicy="no-referrer"
@@ -7292,6 +7295,27 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                         <span>Ingresar Boletas</span>
                       </div>
                     </button>
+
+                    <button
+                      onClick={() => {
+                        setTraceabilityProductId(null);
+                        setTraceabilitySku(null);
+                        navigateAdminSection("traceability");
+                      }}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-xs font-bold tracking-wide transition-all duration-300 hover:translate-x-0.5 cursor-pointer ${
+                        adminSection === "traceability"
+                          ? "bg-gradient-to-r from-[#D4AF37]/20 via-[#D4A55A]/12 to-transparent text-[#F3E5AB] border border-[#D4AF37]/45 shadow-[0_4px_20px_rgba(212,175,55,0.18)]"
+                          : "hover:bg-[#0F172A]/70 text-slate-400 hover:text-[#F3E5AB] border border-transparent hover:border-[#D4AF37]/15"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <History className={`h-4 w-4 ${adminSection === "traceability" ? "text-[#E6BF76] drop-shadow-[0_0_8px_rgba(212,175,55,0.5)]" : "text-slate-400"}`} />
+                        <span>Trazabilidad de Artículos</span>
+                      </div>
+                      <span className="text-[9px] bg-[#D4AF37]/15 text-[#E6BF76] px-1.5 py-0.5 rounded-full border border-[#D4AF37]/30 font-mono font-bold">
+                        Auditoría
+                      </span>
+                    </button>
                   </div>
                 </div>
                 
@@ -7522,7 +7546,7 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
           <main id="admin-main-scroll" className="flex-1 flex flex-col p-6 gap-6 bg-gradient-to-b from-[#060A12] via-[#070D1B] to-[#0A1122] text-slate-100 overflow-y-auto z-10 custom-scrollbar">
             
             {/* Header control summary */}
-            {adminSection !== "stock" && adminSection !== "dashboard" && adminSection !== "sales" && (
+            {adminSection !== "stock" && adminSection !== "dashboard" && adminSection !== "sales" && adminSection !== "traceability" && (
               <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-3 shrink-0 p-5 md:p-6 bg-[#0B1120]/85 backdrop-blur-xl rounded-3xl border border-[#D4AF37]/25 shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
                 <div>
                   <h2 className="text-xl md:text-2xl font-black font-sans text-white tracking-tight flex items-center gap-2">
@@ -7541,6 +7565,7 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                       {adminSection === "reviews" && "Sincronización con Google e Integraciones"}
                       {adminSection === "assistant" && "Planificación y Objetivos"}
                       {adminSection === "calculator_3d" && "Calculadora 3D y Cotizaciones Profesionales"}
+                      {adminSection === "traceability" && "Trazabilidad Integral de Artículos"}
                     </span>
                   </h2>
                 </div>
@@ -7728,6 +7753,20 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                     showAdminToast("Error de conexión al eliminar la boleta.", "error");
                   }
                 }}
+              />
+            ) : adminSection === "traceability" ? (
+              <DashboardTraceability
+                store={store}
+                authToken={authToken}
+                onNavigateToOrder={(orderId) => {
+                  setSalesInitialOrderId(orderId);
+                  navigateAdminSection("sales");
+                }}
+                onNavigateToBill={(_billId) => {
+                  navigateAdminSection("bills");
+                }}
+                initialProductId={traceabilityProductId}
+                initialSku={traceabilitySku}
               />
             ) : adminSection === "shippings" ? (
               <DashboardShippings
@@ -16867,6 +16906,18 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                           >
                                             <Scale className="h-3.5 w-3.5" />
                                           </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setTraceabilityProductId(String(item.productId));
+                                              setTraceabilitySku(item.sku || item.productObj?.codigo || null);
+                                              navigateAdminSection("traceability");
+                                            }}
+                                            className="p-1.5 text-zinc-400 hover:text-[#E6BF76] hover:bg-[#D4AF37]/15 rounded-lg transition cursor-pointer"
+                                            title="Ver Trazabilidad Integral e Historial de Movimientos"
+                                          >
+                                            <History className="h-3.5 w-3.5" />
+                                          </button>
                                         </div>
                                       </td>
                                     </tr>
@@ -17665,11 +17716,17 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                             }`}
                                           >
                                             <div className="flex items-center gap-3">
-                                              <img 
-                                                src={item.imageUrl}
-                                                className="h-10 w-10 rounded-lg object-cover bg-zinc-100 border border-slate-200 dark:border-zinc-800"
-                                                referrerPolicy="no-referrer"
-                                              />
+                                              {item.imageUrl ? (
+                                                <img 
+                                                  src={item.imageUrl}
+                                                  className="h-10 w-10 rounded-lg object-cover bg-zinc-100 border border-slate-200 dark:border-zinc-800"
+                                                  referrerPolicy="no-referrer"
+                                                />
+                                              ) : (
+                                                <div className="h-10 w-10 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-800 flex items-center justify-center text-xs text-zinc-400">
+                                                  📦
+                                                </div>
+                                              )}
                                               <div>
                                                 <div className="text-xs font-black text-slate-900 dark:text-zinc-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
                                                   {item.name} {item.variantName ? <span className="text-indigo-600 dark:text-indigo-400 font-bold">({item.variantName})</span> : ""}
@@ -18623,8 +18680,12 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                                               : "bg-[#0B1730]/70 border-zinc-700/60 text-zinc-300 hover:bg-[#0B1730] hover:border-[#D4A55A]/40"
                                                           }`}
                                                         >
-                                                          <div className="w-9 h-9 rounded-lg overflow-hidden bg-black/50 border border-[#D4A55A]/30 shrink-0">
-                                                            <img src={vImg} alt={vLabel} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                                          <div className="w-9 h-9 rounded-lg overflow-hidden bg-black/50 border border-[#D4A55A]/30 shrink-0 flex items-center justify-center">
+                                                            {vImg ? (
+                                                              <img src={vImg} alt={vLabel} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                                            ) : (
+                                                              <Package className="h-4 w-4 text-zinc-500" />
+                                                            )}
                                                           </div>
                                                           <div className="min-w-0 flex-1">
                                                             <div className="text-[11px] font-bold truncate leading-tight">{vLabel}</div>
@@ -22037,9 +22098,9 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                   }}
                   className="flex items-center gap-2 cursor-pointer select-none border-none bg-transparent text-left outline-none p-0 animate-none"
                 >
-                  {store.settings.logoType === "image" && !!store.settings.logoImageUrl ? (
+                  {store.settings.logoType === "image" && Boolean(store.settings.logoImageUrl?.trim()) ? (
                     <img
-                      src={store.settings.logoImageUrl}
+                      src={store.settings.logoImageUrl || null}
                       alt={store.settings.siteTitle}
                       className="w-8 h-8 rounded-xl object-cover shadow-sm"
                       referrerPolicy="no-referrer"
@@ -22346,7 +22407,7 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
 
       {/* Barra de Navegación Inferior Flotante - Ultra Optimizada para Celulares */}
       {activeTab === "storefront" && (
-        <div id="mobile-bottom-nav" className="fixed bottom-0 left-0 right-0 z-40 bg-[#050B1A] border-t border-[#D4A55A]/30 py-2 px-3 flex items-center justify-between lg:hidden shadow-[0_-8px_30px_rgba(0,0,0,0.6)]">
+        <div id="mobile-bottom-nav" className="fixed bottom-0 left-0 right-0 z-40 h-[52px] bg-[#050B1A] border-t border-[#D4A55A]/30 px-3 flex items-center justify-between lg:hidden shadow-[0_-8px_30px_rgba(0,0,0,0.6)]">
           {/* Volver a la Web Principal */}
           <button
             onClick={() => {
@@ -22889,20 +22950,26 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
             >
               {/* Imagen principal */}
               <div className="relative flex-1 bg-zinc-950 flex items-center justify-center overflow-hidden min-h-[260px] md:min-h-[400px]">
-                <div className="absolute inset-0 pointer-events-none select-none overflow-hidden opacity-25">
+                {lightboxImage.src && (
+                  <div className="absolute inset-0 pointer-events-none select-none overflow-hidden opacity-25">
+                    <img
+                      src={lightboxImage.src}
+                      alt=""
+                      className="w-full h-full object-cover blur-2xl scale-125"
+                      referrerPolicy="no-referrer"
+                    />
+                  </div>
+                )}
+                {lightboxImage.src ? (
                   <img
                     src={lightboxImage.src}
-                    alt=""
-                    className="w-full h-full object-cover blur-2xl scale-125"
+                    alt={lightboxImage.name}
+                    className="relative z-10 max-h-[75vh] md:max-h-[80vh] w-full object-contain p-1 drop-shadow-xl"
                     referrerPolicy="no-referrer"
                   />
-                </div>
-                <img
-                  src={lightboxImage.src}
-                  alt={lightboxImage.name}
-                  className="relative z-10 max-h-[75vh] md:max-h-[80vh] w-full object-contain p-1 drop-shadow-xl"
-                  referrerPolicy="no-referrer"
-                />
+                ) : (
+                  <Package className="h-16 w-16 text-zinc-600" />
+                )}
                 <button
                   onClick={() => setLightboxImage(null)}
                   className="absolute top-4 right-4 bg-black/60 hover:bg-black/80 text-white rounded-full p-2 transition cursor-pointer md:hidden"

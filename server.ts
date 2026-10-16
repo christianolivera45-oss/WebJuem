@@ -24,6 +24,14 @@ import { v2 as cloudinary } from "cloudinary";
 import multer from "multer";
 import { MercadoPagoConfig, Preference, Payment } from "mercadopago";
 import { sendEmail, emailDeliveryLogs, logEmailDelivery, generateOrderCreatedEmailHtml, generateOrderStatusChangedEmailHtml } from "./server_emails";
+import { 
+  initInventoryMovementsTable, 
+  recordInventoryMovement, 
+  searchArticles, 
+  getArticleTraceability, 
+  createManualMovement, 
+  reconcileInventoryAudit 
+} from "./server_inventory";
 import { GoogleGenAI, Type } from "@google/genai";
 
 let aiClient: GoogleGenAI | null = null;
@@ -1223,13 +1231,14 @@ async function deductSingleItemStockDb(
 
 async function deductStockDb(client: any, orderId: string): Promise<void> {
   const orderRes = await client.query(
-    "SELECT deposito_origen FROM public.orders WHERE id = $1;",
+    "SELECT deposito_origen, customer_name, customer_email FROM public.orders WHERE id = $1;",
     [orderId]
   );
   const depositoOrigen = orderRes.rows.length > 0 ? orderRes.rows[0].deposito_origen : null;
+  const customerName = orderRes.rows.length > 0 ? (orderRes.rows[0].customer_name || orderRes.rows[0].customer_email || "Cliente") : "Cliente";
 
   const itemsRes = await client.query(
-    "SELECT product_id, variant_id, quantity, product_name, size_selected, color_selected FROM public.order_items WHERE order_id = $1;",
+    "SELECT product_id, variant_id, quantity, product_name, size_selected, color_selected, unit_price, sku FROM public.order_items WHERE order_id = $1;",
     [orderId]
   );
   
@@ -1237,6 +1246,40 @@ async function deductStockDb(client: any, orderId: string): Promise<void> {
     const qty = Number(item.quantity);
     if (qty <= 0) continue;
     await deductSingleItemStockDb(client, item.product_id, item.variant_id || null, qty, item.size_selected, item.color_selected, depositoOrigen);
+
+    // Record traceability movement for sale
+    try {
+      const pCheck = await client.query("SELECT name, codigo, stock, precio_compra FROM public.products WHERE id = $1;", [item.product_id]);
+      const pName = pCheck.rows[0]?.name || item.product_name;
+      const pSku = item.sku || pCheck.rows[0]?.codigo || null;
+      const pCost = Number(pCheck.rows[0]?.precio_compra || 0);
+      const curStock = Number(pCheck.rows[0]?.stock || 0);
+
+      await recordInventoryMovement(client, {
+        productId: Number(item.product_id),
+        variantId: item.variant_id || null,
+        sku: pSku,
+        productName: pName,
+        variantName: item.size_selected || item.color_selected ? `${item.size_selected || 'Único'} / ${item.color_selected || 'General'}` : null,
+        quantity: -qty,
+        movementType: "venta",
+        stockAnterior: curStock + qty,
+        stockPosterior: curStock,
+        sucursalOrigen: depositoOrigen || "Montevideo",
+        usuario: "Venta Confirmada",
+        referenciaTipo: "order",
+        referenciaId: orderId,
+        referenciaNumero: `#PED-${orderId.substring(0, 8).toUpperCase()}`,
+        entidadAsociada: customerName,
+        costoUnitario: pCost,
+        precioUnitario: Number(item.unit_price || 0),
+        motivo: "Venta de artículo",
+        observaciones: "Descuento automático de inventario por venta aprobada",
+        estado: "confirmada"
+      });
+    } catch (movErr) {
+      console.error("Error recording sale movement:", movErr);
+    }
   }
 }
 
@@ -1478,7 +1521,7 @@ async function reintegrateSingleItemStockDb(
 
 async function reintegrateStockDb(client: any, orderId: string, depositoOrigen: string): Promise<void> {
   const itemsRes = await client.query(
-    "SELECT product_id, variant_id, quantity, product_name, size_selected, color_selected FROM public.order_items WHERE order_id = $1;",
+    "SELECT product_id, variant_id, quantity, product_name, size_selected, color_selected, unit_price, sku FROM public.order_items WHERE order_id = $1;",
     [orderId]
   );
   
@@ -1486,6 +1529,37 @@ async function reintegrateStockDb(client: any, orderId: string, depositoOrigen: 
     const qty = Number(item.quantity);
     if (qty <= 0) continue;
     await reintegrateSingleItemStockDb(client, item.product_id, item.variant_id || null, qty, depositoOrigen, item.size_selected, item.color_selected);
+
+    try {
+      const pCheck = await client.query("SELECT name, codigo, stock, precio_compra FROM public.products WHERE id = $1;", [item.product_id]);
+      const pName = pCheck.rows[0]?.name || item.product_name;
+      const pSku = item.sku || pCheck.rows[0]?.codigo || null;
+      const pCost = Number(pCheck.rows[0]?.precio_compra || 0);
+      const curStock = Number(pCheck.rows[0]?.stock || 0);
+
+      await recordInventoryMovement(client, {
+        productId: Number(item.product_id),
+        variantId: item.variant_id || null,
+        sku: pSku,
+        productName: pName,
+        variantName: item.size_selected || item.color_selected ? `${item.size_selected || 'Único'} / ${item.color_selected || 'General'}` : null,
+        quantity: qty,
+        movementType: "anulacion",
+        stockAnterior: Math.max(0, curStock - qty),
+        stockPosterior: curStock,
+        sucursalOrigen: depositoOrigen || "Montevideo",
+        usuario: "Administrador",
+        referenciaTipo: "order",
+        referenciaId: orderId,
+        referenciaNumero: `#PED-${orderId.substring(0, 8).toUpperCase()}`,
+        motivo: "Anulación / Cancelación de venta",
+        observaciones: "Reintegro de stock por cancelación o modificación de pedido",
+        costoUnitario: pCost,
+        estado: "confirmada"
+      });
+    } catch (movErr) {
+      console.error("Error recording reintegration movement:", movErr);
+    }
   }
 }
 
@@ -2909,6 +2983,9 @@ async function initPostgresStore(): Promise<ShopState | null> {
           batch_id = 'batch-0001' 
       WHERE transfer_code IS NULL OR transfer_code LIKE 'TRF-TRANS-%' OR transfer_code = 'TRF-20260912-0001' OR batch_id = 'batch-20260912-0001';
     `);
+
+    // Ensure inventory movements audit table is initialized
+    await initInventoryMovementsTable(pool);
 
     // Create public.admin_tasks table
     await pool.query(`
@@ -5455,6 +5532,52 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
                 toDeposito
               ]
             );
+
+            // Record dual traceability entries (Salida from origin, Entrada to destination)
+            try {
+              const pId = Number(item.productId);
+              if (pId) {
+                await recordInventoryMovement(client, {
+                  productId: pId,
+                  variantId: item.variantId || null,
+                  sku: item.sku || null,
+                  productName: item.productName,
+                  variantName: item.variantName || null,
+                  quantity: -item.quantity,
+                  movementType: "transferencia_salida",
+                  sucursalOrigen: fromDeposito,
+                  sucursalDestino: toDeposito,
+                  usuario: "Administrador",
+                  referenciaTipo: "transfer",
+                  referenciaId: transferId,
+                  referenciaNumero: transferCode,
+                  motivo: "Traslado de mercadería",
+                  observaciones: `Salida de ${fromDeposito} hacia ${toDeposito}`,
+                  estado: "confirmada"
+                });
+
+                await recordInventoryMovement(client, {
+                  productId: pId,
+                  variantId: item.variantId || null,
+                  sku: item.sku || null,
+                  productName: item.productName,
+                  variantName: item.variantName || null,
+                  quantity: item.quantity,
+                  movementType: "transferencia_entrada",
+                  sucursalOrigen: fromDeposito,
+                  sucursalDestino: toDeposito,
+                  usuario: "Administrador",
+                  referenciaTipo: "transfer",
+                  referenciaId: transferId,
+                  referenciaNumero: transferCode,
+                  motivo: "Recepción de mercadería",
+                  observaciones: `Entrada a ${toDeposito} procedente de ${fromDeposito}`,
+                  estado: "confirmada"
+                });
+              }
+            } catch (movErr) {
+              console.error("Error recording transfer movements:", movErr);
+            }
           }
 
           await client.query("COMMIT;");
@@ -6226,9 +6349,76 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
           [pName, pRut, dType, dNum, date, curr, finalSubtotal, finalIvaAmount, finalTotal, payMeth, depOrig, nts, JSON.stringify(itemsList)]
         );
         generatedId = insertRes.rows[0].id;
+
+        // Record stock entry and traceability movements for bill items
+        for (const item of itemsList) {
+          try {
+            let pId = item.productId ? Number(item.productId) : null;
+            let pName = item.description || "Artículo";
+            let pSku = item.sku || null;
+            let cost = Number(item.unitPrice || 0);
+            let qty = Number(item.quantity || 1);
+
+            if (!pId && item.description) {
+              const matchRes = await pool.query(
+                "SELECT id, name, codigo FROM public.products WHERE name ILIKE $1 LIMIT 1;",
+                [item.description.trim()]
+              );
+              if (matchRes.rows.length > 0) {
+                pId = matchRes.rows[0].id;
+                pName = matchRes.rows[0].name;
+                pSku = matchRes.rows[0].codigo || pSku;
+              }
+            }
+
+            if (pId) {
+              const prodLock = await pool.query(
+                "SELECT stock, stock_pinamar, stock_montevideo FROM public.products WHERE id = $1 FOR UPDATE;",
+                [pId]
+              );
+              const prevStock = Number(prodLock.rows[0]?.stock || 0);
+
+              if (depOrig === "Montevideo") {
+                await pool.query(
+                  "UPDATE public.products SET stock = stock + $1, stock_montevideo = stock_montevideo + $1, updated_at = NOW() WHERE id = $2;",
+                  [qty, pId]
+                );
+              } else {
+                await pool.query(
+                  "UPDATE public.products SET stock = stock + $1, stock_pinamar = stock_pinamar + $1, updated_at = NOW() WHERE id = $2;",
+                  [qty, pId]
+                );
+              }
+
+              await recordInventoryMovement(pool, {
+                productId: pId,
+                sku: pSku,
+                productName: pName,
+                quantity: qty,
+                movementType: "compra",
+                stockAnterior: prevStock,
+                stockPosterior: prevStock + qty,
+                sucursalOrigen: depOrig,
+                usuario: "Administrador",
+                referenciaTipo: "bill",
+                referenciaId: generatedId,
+                referenciaNumero: dNum || generatedId.substring(0, 8),
+                entidadAsociada: pName,
+                costoUnitario: cost,
+                motivo: "Recepción de mercadería por compra",
+                observaciones: `Ingreso según ${dType} ${dNum || ''} de ${pName}`,
+                estado: "confirmada",
+                createdAt: date ? new Date(date) : new Date()
+              });
+            }
+          } catch (itemMovErr) {
+            console.error("Error processing bill item for inventory:", itemMovErr);
+          }
+        }
         
         // Refresh state
-        const dbState = await getDbState();
+        invalidateDbCache();
+        const dbState = await getDbState(true);
         currentStoreState = dbState;
       } else {
         generatedId = "local-bill-" + crypto.randomBytes(8).toString("hex");
@@ -6288,10 +6478,16 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       const { id } = req.params;
       const pool = getDbPool();
       if (pool && !dbUnavailable) {
+        // Mark associated inventory movements as cancelled/anulada
+        await pool.query(
+          "UPDATE public.inventory_movements SET estado = 'anulada', motivo = motivo || ' [Boleta Eliminada]' WHERE referencia_id = $1 AND referencia_tipo = 'bill';",
+          [id]
+        );
         await pool.query("DELETE FROM public.bills WHERE id = $1;", [id]);
         
         // Refresh state
-        const dbState = await getDbState();
+        invalidateDbCache();
+        const dbState = await getDbState(true);
         currentStoreState = dbState;
       } else {
         if (currentStoreState.bills) {
@@ -6303,6 +6499,98 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     } catch (err: any) {
       console.error("Error deleting bill:", err);
       res.status(500).json({ success: false, message: "Error al eliminar la boleta.", error: err.message });
+    }
+  });
+
+  // ==========================================
+  // INVENTORY TRACEABILITY & AUDIT ENDPOINTS
+  // ==========================================
+
+  // GET search articles for traceability (SKU, code, name, variant, ID)
+  app.get("/api/inventory/search", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!isValidToken(authHeader)) {
+      return res.status(403).json({ success: false, message: "Acceso denegado." });
+    }
+    try {
+      const q = String(req.query.q || "");
+      const pool = getDbPool();
+      const items = await searchArticles(pool && !dbUnavailable ? pool : null, currentStoreState.products || [], q);
+      res.json({ success: true, items });
+    } catch (err: any) {
+      console.error("Error searching articles for traceability:", err);
+      res.status(500).json({ success: false, message: err.message || "Error al buscar artículos." });
+    }
+  });
+
+  // GET complete article traceability and audit summary
+  app.get("/api/inventory/traceability", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!isValidToken(authHeader)) {
+      return res.status(403).json({ success: false, message: "Acceso denegado." });
+    }
+    try {
+      const productId = req.query.productId as string;
+      if (!productId) {
+        return res.status(400).json({ success: false, message: "El parámetro productId es obligatorio." });
+      }
+
+      const pool = getDbPool();
+      const result = await getArticleTraceability(pool && !dbUnavailable ? pool : null, currentStoreState, {
+        productId,
+        variantId: req.query.variantId as string,
+        branch: req.query.branch as string,
+        movementType: req.query.movementType as string,
+        status: req.query.status as string,
+        quantitySign: req.query.quantitySign as string,
+        startDate: req.query.startDate as string,
+        endDate: req.query.endDate as string,
+        asOfDate: req.query.asOfDate as string
+      });
+
+      res.json(result);
+    } catch (err: any) {
+      console.error("Error fetching article traceability:", err);
+      res.status(500).json({ success: false, message: err.message || "Error al recuperar trazabilidad." });
+    }
+  });
+
+  // POST create manual audited inventory movement / adjustment
+  app.post("/api/inventory/movements", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!isValidToken(authHeader)) {
+      return res.status(403).json({ success: false, message: "Acceso denegado." });
+    }
+    try {
+      const pool = getDbPool();
+      const movement = await createManualMovement(pool && !dbUnavailable ? pool : null, currentStoreState, req.body);
+      
+      // Invalidate and sync memory
+      if (pool && !dbUnavailable) {
+        invalidateDbCache();
+        currentStoreState = await getDbState(true);
+      }
+
+      res.json({ success: true, message: "Movimiento de inventario registrado con éxito.", movement });
+    } catch (err: any) {
+      console.error("Error creating manual movement:", err);
+      res.status(400).json({ success: false, message: err.message || "Error al registrar movimiento." });
+    }
+  });
+
+  // POST reconcile audit history
+  app.post("/api/inventory/reconcile", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!isValidToken(authHeader)) {
+      return res.status(403).json({ success: false, message: "Acceso denegado." });
+    }
+    try {
+      const pool = getDbPool();
+      const result = await reconcileInventoryAudit(pool && !dbUnavailable ? pool : null, currentStoreState);
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      console.error("Error reconciling audit:", err);
+      res.status(500).json({ success: false, message: err.message || "Error al conciliar auditoría." });
     }
   });
 
@@ -11996,6 +12284,9 @@ Sitemap: https://juem.com.uy/sitemap-image.xml`);
 
     next();
   });
+
+  // Serve static assets from public directory (favicons, manifests, robots.txt)
+  app.use(express.static(path.resolve("public"), { maxAge: "1d" }));
 
   // Vite integration
   if (process.env.NODE_ENV !== "production") {

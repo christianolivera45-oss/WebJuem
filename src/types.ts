@@ -713,4 +713,81 @@ export interface CommercialQuote3D {
   updatedAt?: string;
 }
 
+export type InventoryMovementType =
+  | 'stock_inicial'
+  | 'compra'
+  | 'venta'
+  | 'devolucion_cliente'
+  | 'devolucion_proveedor'
+  | 'transferencia_salida'
+  | 'transferencia_entrada'
+  | 'ajuste_positivo'
+  | 'ajuste_negativo'
+  | 'inventario_fisico'
+  | 'anulacion'
+  | 'otro';
+
+export type InventoryMovementStatus = 'confirmada' | 'pendiente' | 'anulada' | 'revertida';
+
+export interface InventoryMovement {
+  id: string;
+  productId: number;
+  variantId?: string | null;
+  sku?: string | null;
+  productName: string;
+  variantName?: string | null;
+  movementType: InventoryMovementType;
+  movementTypeLabel?: string;
+  quantity: number;
+  stockAnterior: number;
+  stockPosterior: number;
+  sucursalOrigen?: string | null;
+  sucursalDestino?: string | null;
+  usuario: string;
+  referenciaTipo?: string | null;
+  referenciaId?: string | null;
+  referenciaNumero?: string | null;
+  entidadAsociada?: string | null;
+  costoUnitario?: number;
+  precioUnitario?: number;
+  motivo?: string | null;
+  observaciones?: string | null;
+  estado: InventoryMovementStatus;
+  createdAt: string;
+  createdAtMontevideo?: string;
+}
+
+export interface ArticleTraceabilitySummary {
+  stockPinamar: number;
+  stockMontevideo: number;
+  stockTotal: number;
+  totalCompras: number;
+  totalVentas: number;
+  totalTransferenciasSalida: number;
+  totalTransferenciasEntrada: number;
+  totalDevoluciones: number;
+  totalDevolucionesCliente: number;
+  totalDevolucionesProveedor: number;
+  totalAjustesPositivos: number;
+  totalAjustesNegativos: number;
+  stockInicial: number;
+  costoCompra: number;
+  valorStockActual: number;
+}
+
+export interface ArticleTraceabilityResponse {
+  success: boolean;
+  product?: Product | null;
+  variants?: ProductVariant[];
+  summary: ArticleTraceabilitySummary;
+  movements: InventoryMovement[];
+  historicalStockAtDate?: {
+    date: string;
+    stockPinamar: number;
+    stockMontevideo: number;
+    stockTotal: number;
+    reliable: boolean;
+  };
+}
+
 

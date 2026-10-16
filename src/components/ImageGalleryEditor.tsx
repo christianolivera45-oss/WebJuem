@@ -432,7 +432,7 @@ export default function ImageGalleryEditor({ images, onChange, isThemeDark, onOp
                       className="relative aspect-square rounded-lg overflow-hidden border border-slate-200 dark:border-zinc-800 hover:border-indigo-500 hover:scale-105 hover:shadow transition-all group cursor-pointer"
                     >
                       <img
-                        src={url}
+                        src={url || undefined}
                         alt="Resultado de stock"
                         className="w-full h-full object-cover"
                         referrerPolicy="no-referrer"
@@ -551,7 +551,7 @@ export default function ImageGalleryEditor({ images, onChange, isThemeDark, onOp
                   </div>
 
                   <img
-                    src={imgUrl}
+                    src={imgUrl || undefined}
                     className="w-full h-full object-cover pointer-events-none"
                     referrerPolicy="no-referrer"
                     onError={(e) => {

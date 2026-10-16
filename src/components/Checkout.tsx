@@ -3558,7 +3558,7 @@ export default function Checkout({
                   return (
                     <div key={`${item.product.id}-${item.selectedSize}-${item.selectedColor}`} className="flex items-start gap-3 text-xs">
                       <img
-                        src={item.product.imageUrl}
+                        src={item.product.imageUrl || "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=600&q=80"}
                         alt={item.product.name}
                         className="h-14 w-11 object-cover rounded bg-zinc-800 border border-zinc-800/60 flex-shrink-0"
                       />

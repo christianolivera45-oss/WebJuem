@@ -839,7 +839,7 @@ export const ProductSearchProModal: React.FC<ProductSearchProModalProps> = ({
       </div>
 
       {/* LIGHTBOX MODAL PARA VER IMAGEN EN TAMAÑO COMPLETO */}
-      {previewImage && (
+      {previewImage && previewImage.url && (
         <div
           onClick={() => setPreviewImage(null)}
           className="fixed inset-0 z-[100005] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 cursor-zoom-out animate-in fade-in duration-150"
@@ -856,7 +856,7 @@ export const ProductSearchProModal: React.FC<ProductSearchProModalProps> = ({
               {previewImage.title}
             </h4>
             <img
-              src={previewImage.url}
+              src={previewImage.url || undefined}
               alt={previewImage.title}
               className="max-h-[70vh] w-auto object-contain rounded-xl"
               referrerPolicy="no-referrer"

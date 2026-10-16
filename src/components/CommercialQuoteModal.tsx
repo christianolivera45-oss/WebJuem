@@ -1358,7 +1358,7 @@ export const CommercialQuoteModal: React.FC<CommercialQuoteModalProps> = ({
       />
 
       {/* LIGHTBOX MODAL PARA VER IMAGEN EN TAMAÑO COMPLETO */}
-      {imageLightboxUrl && (
+      {imageLightboxUrl && imageLightboxUrl.url && (
         <div
           onClick={() => setImageLightboxUrl(null)}
           className="fixed inset-0 z-[100005] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 cursor-zoom-out animate-in fade-in duration-150"
@@ -1375,7 +1375,7 @@ export const CommercialQuoteModal: React.FC<CommercialQuoteModalProps> = ({
               {imageLightboxUrl.title}
             </h4>
             <img
-              src={imageLightboxUrl.url}
+              src={imageLightboxUrl.url || undefined}
               alt={imageLightboxUrl.title}
               className="max-h-[70vh] w-auto object-contain rounded-xl"
               referrerPolicy="no-referrer"

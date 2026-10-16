@@ -1,39 +1,59 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
+    <!-- Rich Luxury Metallic Gold Gradient -->
     <linearGradient id="goldGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#C59B4E" />
-      <stop offset="30%" stop-color="#F4EAD7" />
-      <stop offset="70%" stop-color="#D4A55A" />
-      <stop offset="100%" stop-color="#8A6421" />
+      <stop offset="0%" stop-color="#EED58E" />
+      <stop offset="25%" stop-color="#FDF3DA" />
+      <stop offset="50%" stop-color="#D4AF37" />
+      <stop offset="75%" stop-color="#AA7A1E" />
+      <stop offset="100%" stop-color="#E5C158" />
     </linearGradient>
-    <radialGradient id="bgGradient" cx="50%" cy="50%" r="50%">
+
+    <linearGradient id="goldRingGradient" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#9A6B17" />
+      <stop offset="35%" stop-color="#E8C96C" />
+      <stop offset="70%" stop-color="#FFF2CE" />
+      <stop offset="100%" stop-color="#C59B27" />
+    </linearGradient>
+
+    <!-- Deep Luxury Midnight Royal Blue Full-Bleed Background (NO transparent corners) -->
+    <radialGradient id="bgGradient" cx="50%" cy="50%" r="65%">
       <stop offset="0%" stop-color="#0E1A34" />
-      <stop offset="100%" stop-color="#050B18" />
+      <stop offset="60%" stop-color="#070D1C" />
+      <stop offset="100%" stop-color="#03060E" />
     </radialGradient>
+
+    <!-- Subtle glow filter -->
+    <filter id="goldGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
   </defs>
 
-  <!-- Background Layer -->
-  <rect width="512" height="512" rx="128" fill="url(#bgGradient)"/>
-  
-  <!-- Outer Premium Ornamental Ring -->
-  <circle cx="256" cy="256" r="215" fill="none" stroke="url(#goldGradient)" stroke-width="10" opacity="0.85"/>
-  <circle cx="256" cy="256" r="195" fill="none" stroke="url(#goldGradient)" stroke-width="3" opacity="0.4" stroke-dasharray="16 12"/>
+  <!-- Full-bleed background filling all 512x512 pixels (ZERO transparent corners/borders) -->
+  <rect width="512" height="512" fill="url(#bgGradient)" />
 
-  <!-- Elegant Classic Serif Monogram "J" -->
-  <path d="M 265 140 
-           L 365 140 
-           L 365 175 
-           L 335 175 
-           L 335 325 
-           C 335 375, 305 405, 240 405 
-           C 185 405, 145 370, 145 320 
-           L 185 320 
-           C 185 352, 205 370, 240 370 
-           C 280 370, 295 345, 295 310 
-           L 295 175 
-           L 265 175 
-           Z" 
-        fill="url(#goldGradient)" 
-        stroke="#050B18" 
-        stroke-width="2" />
+  <!-- Outer Ring with subtle glow -->
+  <circle cx="256" cy="256" r="226" fill="none" stroke="url(#goldRingGradient)" stroke-width="14" />
+  
+  <!-- Inner Ornate Ring -->
+  <circle cx="256" cy="256" r="206" fill="none" stroke="url(#goldRingGradient)" stroke-width="3.5" opacity="0.65" stroke-dasharray="14 10" />
+
+  <!-- Monogram "J" (Juem) - Perfectly balanced, bold, and high contrast for 16px/32px/48px visibility -->
+  <g filter="url(#goldGlow)">
+    <path d="M 270 135 
+             L 375 135 
+             L 375 172 
+             L 342 172 
+             L 342 322 
+             C 342 376, 310 410, 244 410 
+             C 182 410, 138 372, 138 318 
+             L 184 318 
+             C 184 350, 206 370, 244 370 
+             C 284 370, 298 344, 298 308 
+             L 298 172 
+             L 270 172 
+             Z" 
+          fill="url(#goldGradient)" />
+  </g>
 </svg>
