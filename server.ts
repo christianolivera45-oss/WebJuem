@@ -4538,6 +4538,15 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         }
       }
 
+      // Auto-notify search engines of catalog and page changes (Google & Bing ping)
+      try {
+        const sitemapUrl = "https://juem.com.uy/sitemap.xml";
+        fetch(`https://www.google.com/ping?sitemap=${encodeURIComponent(sitemapUrl)}`).catch(() => {});
+        fetch(`https://www.bing.com/ping?sitemap=${encodeURIComponent(sitemapUrl)}`).catch(() => {});
+      } catch (pingErr) {
+        // Silently continue
+      }
+
       res.json({ success: true, message: "Cambios guardados con éxito en el servidor.", state: currentStoreState });
     } catch (err: any) {
       console.error("Error al guardar estado de la tienda:", err);
@@ -11753,6 +11762,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     let imgUrl = settings.bannerImageUrl || "https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=1200&q=80";
     let canonicalUrl = pathUrl === "/" ? `${baseUrl}/` : `${baseUrl}${pathUrl}`;
     let schemaJson = "";
+    let preRenderedBody = "";
 
     // Local-focused default description improvements
     if (!settings.siteSubtitle) {
@@ -11913,6 +11923,37 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
             }
           }
         }, null, 2);
+
+        // Pre-rendered semantic HTML for instant Googlebot indexation without waiting for JS
+        const catName = product.category || "Catálogo";
+        const inStock = product.stock !== undefined ? product.stock > 0 : true;
+        
+        preRenderedBody = `
+          <div class="ssr-pre-render" style="max-width:1200px;margin:0 auto;padding:24px 16px;font-family:system-ui,-apple-system,sans-serif;color:#1e293b;">
+            <nav aria-label="Ruta de exploración" style="font-size:12px;margin-bottom:16px;">
+              <a href="/" style="color:#0284c7;text-decoration:none;">Inicio</a> &gt; 
+              ${product.category ? `<a href="/${generateSlug(product.category)}" style="color:#0284c7;text-decoration:none;">${catName}</a> &gt; ` : ""}
+              <span style="color:#64748b;">${product.name}</span>
+            </nav>
+            <main style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:32px;align-items:start;">
+              <div>
+                <img src="${product.imageUrl || imgUrl}" alt="${product.name} - Calidad garantizada Juem Uruguay" style="width:100%;max-height:480px;object-fit:cover;border-radius:16px;" />
+              </div>
+              <div>
+                <h1 style="font-size:26px;font-weight:800;margin:0 0 12px;color:#0f172a;">${product.name}</h1>
+                <p style="font-size:24px;font-weight:900;color:#15803d;margin:0 0 16px;">$${Number(product.price || 0).toLocaleString('es-UY')} UYU</p>
+                <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:12px 16px;margin-bottom:16px;font-size:13px;">
+                  <p style="margin:4px 0;"><strong>Disponibilidad:</strong> ${inStock ? "En Stock - Envío inmediato a todo Uruguay" : "Agotado / Bajo consulta"}</p>
+                  <p style="margin:4px 0;"><strong>Envíos:</strong> Despacho express coordinado a Montevideo, Canelones e Interior del país</p>
+                  <p style="margin:4px 0;"><strong>Garantía:</strong> 30 días de satisfacción o devolución en Juem</p>
+                </div>
+                <div style="font-size:14px;line-height:1.6;color:#334155;margin-bottom:24px;">
+                  <h2 style="font-size:16px;font-weight:700;margin:0 0 8px;">Descripción del Producto</h2>
+                  <p>${(product.description || `${product.name} - Indumentaria de temporada, abrigos térmicos y accesorios de calidad en Juem Uruguay.`).replace(/\n/g, "<br/>")}</p>
+                </div>
+              </div>
+            </main>
+          </div>`;
       }
     } else if (segments.length > 0 && segments[0] !== "admin") {
       // Category and subcategory routes
@@ -11923,15 +11964,79 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         description = `Explorá las mejores opciones de ${matchedCat.nombre.toLowerCase()} en Ventas Juem. Comprá online con envíos rápidos a todo Uruguay.`;
         canonicalUrl = `${baseUrl}/${matchedCat.id}`;
         
+        let matchedSub: any = null;
         if (segments[1]) {
           const subcategories = state.dbSubcategories || [];
-          const matchedSub = subcategories.find(s => s.categoria_id === matchedCat.id && (s.id.toLowerCase() === segments[1].toLowerCase() || generateSlug(s.nombre) === segments[1].toLowerCase()));
+          matchedSub = subcategories.find(s => s.categoria_id === matchedCat.id && (s.id.toLowerCase() === segments[1].toLowerCase() || generateSlug(s.nombre) === segments[1].toLowerCase()));
           if (matchedSub) {
             title = `${matchedSub.nombre} (${matchedCat.nombre}) | ${settings.siteTitle || "Ventas Juem"}`;
             description = `Comprá ${matchedSub.nombre.toLowerCase()} en la categoría ${matchedCat.nombre.toLowerCase()} de Ventas Juem. Calidad y envíos a todo Uruguay.`;
             canonicalUrl = `${baseUrl}/${matchedCat.id}/${matchedSub.id}`;
           }
         }
+
+        // Get matching active products for this category/subcategory
+        const matchingProducts = (state.products || []).filter(p => {
+          if (p.active === false || p.paused === true) return false;
+          const inCat = p.categoria_id === matchedCat.id || (p.category && p.category.toLowerCase() === matchedCat.nombre.toLowerCase());
+          if (!matchedSub) return inCat;
+          return inCat && (p.subcategoria_id === matchedSub.id || (p.subcategoria && p.subcategoria.toLowerCase() === matchedSub.nombre.toLowerCase()));
+        });
+
+        // Structured Data Schema.org for CollectionPage & ItemList
+        schemaJson = JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "CollectionPage",
+          "name": `${matchedSub ? matchedSub.nombre : matchedCat.nombre} | Ventas Juem`,
+          "description": description,
+          "url": canonicalUrl,
+          "breadcrumb": {
+            "@type": "BreadcrumbList",
+            "itemListElement": [
+              { "@type": "ListItem", "position": 1, "name": "Inicio", "item": `${baseUrl}/` },
+              { "@type": "ListItem", "position": 2, "name": matchedCat.nombre, "item": `${baseUrl}/${matchedCat.id}` },
+              ...(matchedSub ? [{ "@type": "ListItem", "position": 3, "name": matchedSub.nombre, "item": canonicalUrl }] : [])
+            ]
+          },
+          "mainEntity": {
+            "@type": "ItemList",
+            "numberOfItems": matchingProducts.length,
+            "itemListElement": matchingProducts.slice(0, 30).map((p, idx) => ({
+              "@type": "ListItem",
+              "position": idx + 1,
+              "url": `${baseUrl}/producto/${generateSlug(p.name)}`,
+              "name": p.name,
+              "image": p.imageUrl || imgUrl
+            }))
+          }
+        }, null, 2);
+
+        // Pre-rendered semantic HTML body for categories to immediately index in Google Search
+        preRenderedBody = `
+          <div class="ssr-pre-render" style="max-width:1200px;margin:0 auto;padding:24px 16px;font-family:system-ui,-apple-system,sans-serif;color:#1e293b;">
+            <nav aria-label="Ruta de exploración" style="font-size:12px;margin-bottom:16px;">
+              <a href="/" style="color:#0284c7;text-decoration:none;">Inicio</a> &gt; 
+              <a href="/${matchedCat.id}" style="color:#0284c7;text-decoration:none;">${matchedCat.nombre}</a>
+              ${matchedSub ? ` &gt; <span style="color:#64748b;">${matchedSub.nombre}</span>` : ""}
+            </nav>
+            <header style="margin-bottom:24px;">
+              <h1 style="font-size:26px;font-weight:800;margin:0 0 8px;color:#0f172a;">${matchedSub ? matchedSub.nombre : matchedCat.nombre} en Uruguay | Catálogo Juem</h1>
+              <p style="font-size:14px;color:#64748b;margin:0;">Explora ${matchingProducts.length} artículos disponibles con entrega rápida en todo el país.</p>
+            </header>
+            <main style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:20px;">
+              ${matchingProducts.slice(0, 40).map(p => `
+                <article style="border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;background:#fff;">
+                  <a href="/producto/${generateSlug(p.name)}" style="text-decoration:none;color:inherit;display:block;">
+                    <img src="${p.imageUrl || imgUrl}" alt="${p.name} - ${matchedCat.nombre} Juem" style="width:100%;height:200px;object-fit:cover;" />
+                    <div style="padding:12px;">
+                      <h3 style="font-size:13px;font-weight:700;margin:0 0 6px;color:#0f172a;line-height:1.3;">${p.name}</h3>
+                      <p style="font-size:14px;font-weight:800;color:#15803d;margin:0;">$${Number(p.price || 0).toLocaleString('es-UY')} UYU</p>
+                    </div>
+                  </a>
+                </article>
+              `).join("")}
+            </main>
+          </div>`;
       }
     }
 
@@ -11987,22 +12092,56 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       }, null, 2);
     }
 
-    // Clean root element for fast, smooth client-side loading with zero raw text flash
-    let preRenderedHtml = `<div id="root"></div>`;
+    // Default homepage pre-rendering if root was not yet pre-rendered
+    if (!preRenderedBody && segments.length === 0) {
+      const featuredProducts = (state.products || []).filter(p => p.active !== false && p.paused !== true).slice(0, 16);
+      preRenderedBody = `
+        <div class="ssr-pre-render" style="max-width:1200px;margin:0 auto;padding:24px 16px;font-family:system-ui,-apple-system,sans-serif;color:#1e293b;">
+          <header style="text-align:center;margin-bottom:32px;">
+            <h1 style="font-size:28px;font-weight:900;color:#0f172a;margin:0 0 8px;">Ventas Juem | Ropa de Temporada, Abrigos Premium y Accesorios</h1>
+            <p style="font-size:14px;color:#64748b;max-width:650px;margin:0 auto;">${description}</p>
+          </header>
+          <section>
+            <h2 style="font-size:20px;font-weight:800;color:#0f172a;margin-bottom:16px;">Catálogo Destacado</h2>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:20px;">
+              ${featuredProducts.map(p => `
+                <article style="border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;background:#fff;">
+                  <a href="/producto/${generateSlug(p.name)}" style="text-decoration:none;color:inherit;display:block;">
+                    <img src="${p.imageUrl || imgUrl}" alt="${p.name} - Juem Uruguay" style="width:100%;height:200px;object-fit:cover;" />
+                    <div style="padding:12px;">
+                      <h3 style="font-size:13px;font-weight:700;margin:0 0 6px;color:#0f172a;line-height:1.3;">${p.name}</h3>
+                      <p style="font-size:14px;font-weight:800;color:#15803d;margin:0;">$${Number(p.price || 0).toLocaleString('es-UY')} UYU</p>
+                    </div>
+                  </a>
+                </article>
+              `).join("")}
+            </div>
+          </section>
+        </div>`;
+    }
+
+    // Pre-rendered semantic HTML inside root for Googlebot crawler and instant FCP
+    let preRenderedHtml = preRenderedBody ? `<div id="root">${preRenderedBody}</div>` : `<div id="root"></div>`;
     const isAdminRoute = segments[0] === "admin";
 
     if (isAdminRoute) {
       title = `Acceso Administrativo | ${settings.siteTitle || "Ventas Juem"}`;
       description = "Acceso seguro y protegido al panel de administración de Ventas Juem.";
+      preRenderedHtml = `<div id="root"></div>`;
     }
 
     let output = htmlContent;
 
-    // Inject noindex meta tag for admin route to absolutely avoid Google indexing admin path
+    // Inject robots meta tag according to Google guidelines (noindex for admin, index with max-image-preview:large for public)
     if (isAdminRoute) {
       output = output.replace(
-        /<head>/i,
-        `<head>\n    <meta name="robots" content="noindex, nofollow" />`
+        /<meta[^>]*id="seo-robots"[^>]*\/?>/gi,
+        `<meta name="robots" content="noindex, nofollow" id="seo-robots" />`
+      );
+    } else {
+      output = output.replace(
+        /<meta[^>]*id="seo-robots"[^>]*\/?>/gi,
+        `<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" id="seo-robots" />`
       );
     }
 
@@ -12292,9 +12431,25 @@ Sitemap: https://juem.com.uy/sitemap-image.xml`);
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true, hmr: process.env.DISABLE_HMR !== 'true' },
-      appType: "spa",
+      appType: "custom",
     });
     app.use(vite.middlewares);
+
+    // Dynamic SEO meta and SSR pre-rendering in dev/preview mode
+    app.get("*", async (req, res, next) => {
+      if (req.path.includes(".") || req.path.startsWith("/api/")) {
+        return next();
+      }
+      try {
+        const url = req.originalUrl;
+        let template = fs.readFileSync(path.resolve("index.html"), "utf-8");
+        template = await vite.transformIndexHtml(url, template);
+        const seoHtml = await injectSEO(template, req);
+        res.status(200).set({ "Content-Type": "text/html; charset=utf-8" }).end(seoHtml);
+      } catch (e) {
+        next(e);
+      }
+    });
   } else {
     const distPath = path.join(process.cwd(), "dist");
     

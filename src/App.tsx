@@ -3388,14 +3388,18 @@ export default function App() {
   useEffect(() => {
     if (!store.settings) return;
 
-    // 1. Sync Document Title
-    const baseTitle = store.settings.siteTitle || "Ventas Juem";
+    // 1. Sync Document Title (Google Standard: 30-60 characters, branded)
+    const baseTitle = store.settings.siteTitle || "Juem Uruguay";
     let currentTitle = baseTitle;
     if (selectedProduct) {
       currentTitle = `${selectedProduct.name} | ${baseTitle}`;
     } else if (selectedCategory && selectedCategory !== "todos") {
       const displayName = getCategoryDisplayNameWithDb(selectedCategory);
-      currentTitle = `${displayName} | ${baseTitle}`;
+      currentTitle = `${displayName} en Uruguay | ${baseTitle}`;
+    }
+    // Truncate cleanly if too long
+    if (currentTitle.length > 60) {
+      currentTitle = currentTitle.substring(0, 57).trim() + "…";
     }
     document.title = currentTitle;
 
@@ -3411,20 +3415,29 @@ export default function App() {
       meta.setAttribute("content", content);
     };
 
-    let currentDesc = store.settings.seoDescription || store.settings.siteSubtitle || "Moda, tecnología y accesorios con envío a todo el país.";
+    let currentDesc = store.settings.seoDescription || store.settings.siteSubtitle || "Descubrí indumentaria de temporada, abrigos térmicos y accesorios en Juem Uruguay. Envíos express a todo el país.";
     if (selectedProduct) {
-      currentDesc = (selectedProduct.description || "").substring(0, 160);
+      const prodDesc = (selectedProduct.description || "").trim();
+      currentDesc = prodDesc.length >= 80 
+        ? prodDesc.substring(0, 155) 
+        : `${selectedProduct.name} - Calidad garantizada en Juem Uruguay. Envíos express a todo el país y compra protegida.`;
     } else if (selectedCategory && selectedCategory !== "todos") {
       const displayName = getCategoryDisplayNameWithDb(selectedCategory);
-      currentDesc = `Explora nuestra exclusiva colección de ${displayName} en Ventas Juem. Envíos express a todo Uruguay, compra 100% segura.`;
+      currentDesc = `Explorá las mejores opciones de ${displayName.toLowerCase()} en Juem Uruguay. Comprá online con despacho express a todo el país y atención personalizada.`;
+    }
+    if (currentDesc.length > 160) {
+      currentDesc = currentDesc.substring(0, 157).trim() + "…";
     }
 
     const currentKeywords = store.settings.seoKeywords || "Juem, Juem Mvd, tienda Juem, ropa de invierno, abrigos termicos, buzos manta, gorros, guantes neopreno, accesorios 3D Uruguay, envios express, montevideo, canelones, pinamar";
 
     setMetaTag("seo-description", "name", "description", currentDesc);
     setMetaTag("seo-keywords", "name", "keywords", currentKeywords);
+    setMetaTag("seo-robots", "name", "robots", "index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1");
     setMetaTag("og-title", "property", "og:title", currentTitle);
     setMetaTag("og-description", "property", "og:description", currentDesc);
+    setMetaTag("og-type", "property", "og:type", selectedProduct ? "product" : "website");
+    setMetaTag("og-locale", "property", "og:locale", "es_UY");
     setMetaTag("twitter-title", "name", "twitter:title", currentTitle);
     setMetaTag("twitter-description", "name", "twitter:description", currentDesc);
 
@@ -3459,7 +3472,7 @@ export default function App() {
     }
     canonical.setAttribute("href", currentUrl);
 
-    // 3. Sync Favicon Link
+    // 3. Sync Favicon Link according to Google Search standards (48px multiple, full bleed, NO transparent borders)
     let link: HTMLLinkElement | null = document.querySelector("link[rel~='icon']");
     if (!link) {
       link = document.createElement("link");
@@ -3467,15 +3480,11 @@ export default function App() {
       document.getElementsByTagName("head")[0].appendChild(link);
     }
 
-    if (store.settings.logoType === "image" && store.settings.logoImageUrl) {
-      link.href = store.settings.logoImageUrl;
+    if (store.settings.faviconUrl && store.settings.faviconUrl.trim() !== "") {
+      link.href = store.settings.faviconUrl;
     } else {
-      // Create an elegant SVG-based Favicon automatically with the company's initials matching the primary theme color!
-      const initials = (store.settings.logoText || "J").substring(0, 2).toUpperCase();
-      const primaryColor = store.settings.primaryColor || "#D4A55A";
-      const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="${primaryColor}"/><text x="50%" y="58%" dominant-baseline="middle" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-weight="900" font-size="16">${initials}</text></svg>`;
-      const base64Svg = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
-      link.href = base64Svg;
+      // Use the official high-resolution, full-bleed icon with zero transparent corners to prevent white border artifacts in Google Search
+      link.href = "/favicon-48x48.png";
     }
 
     // 4. Sync JSON-LD Structured Data for Google Search Console / Rich Snippets
@@ -11380,7 +11389,7 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                         {/* Almacenes y Stock por Sucursal Card */}
                         <div className="p-6 rounded-2xl bg-[#050B1A]/40 border border-zinc-800 space-y-5">
                           <h4 className="text-xs font-black text-emerald-400 uppercase tracking-wider flex items-center gap-2">
-                            <span className="p-1.5 bg-emerald-500/10 rounded-lg text-emerald-400">📦</span>
+                            <span className="p-1.5 bg-emerald-500/10 rounded-lg text-emerald-400">������</span>
                             <span>Almacenes y Stock por Sucursal</span>
                           </h4>
 
