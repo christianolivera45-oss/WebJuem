@@ -1045,8 +1045,8 @@ async function deductSingleItemStockDb(
   sizeValue?: string | null,
   colorName?: string | null,
   depositoOrigen?: string | null
-): Promise<void> {
-  if (qty <= 0) return;
+): Promise<{ pinDeduct: number; mvdDeduct: number }> {
+  if (qty <= 0) return { pinDeduct: 0, mvdDeduct: 0 };
 
   // Check if product is combo
   const prodCheck = await client.query(
@@ -1059,15 +1059,19 @@ async function deductSingleItemStockDb(
     if (isCombo) {
       const components = prodCheck.rows[0].combo_components;
       const compList = Array.isArray(components) ? components : (typeof components === 'string' ? JSON.parse(components) : []);
+      let totalPin = 0;
+      let totalMvd = 0;
       for (const comp of compList) {
         const compId = comp.productId;
         const compVarId = comp.variantId || null;
         const compQty = qty * (Number(comp.quantity) || 1);
         const compColor = comp.comboColor || null;
         const compSize = comp.comboSize || "Único";
-        await deductSingleItemStockDb(client, compId, compVarId, compQty, compSize, compColor, depositoOrigen);
+        const res = await deductSingleItemStockDb(client, compId, compVarId, compQty, compSize, compColor, depositoOrigen);
+        totalPin += res.pinDeduct;
+        totalMvd += res.mvdDeduct;
       }
-      return; // Do NOT deduct stock from the combo itself!
+      return { pinDeduct: totalPin, mvdDeduct: totalMvd }; // Do NOT deduct stock from the combo itself!
     }
   }
 
@@ -1130,13 +1134,12 @@ async function deductSingleItemStockDb(
   }
 
   const isMvd = depositoOrigen === "Montevideo";
+  let pinDeduct = 0;
+  let mvdDeduct = 0;
 
   if (resolvedVarLock && resolvedVariantId) {
     const vPin = Number(resolvedVarLock.rows[0].stock_pinamar || 0);
     const vMvd = Number(resolvedVarLock.rows[0].stock_montevideo || 0);
-    
-    let pinDeduct = 0;
-    let mvdDeduct = 0;
     
     if (isMvd) {
       if (vMvd >= qty) {
@@ -1187,6 +1190,7 @@ async function deductSingleItemStockDb(
         [totalStock, totalPinamar, totalMontevideo, productId]
       );
     }
+    return { pinDeduct, mvdDeduct };
   } else if (productId) {
     const prodLock = await client.query(
       "SELECT stock, stock_pinamar, stock_montevideo FROM public.products WHERE id = $1 FOR UPDATE;",
@@ -1196,9 +1200,6 @@ async function deductSingleItemStockDb(
     if (prodLock.rows.length > 0) {
       const pPin = Number(prodLock.rows[0].stock_pinamar || 0);
       const pMvd = Number(prodLock.rows[0].stock_montevideo || 0);
-      
-      let pinDeduct = 0;
-      let mvdDeduct = 0;
       
       if (isMvd) {
         if (pMvd >= qty) {
@@ -1226,7 +1227,9 @@ async function deductSingleItemStockDb(
         [qty, pinDeduct, mvdDeduct, productId]
       );
     }
+    return { pinDeduct, mvdDeduct };
   }
+  return { pinDeduct: 0, mvdDeduct: 0 };
 }
 
 async function deductStockDb(client: any, orderId: string): Promise<void> {
@@ -1245,38 +1248,75 @@ async function deductStockDb(client: any, orderId: string): Promise<void> {
   for (const item of itemsRes.rows) {
     const qty = Number(item.quantity);
     if (qty <= 0) continue;
-    await deductSingleItemStockDb(client, item.product_id, item.variant_id || null, qty, item.size_selected, item.color_selected, depositoOrigen);
+    const { pinDeduct, mvdDeduct } = await deductSingleItemStockDb(client, item.product_id, item.variant_id || null, qty, item.size_selected, item.color_selected, depositoOrigen);
 
     // Record traceability movement for sale
     try {
-      const pCheck = await client.query("SELECT name, codigo, stock, precio_compra FROM public.products WHERE id = $1;", [item.product_id]);
+      const pCheck = await client.query("SELECT name, codigo, stock, stock_pinamar, stock_montevideo, precio_compra FROM public.products WHERE id = $1;", [item.product_id]);
       const pName = pCheck.rows[0]?.name || item.product_name;
       const pSku = item.sku || pCheck.rows[0]?.codigo || null;
       const pCost = Number(pCheck.rows[0]?.precio_compra || 0);
-      const curStock = Number(pCheck.rows[0]?.stock || 0);
+      const curPin = Number(pCheck.rows[0]?.stock_pinamar || 0);
+      const curMvd = Number(pCheck.rows[0]?.stock_montevideo || 0);
 
-      await recordInventoryMovement(client, {
-        productId: Number(item.product_id),
-        variantId: item.variant_id || null,
-        sku: pSku,
-        productName: pName,
-        variantName: item.size_selected || item.color_selected ? `${item.size_selected || 'Único'} / ${item.color_selected || 'General'}` : null,
-        quantity: -qty,
-        movementType: "venta",
-        stockAnterior: curStock + qty,
-        stockPosterior: curStock,
-        sucursalOrigen: depositoOrigen || "Montevideo",
-        usuario: "Venta Confirmada",
-        referenciaTipo: "order",
-        referenciaId: orderId,
-        referenciaNumero: `#PED-${orderId.substring(0, 8).toUpperCase()}`,
-        entidadAsociada: customerName,
-        costoUnitario: pCost,
-        precioUnitario: Number(item.unit_price || 0),
-        motivo: "Venta de artículo",
-        observaciones: "Descuento automático de inventario por venta aprobada",
-        estado: "confirmada"
-      });
+      const recordMov = async (branch: string, amount: number, curBranchStock: number, obsSuffix = "") => {
+        if (amount <= 0) return;
+        await recordInventoryMovement(client, {
+          productId: Number(item.product_id),
+          variantId: item.variant_id || null,
+          sku: pSku,
+          productName: pName,
+          variantName: item.size_selected || item.color_selected ? `${item.size_selected || 'Único'} / ${item.color_selected || 'General'}` : null,
+          quantity: -amount,
+          movementType: "venta",
+          stockAnterior: curBranchStock + amount,
+          stockPosterior: curBranchStock,
+          sucursalOrigen: branch,
+          usuario: "Venta Confirmada",
+          referenciaTipo: "order",
+          referenciaId: orderId,
+          referenciaNumero: `#PED-${orderId.substring(0, 8).toUpperCase()}`,
+          entidadAsociada: customerName,
+          costoUnitario: pCost,
+          precioUnitario: Number(item.unit_price || 0),
+          motivo: "Venta de artículo",
+          observaciones: `Descuento automático de inventario por venta aprobada${obsSuffix}`,
+          estado: "confirmada"
+        });
+      };
+
+      if (pinDeduct > 0 && mvdDeduct > 0) {
+        await recordMov("Pinamar", pinDeduct, curPin, " (unidades Pinamar)");
+        await recordMov("Montevideo", mvdDeduct, curMvd, " (unidades Montevideo)");
+      } else if (pinDeduct > 0) {
+        await recordMov("Pinamar", pinDeduct, curPin);
+      } else if (mvdDeduct > 0) {
+        await recordMov("Montevideo", mvdDeduct, curMvd);
+      } else {
+        const curStock = Number(pCheck.rows[0]?.stock || 0);
+        await recordInventoryMovement(client, {
+          productId: Number(item.product_id),
+          variantId: item.variant_id || null,
+          sku: pSku,
+          productName: pName,
+          variantName: item.size_selected || item.color_selected ? `${item.size_selected || 'Único'} / ${item.color_selected || 'General'}` : null,
+          quantity: -qty,
+          movementType: "venta",
+          stockAnterior: curStock + qty,
+          stockPosterior: curStock,
+          sucursalOrigen: depositoOrigen || "Montevideo",
+          usuario: "Venta Confirmada",
+          referenciaTipo: "order",
+          referenciaId: orderId,
+          referenciaNumero: `#PED-${orderId.substring(0, 8).toUpperCase()}`,
+          entidadAsociada: customerName,
+          costoUnitario: pCost,
+          precioUnitario: Number(item.unit_price || 0),
+          motivo: "Venta de artículo",
+          observaciones: "Descuento automático de inventario por venta aprobada",
+          estado: "confirmada"
+        });
+      }
     } catch (movErr) {
       console.error("Error recording sale movement:", movErr);
     }
@@ -1288,7 +1328,8 @@ function deductSingleItemStockMemory(
   variantId: any,
   qty: number,
   sizeValue?: string | null,
-  colorName?: string | null
+  colorName?: string | null,
+  depositoOrigen?: string | null
 ): void {
   if (qty <= 0) return;
   const dbProd = currentStoreState.products?.find(p => String(p.id) === String(productId));
@@ -1300,10 +1341,12 @@ function deductSingleItemStockMemory(
       const compQty = qty * (Number(comp.quantity) || 1);
       const compColor = comp.comboColor || null;
       const compSize = comp.comboSize || "Único";
-      deductSingleItemStockMemory(comp.productId, comp.variantId || null, compQty, compSize, compColor);
+      deductSingleItemStockMemory(comp.productId, comp.variantId || null, compQty, compSize, compColor, depositoOrigen);
     }
     return; // Do NOT deduct stock from the combo itself!
   }
+
+  const isMvd = String(depositoOrigen || "").toLowerCase() === "montevideo";
 
   let resolvedVariantId = variantId;
   let matchVar = dbProd.variants?.find((v: any) => String(v.id) === String(resolvedVariantId));
@@ -1333,11 +1376,20 @@ function deductSingleItemStockMemory(
     
     let vPinDeduct = 0;
     let vMvdDeduct = 0;
-    if (vPin >= qty) {
-      vPinDeduct = qty;
+    if (isMvd) {
+      if (vMvd >= qty) {
+        vMvdDeduct = qty;
+      } else {
+        vMvdDeduct = Math.max(0, vMvd);
+        vPinDeduct = qty - vMvdDeduct;
+      }
     } else {
-      vPinDeduct = Math.max(0, vPin);
-      vMvdDeduct = qty - vPinDeduct;
+      if (vPin >= qty) {
+        vPinDeduct = qty;
+      } else {
+        vPinDeduct = Math.max(0, vPin);
+        vMvdDeduct = qty - vPinDeduct;
+      }
     }
 
     matchVar.stockPinamar = Math.max(0, vPin - vPinDeduct);
@@ -1355,11 +1407,20 @@ function deductSingleItemStockMemory(
     
     let pinDeduct = 0;
     let mvdDeduct = 0;
-    if (pinStock >= qty) {
-      pinDeduct = qty;
+    if (isMvd) {
+      if (mvdStock >= qty) {
+        mvdDeduct = qty;
+      } else {
+        mvdDeduct = Math.max(0, mvdStock);
+        pinDeduct = qty - mvdDeduct;
+      }
     } else {
-      pinDeduct = Math.max(0, pinStock);
-      mvdDeduct = qty - pinDeduct;
+      if (pinStock >= qty) {
+        pinDeduct = qty;
+      } else {
+        pinDeduct = Math.max(0, pinStock);
+        mvdDeduct = qty - pinDeduct;
+      }
     }
 
     dbProd.stockPinamar = Math.max(0, pinStock - pinDeduct);
@@ -1368,10 +1429,10 @@ function deductSingleItemStockMemory(
   }
 }
 
-function deductStockMemory(orderItems: any[]): void {
+function deductStockMemory(orderItems: any[], depositoOrigen?: string): void {
   for (const item of orderItems) {
     const qty = Number(item.quantity || 1);
-    deductSingleItemStockMemory(item.productId, item.variantId || null, qty, item.sizeSelected, item.colorSelected);
+    deductSingleItemStockMemory(item.productId, item.variantId || null, qty, item.sizeSelected, item.colorSelected, depositoOrigen);
   }
   if (currentStoreState && currentStoreState.products) {
     currentStoreState.products = recalculateComboStocks(currentStoreState.products);
@@ -1706,7 +1767,7 @@ async function approveOrderAndDeductStock(orderId: string, paymentId: string, ve
                 variantId: it.variantId,
                 quantity: it.quantity
               }));
-              deductStockMemory(formattedItems);
+              deductStockMemory(formattedItems, o.depositoOrigen);
             }
           }
         }
@@ -5495,6 +5556,24 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
                   [item.quantity, item.variantId]
                 );
               }
+
+              // Always synchronize parent product stock with sum of active variants
+              const sumRes = await client.query(
+                `SELECT COALESCE(SUM(stock), 0) as total_stock, 
+                        COALESCE(SUM(stock_pinamar), 0) as total_pinamar, 
+                        COALESCE(SUM(stock_montevideo), 0) as total_montevideo 
+                 FROM public.product_variants 
+                 WHERE product_id = $1 AND active = true;`,
+                [item.productId]
+              );
+              if (sumRes.rows.length > 0) {
+                await client.query(
+                  `UPDATE public.products 
+                   SET stock = $1, stock_pinamar = $2, stock_montevideo = $3, updated_at = NOW() 
+                   WHERE id = $4;`,
+                  [Number(sumRes.rows[0].total_stock), Number(sumRes.rows[0].total_pinamar), Number(sumRes.rows[0].total_montevideo), item.productId]
+                );
+              }
             } else {
               // Check existing stock of product
               const checkRes = await client.query(
@@ -5755,6 +5834,24 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
                     [quantity, variantId]
                   );
                 }
+
+                // Always synchronize parent product stock with sum of active variants
+                const sumRes = await client.query(
+                  `SELECT COALESCE(SUM(stock), 0) as total_stock, 
+                          COALESCE(SUM(stock_pinamar), 0) as total_pinamar, 
+                          COALESCE(SUM(stock_montevideo), 0) as total_montevideo 
+                   FROM public.product_variants 
+                   WHERE product_id = $1 AND active = true;`,
+                  [productId]
+                );
+                if (sumRes.rows.length > 0) {
+                  await client.query(
+                    `UPDATE public.products 
+                     SET stock = $1, stock_pinamar = $2, stock_montevideo = $3, updated_at = NOW() 
+                     WHERE id = $4;`,
+                    [Number(sumRes.rows[0].total_stock), Number(sumRes.rows[0].total_pinamar), Number(sumRes.rows[0].total_montevideo), productId]
+                  );
+                }
               }
             } else {
               const prodCheck = await client.query(
@@ -5998,6 +6095,28 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
                 await client.query(
                   "UPDATE public.products SET stock_montevideo = GREATEST(0, stock_montevideo - $1), stock_pinamar = stock_pinamar + $1, updated_at = NOW() WHERE id = $2;",
                   [item.quantity, item.productId]
+                );
+              }
+            }
+          }
+
+          // Synchronize affected parent products with variants sum
+          for (const item of sanitizedItems) {
+            if (item.variantId) {
+              const sumRes = await client.query(
+                `SELECT COALESCE(SUM(stock), 0) as total_stock, 
+                        COALESCE(SUM(stock_pinamar), 0) as total_pinamar, 
+                        COALESCE(SUM(stock_montevideo), 0) as total_montevideo 
+                 FROM public.product_variants 
+                 WHERE product_id = $1 AND active = true;`,
+                [item.productId]
+              );
+              if (sumRes.rows.length > 0) {
+                await client.query(
+                  `UPDATE public.products 
+                   SET stock = $1, stock_pinamar = $2, stock_montevideo = $3, updated_at = NOW() 
+                   WHERE id = $4;`,
+                  [Number(sumRes.rows[0].total_stock), Number(sumRes.rows[0].total_pinamar), Number(sumRes.rows[0].total_montevideo), item.productId]
                 );
               }
             }
@@ -10246,7 +10365,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
 
         // Deduct stock in-memory if status is pago_aprobado
         if (status === "pago_aprobado" && !bypassStockDeduction) {
-          deductStockMemory(verifiedItems);
+          deductStockMemory(verifiedItems, sanitizedDepositoOrigen);
         }
 
         if (validCouponCodeToSave) {
@@ -10538,7 +10657,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
 
           // If the new edited state requires stock deduction, deduct it
           if (finalStatus === "pago_aprobado" && !bypassStockDeduction) {
-            deductStockMemory(verifiedItems);
+            deductStockMemory(verifiedItems, sanitizedDepositoOrigen);
           }
 
           fs.writeFileSync(STORE_FILE, JSON.stringify(currentStoreState, null, 2), "utf-8");
@@ -10606,7 +10725,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
           if (shouldDeduct) {
             const order = currentStoreState.orders.find(o => o.id === id);
             if (order && order.items) {
-              deductStockMemory(order.items);
+              deductStockMemory(order.items, order.depositoOrigen);
             }
           }
 
@@ -11980,7 +12099,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
           if (p.active === false || p.paused === true) return false;
           const inCat = p.categoria_id === matchedCat.id || (p.category && p.category.toLowerCase() === matchedCat.nombre.toLowerCase());
           if (!matchedSub) return inCat;
-          return inCat && (p.subcategoria_id === matchedSub.id || (p.subcategoria && p.subcategoria.toLowerCase() === matchedSub.nombre.toLowerCase()));
+          return inCat && (p.subcategoria_id === matchedSub.id || ((p as any).subcategoria && (p as any).subcategoria.toLowerCase() === matchedSub.nombre.toLowerCase()));
         });
 
         // Structured Data Schema.org for CollectionPage & ItemList

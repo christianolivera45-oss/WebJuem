@@ -143,6 +143,8 @@ export interface SiteSettings {
   deliveryActive?: boolean;
   deliveryMethods?: DeliveryMethod[];
   invoiceOptionActive?: boolean;
+  enableImageWatermark?: boolean;
+  watermarkText?: string;
   freeShippingActive?: boolean;
   freeShippingMinAmount?: number;
   freeShippingRegions?: string;

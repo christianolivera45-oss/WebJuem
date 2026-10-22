@@ -4,6 +4,7 @@ import { X, ShoppingCart, MessageSquare, ShieldCheck, Truck, RefreshCw, ChevronL
 import { motion, AnimatePresence } from "motion/react";
 import { Product, SiteSettings, is3DProduct, isGenericSize, isGenericColor } from "../types";
 import ProductCard from "./ProductCard";
+import ImageWatermark from "./ImageWatermark";
 
 export const PRINT_MATERIALS = [
   { id: "PLA", name: "PLA", priceMultiplier: 1.0, description: "Biodegradable, excelente acabado estético y variedad de colores." },
@@ -1116,6 +1117,14 @@ Me gustaría coordinar stock, fabricación y envío.`;
                 />
               </AnimatePresence>
 
+              {/* Anti-download Watermark & Shield */}
+              {settings?.enableImageWatermark !== false && (
+                <ImageWatermark 
+                  text={settings?.watermarkText || "JUEM MVD"} 
+                  variant="detail" 
+                />
+              )}
+
               {/* Floating expand indicator */}
               <div className="absolute top-2.5 right-2.5 sm:top-3 sm:right-3 bg-black/70 backdrop-blur-md rounded-full p-2 text-white/90 opacity-0 group-hover/main-img:opacity-100 transition-all duration-300 z-10 shadow-lg hover:scale-105 hover:bg-black/90 flex items-center gap-1.5 px-2.5">
                 <Maximize2 className="w-3.5 h-3.5 text-[#E6BF76]" />
@@ -1687,6 +1696,14 @@ Me gustaría coordinar stock, fabricación y envío.`;
                       loading="eager"
                     />
                   </AnimatePresence>
+
+                  {/* Anti-download Watermark & Shield in Lightbox */}
+                  {settings?.enableImageWatermark !== false && (
+                    <ImageWatermark 
+                      text={settings?.watermarkText || "JUEM MVD"} 
+                      variant="lightbox" 
+                    />
+                  )}
 
                   {/* Prev / Next buttons inside/overlapping the image edges */}
                   {allImages.length > 1 && (

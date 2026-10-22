@@ -431,6 +431,8 @@ export const DEFAULT_SETTINGS: SiteSettings = {
   promotionBannerTransition: "slide",
   heroSliderTransition: "slide",
   showPromotionBanner: true,
+  enableImageWatermark: true,
+  watermarkText: "JUEM MVD",
   lowStockThreshold: 5,
   mercadopagoActive: true,
   mercadopagoMessage: "Paga de manera 100% segura con cuotas sin recargo utilizando tus tarjetas favoritas: OCA, VISA, MasterCard, Lider y Diners, o en redes de cobranza Abitab y Redpagos. Te enviaremos el link de pago seguro al iniciar el chat de WhatsApp.",

@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect } from "react";
 import { Product, SiteSettings } from "../types";
 import { ShoppingCart, Eye, Tag, Phone } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import ImageWatermark from "./ImageWatermark";
 
 interface ProductCardProps {
   key?: string;
@@ -228,6 +229,14 @@ Precio: $${Math.round(product.price)}
             onError={handleImageError}
           />
         </AnimatePresence>
+
+        {/* Anti-download Watermark & Shield */}
+        {settings?.enableImageWatermark !== false && (
+          <ImageWatermark 
+            text={settings?.watermarkText || "JUEM MVD"} 
+            variant="card" 
+          />
+        )}
 
         {/* Promo Badge */}
         {isDiscounted && (

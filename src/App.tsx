@@ -103,6 +103,7 @@ import {
   Instagram,
   Facebook,
   Phone,
+  Shield,
   ShieldCheck,
   Receipt,
   Scale,
@@ -531,6 +532,30 @@ export default function App() {
       document.body.style.overflow = "";
     };
   }, [isDeliveryMapOpen]);
+
+  // Anti-download image protection: prevents right-click saving and dragging images to desktop/tabs
+  useEffect(() => {
+    const handleContextMenu = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === "IMG" || target.closest("img"))) {
+        e.preventDefault();
+      }
+    };
+    const handleDragStart = (e: DragEvent) => {
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === "IMG" || target.closest("img"))) {
+        e.preventDefault();
+      }
+    };
+
+    document.addEventListener("contextmenu", handleContextMenu);
+    document.addEventListener("dragstart", handleDragStart);
+
+    return () => {
+      document.removeEventListener("contextmenu", handleContextMenu);
+      document.removeEventListener("dragstart", handleDragStart);
+    };
+  }, []);
 
   // Sorting & Filtering States
   const [sortBy, setSortBy] = useState<string>("featured");
@@ -8112,6 +8137,56 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                           </div>
                         </div>
                       </div>
+
+                      {/* Anti-download & Image Watermark Protection Card */}
+                      <div className="border border-[#D4A55A]/20 rounded-2xl p-4 bg-[#050B1A]/60 space-y-3 relative z-10">
+                        <div className="flex items-center justify-between border-b border-[#D4A55A]/15 pb-2">
+                          <div className="flex items-center gap-2">
+                            <Shield className="h-4 w-4 text-[#E6BF76]" />
+                            <span className="text-xs font-bold uppercase tracking-wider text-[#E6BF76] font-serif">
+                              Protección de Imágenes y Marca de Agua
+                            </span>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={editingSettings.enableImageWatermark !== false}
+                              onChange={(e) => setEditingSettings({ ...editingSettings, enableImageWatermark: e.target.checked })}
+                              className="sr-only peer"
+                            />
+                            <div className="w-9 h-5 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#D4A55A]"></div>
+                          </label>
+                        </div>
+
+                        <p className="text-[10.5px] text-[#A0AEC0] font-sans leading-relaxed">
+                          Protege el catálogo contra descargas no autorizadas bloqueando el clic derecho, arrastre a escritorio y menú nativo en celulares. Además, superpone una sutil marca de agua de autoría en las fotos.
+                        </p>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-[10px] font-extrabold text-[#E6BF76] uppercase tracking-widest mb-1.5">
+                              Texto de Marca de Agua
+                            </label>
+                            <input
+                              type="text"
+                              value={editingSettings.watermarkText || "JUEM MVD"}
+                              onChange={(e) => setEditingSettings({ ...editingSettings, watermarkText: e.target.value })}
+                              placeholder="JUEM MVD"
+                              className="w-full px-3 py-2 bg-[#050B1A] border border-[#D4A55A]/25 rounded-xl text-xs outline-none focus:border-[#D4A55A]/55 focus:ring-1 focus:ring-[#D4A55A]/30 text-[#F4EAD7] font-sans"
+                            />
+                          </div>
+
+                          <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-[#030611] border border-[#D4A55A]/15 text-[10px] text-[#F4EAD7]">
+                            <div className="p-1.5 rounded-lg bg-[#D4A55A]/10 text-[#E6BF76] shrink-0">
+                              <ShieldCheck className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <p className="font-bold text-[#E6BF76]">Protección Activa</p>
+                              <p className="text-[#A0AEC0] text-[9.5px]">Bloqueo de clic derecho, drag & drop y pulsación larga en móviles.</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                       
                     </div>
 
@@ -11389,7 +11464,7 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                         {/* Almacenes y Stock por Sucursal Card */}
                         <div className="p-6 rounded-2xl bg-[#050B1A]/40 border border-zinc-800 space-y-5">
                           <h4 className="text-xs font-black text-emerald-400 uppercase tracking-wider flex items-center gap-2">
-                            <span className="p-1.5 bg-emerald-500/10 rounded-lg text-emerald-400">������</span>
+                            <span className="p-1.5 bg-emerald-500/10 rounded-lg text-emerald-400">📦</span>
                             <span>Almacenes y Stock por Sucursal</span>
                           </h4>
 
@@ -16323,43 +16398,49 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                               </div>
                             </div>
 
-                            <div className="bg-white dark:bg-zinc-950 rounded-2xl border border-slate-200 dark:border-zinc-800 shadow-sm overflow-hidden">
-                              <div className="p-4 border-b border-slate-200 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-slate-50/50 dark:bg-zinc-950/50">
-                                <div className="flex items-center gap-2.5">
-                                  <span className="h-2 w-2 rounded-full bg-indigo-500 animate-pulse"></span>
-                                  <h3 className="font-extrabold text-xs uppercase text-slate-900 dark:text-zinc-200 tracking-wider">
-                                    INVENTARIO CENTRAL RESUMIDO
-                                  </h3>
-                                  <span className="px-2 py-0.5 text-[10px] font-bold bg-slate-200 dark:bg-zinc-850 text-slate-700 dark:text-zinc-300 rounded-full font-mono">
-                                    {filteredStockItems.length} items listados
-                                  </span>
+                            {/* ENCABEZADO LIBRE: INVENTARIO CENTRAL RESUMIDO FUERA DE LA CAJA */}
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-2 pb-1">
+                              <div className="flex items-center gap-2.5 flex-wrap">
+                                <span className="h-2.5 w-2.5 rounded-full bg-indigo-500 animate-pulse"></span>
+                                <h3 className="font-black text-sm uppercase text-slate-900 dark:text-zinc-100 tracking-wider font-sans">
+                                  INVENTARIO CENTRAL RESUMIDO
+                                </h3>
+                                <span className="px-2.5 py-0.5 text-[10px] font-extrabold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 rounded-full font-mono border border-indigo-200/50 dark:border-indigo-800/50">
+                                  {filteredStockItems.length} items listados
+                                </span>
 
-                                  {stockMarginFilter !== "all" && (
-                                    <button
-                                      type="button"
-                                      onClick={() => setStockMarginFilter("all")}
-                                      className="px-2 py-0.5 text-[10px] font-extrabold bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 rounded-full border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-200 transition cursor-pointer"
-                                    >
-                                      Filtro activo: {stockMarginFilter} (Quitar ✕)
-                                    </button>
-                                  )}
-                                </div>
+                                {stockMarginFilter !== "all" && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setStockMarginFilter("all")}
+                                    className="px-2.5 py-0.5 text-[10px] font-extrabold bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 rounded-full border border-rose-200 dark:border-rose-800 hover:bg-rose-200 transition cursor-pointer flex items-center gap-1"
+                                  >
+                                    <span>Filtro activo: {stockMarginFilter}</span>
+                                    <span className="font-bold">✕</span>
+                                  </button>
+                                )}
                               </div>
 
-                              {/* Spreadsheet Table Container */}
-                              <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)] custom-scrollbar">
-                                <table className="w-full text-left border-separate border-spacing-0">
-                                  <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-zinc-900 shadow-[0_2px_10px_rgba(0,0,0,0.05)]">
-                                    <tr className="bg-slate-50 dark:bg-zinc-900 text-slate-500 dark:text-zinc-400 font-bold uppercase text-[10px] tracking-wider select-none">
+                              <div className="text-[11px] text-slate-500 dark:text-zinc-400 font-medium hidden sm:flex items-center gap-1.5">
+                                <span>⚡ Edición de stock y costos en línea</span>
+                              </div>
+                            </div>
+
+                            {/* CONTENEDOR DE TABLA: AJUSTADO 100% ANCHO SIN BARRA DE DESPLAZAMIENTO HORIZONTAL */}
+                            <div className="bg-white dark:bg-zinc-950 rounded-2xl border border-slate-200 dark:border-zinc-800 shadow-sm overflow-hidden">
+                              <div className="w-full">
+                                <table className="w-full text-left border-separate border-spacing-0 table-auto">
+                                  <thead>
+                                    <tr className="bg-slate-50 dark:bg-zinc-900 text-slate-500 dark:text-zinc-400 font-bold uppercase text-[10px] tracking-wider select-none border-b border-slate-200 dark:border-zinc-800">
                                       
                                       {/* Columna 1: SKU / Imagen */}
                                       <th 
                                         onClick={() => toggleSort('codigo')}
-                                        className="py-3 px-5 text-left w-36 bg-slate-50 dark:bg-zinc-900 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all group"
+                                        className="py-2.5 px-2 text-left w-28 bg-slate-50 dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-850 transition-all group whitespace-nowrap"
                                         title="Ordenar por SKU"
                                       >
                                         <div className="flex items-center gap-1">
-                                          <span>SKU / Imagen</span>
+                                          <span>SKU / Foto</span>
                                           <span className="text-[9px] text-indigo-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 font-bold transition-transform">
                                             {sortField === 'codigo' ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
                                           </span>
@@ -16369,7 +16450,7 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                       {/* Columna 2: Producto */}
                                       <th 
                                         onClick={() => toggleSort('nombre')}
-                                        className="py-3 px-4 bg-slate-50 dark:bg-zinc-900 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all group"
+                                        className="py-2.5 px-2 bg-slate-50 dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-850 transition-all group"
                                         title="Ordenar por Nombre"
                                       >
                                         <div className="flex items-center gap-1">
@@ -16383,11 +16464,11 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                       {/* Columna 3: Compra (Costo) */}
                                       <th 
                                         onClick={() => toggleSort('costo')}
-                                        className="py-3 px-4 text-right bg-slate-50 dark:bg-zinc-900 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all group"
+                                        className="py-2.5 px-1.5 text-right bg-slate-50 dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-850 transition-all group whitespace-nowrap"
                                         title="Ordenar por Costo de Compra"
                                       >
                                         <div className="inline-flex items-center justify-end gap-1 w-full">
-                                          <span>Compra (Costo)</span>
+                                          <span>Costo</span>
                                           <span className="text-[9px] text-indigo-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 font-bold transition-transform">
                                             {sortField === 'costo' ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
                                           </span>
@@ -16397,11 +16478,11 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                       {/* Columna 4: Venta Local */}
                                       <th 
                                         onClick={() => toggleSort('precio_venta')}
-                                        className="py-3 px-4 text-right bg-slate-50 dark:bg-zinc-900 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all group"
+                                        className="py-2.5 px-1.5 text-right bg-slate-50 dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-850 transition-all group whitespace-nowrap"
                                         title="Ordenar por Venta Local"
                                       >
                                         <div className="inline-flex items-center justify-end gap-1 w-full">
-                                          <span>Venta Local</span>
+                                          <span>Venta</span>
                                           <span className="text-[9px] text-indigo-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 font-bold transition-transform">
                                             {sortField === 'precio_venta' ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
                                           </span>
@@ -16411,11 +16492,11 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                       {/* NUEVA Columna 5: Ganancia Neta ($) */}
                                       <th 
                                         onClick={() => toggleSort('ganancia')}
-                                        className="py-3 px-4 text-right bg-emerald-500/5 dark:bg-emerald-500/10 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-emerald-500/20 transition-all group"
+                                        className="py-2.5 px-1.5 text-right bg-emerald-500/5 dark:bg-emerald-500/10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-emerald-500/20 transition-all group whitespace-nowrap"
                                         title="Ordenar por Ganancia Neta ($)"
                                       >
                                         <div className="inline-flex items-center justify-end gap-1 w-full text-emerald-700 dark:text-emerald-400">
-                                          <span>Ganancia ($)</span>
+                                          <span>Ganancia</span>
                                           <span className="text-[9px] font-bold">
                                             {sortField === 'ganancia' ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
                                           </span>
@@ -16425,7 +16506,7 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                       {/* NUEVA Columna 6: Margen % */}
                                       <th 
                                         onClick={() => toggleSort('margen')}
-                                        className="py-3 px-4 text-right bg-indigo-500/5 dark:bg-indigo-500/10 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-indigo-500/20 transition-all group"
+                                        className="py-2.5 px-1.5 text-right bg-indigo-500/5 dark:bg-indigo-500/10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-indigo-500/20 transition-all group whitespace-nowrap"
                                         title="Ordenar por Margen %"
                                       >
                                         <div className="inline-flex items-center justify-end gap-1 w-full text-indigo-700 dark:text-indigo-300">
@@ -16436,14 +16517,14 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                         </div>
                                       </th>
 
-                                      {/* NUEVA Columna 7: Diagnóstico & Estrategia de Precio */}
+                                      {/* NUEVA Columna 7: Diagnóstico */}
                                       <th 
                                         onClick={() => toggleSort('diagnostico')}
-                                        className="py-3 px-4 text-center bg-slate-50 dark:bg-zinc-900 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all group min-w-[150px]"
+                                        className="py-2.5 px-1.5 text-center bg-slate-50 dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-850 transition-all group whitespace-nowrap"
                                         title="Ordenar por Estado / Diagnóstico de Precio"
                                       >
                                         <div className="inline-flex items-center justify-center gap-1 w-full">
-                                          <span>Diagnóstico de Precio</span>
+                                          <span>Diagnóstico</span>
                                           <span className="text-[9px] text-indigo-400 font-bold">
                                             {sortField === 'diagnostico' ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
                                           </span>
@@ -16453,11 +16534,11 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                       {/* Columna 8: Venta ML */}
                                       <th 
                                         onClick={() => toggleSort('precio_venta_ml')}
-                                        className="py-3 px-4 text-right bg-slate-50 dark:bg-zinc-900 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all group"
+                                        className="py-2.5 px-1.5 text-right bg-slate-50 dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-850 transition-all group whitespace-nowrap"
                                         title="Ordenar por Venta ML"
                                       >
                                         <div className="inline-flex items-center justify-end gap-1 w-full">
-                                          <span>Venta ML</span>
+                                          <span>ML Venta</span>
                                           <span className="text-[9px] text-indigo-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 font-bold transition-transform">
                                             {sortField === 'precio_venta_ml' ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
                                           </span>
@@ -16467,11 +16548,11 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                       {/* Columna 9: Comisión ML */}
                                       <th 
                                         onClick={() => toggleSort('comision_ml')}
-                                        className="py-3 px-4 text-right bg-slate-50 dark:bg-zinc-900 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all group"
+                                        className="py-2.5 px-1.5 text-right bg-slate-50 dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-850 transition-all group whitespace-nowrap"
                                         title="Ordenar por Comisión ML"
                                       >
                                         <div className="inline-flex items-center justify-end gap-1 w-full">
-                                          <span>Comisión ML</span>
+                                          <span>ML Com.</span>
                                           <span className="text-[9px] text-indigo-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 font-bold transition-transform">
                                             {sortField === 'comision_ml' ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ' ↕'}
                                           </span>
@@ -16481,7 +16562,7 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                       {/* Columna 10: Stock Mvd */}
                                       <th 
                                         onClick={() => toggleSort('mvd_stock')}
-                                        className="py-3 px-4 text-center text-slate-550 dark:text-zinc-400 bg-slate-50 dark:bg-zinc-900 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all group"
+                                        className="py-2.5 px-1 text-center text-slate-500 dark:text-zinc-400 bg-slate-50 dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-850 transition-all group whitespace-nowrap"
                                         title="Ordenar por Stock Montevideo"
                                       >
                                         <div className="inline-flex items-center justify-center gap-1 w-full">
@@ -16495,7 +16576,7 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                       {/* Columna 11: Stock Pin */}
                                       <th 
                                         onClick={() => toggleSort('pin_stock')}
-                                        className="py-3 px-4 text-center text-slate-550 dark:text-zinc-400 bg-slate-50 dark:bg-zinc-900 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all group"
+                                        className="py-2.5 px-1 text-center text-slate-500 dark:text-zinc-400 bg-slate-50 dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-850 transition-all group whitespace-nowrap"
                                         title="Ordenar por Stock Pinar"
                                       >
                                         <div className="inline-flex items-center justify-center gap-1 w-full">
@@ -16506,7 +16587,8 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                         </div>
                                       </th>
 
-                                      <th className="py-3 px-4 text-center bg-slate-50 dark:bg-zinc-900 sticky top-0 z-10 border-b border-slate-200 dark:border-zinc-800 uppercase text-[10px] tracking-wider select-none">
+                                      {/* Columna 12: Acciones */}
+                                      <th className="py-2.5 px-2 text-center bg-slate-50 dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 uppercase text-[10px] tracking-wider select-none whitespace-nowrap">
                                         Acciones
                                       </th>
 
@@ -16528,8 +16610,8 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                             className="hover:bg-slate-50/80 dark:hover:bg-zinc-900/30 transition text-xs group"
                                           >
                                             {/* SKU / IMAGEN */}
-                                            <td className="py-3 px-4">
-                                              <div className="flex items-center gap-2.5">
+                                            <td className="py-2 px-2 whitespace-nowrap">
+                                              <div className="flex items-center gap-2">
                                                 <div className="relative group/img shrink-0">
                                                   <img
                                                     src={item.imageUrl || "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=100&q=80"}
@@ -16540,11 +16622,11 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                                       sku: item.sku,
                                                       extraInfo: item.isVariant ? `Variante: ${item.variantName}` : undefined
                                                     })}
-                                                    className="h-10 w-10 rounded-lg object-cover bg-zinc-800 border border-slate-250 dark:border-zinc-800 transition-all duration-200 cursor-zoom-in hover:scale-105 hover:ring-2 hover:ring-indigo-500/50"
+                                                    className="h-8 w-8 rounded-lg object-cover bg-zinc-800 border border-slate-250 dark:border-zinc-800 transition-all duration-200 cursor-zoom-in hover:scale-105 hover:ring-2 hover:ring-indigo-500/50"
                                                   />
                                                   
                                                   {/* Hover Mini Card */}
-                                                  <div className="absolute left-12 top-1/2 -translate-y-1/2 opacity-0 pointer-events-none scale-95 group-hover/img:opacity-100 group-hover/img:scale-100 transition-all duration-200 z-50 w-48 shadow-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-1 rounded-lg">
+                                                  <div className="absolute left-10 top-1/2 -translate-y-1/2 opacity-0 pointer-events-none scale-95 group-hover/img:opacity-100 group-hover/img:scale-100 transition-all duration-200 z-50 w-48 shadow-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-1 rounded-lg">
                                                     <img
                                                       src={item.imageUrl || "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=400&q=80"}
                                                       alt={item.sku}
@@ -16565,43 +16647,53 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                                     </div>
                                                   </div>
                                                 </div>
-                                                <span className="font-mono text-[11px] font-bold tracking-tight text-indigo-600 dark:text-indigo-400 truncate max-w-[100px]" title={item.sku}>
+                                                <button
+                                                  type="button"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setTraceabilityProductId(String(item.productId));
+                                                    setTraceabilitySku(item.sku || item.productObj?.codigo || null);
+                                                    navigateAdminSection("traceability");
+                                                  }}
+                                                  className="font-mono text-[11px] font-bold tracking-tight text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 hover:underline truncate max-w-[85px] text-left cursor-pointer transition"
+                                                  title={`Ver Trazabilidad de ${item.sku || item.name} (clic para abrir)`}
+                                                >
                                                   {item.sku}
-                                                </span>
+                                                </button>
                                               </div>
                                             </td>
 
                                             {/* PRODUCTO */}
-                                            <td className="py-3 px-4 min-w-[200px]">
-                                              <div className="flex flex-col">
-                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                            <td className="py-2 px-2 max-w-[180px] xl:max-w-[240px]">
+                                              <div className="flex flex-col min-w-0">
+                                                <div className="flex items-center gap-1.5 min-w-0">
                                                   <a
                                                     href={`/producto/${generateSlug(item.name)}`}
                                                     target="_blank"
                                                     rel="noopener noreferrer"
-                                                    className="font-bold text-slate-800 dark:text-zinc-200 line-clamp-1 leading-snug hover:text-indigo-600 dark:hover:text-indigo-400 hover:underline transition-colors cursor-pointer inline-flex items-center gap-1 group/stock-link"
+                                                    className="font-bold text-xs text-slate-800 dark:text-zinc-200 truncate hover:text-indigo-600 dark:hover:text-indigo-400 hover:underline transition-colors cursor-pointer inline-flex items-center gap-1 group/stock-link"
                                                     title={`Ver "${item.name}" en la web (abre en nueva pestaña)`}
                                                   >
-                                                    <span>{item.name}</span>
-                                                    <ExternalLink className="h-3 w-3 opacity-0 group-hover/stock-link:opacity-100 transition-opacity shrink-0" />
+                                                    <span className="truncate">{item.name}</span>
+                                                    <ExternalLink className="h-2.5 w-2.5 opacity-0 group-hover/stock-link:opacity-100 transition-opacity shrink-0" />
                                                   </a>
                                                   {item.productObj?.isCombo && (
-                                                    <span className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase tracking-wide bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 py-0.5 px-1.5 rounded" title="Artículo Compuesto (Combo)">
-                                                      📦 Compuesto
+                                                    <span className="shrink-0 inline-flex items-center gap-1 text-[8px] font-extrabold uppercase tracking-wide bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 py-0.2 px-1 rounded" title="Artículo Compuesto (Combo)">
+                                                      📦 Combo
                                                     </span>
                                                   )}
                                                 </div>
                                                 {item.isVariant && (
-                                                  <span className="text-[10px] font-extrabold font-mono mt-0.5 tracking-wide bg-indigo-550/5 dark:bg-indigo-450/5 text-indigo-500 py-0.5 px-1.5 rounded-sm self-start">
-                                                    Variante: {item.variantName}
+                                                  <span className="text-[9px] font-extrabold font-mono mt-0.5 tracking-wide bg-indigo-550/5 dark:bg-indigo-450/5 text-indigo-500 py-0.2 px-1 rounded-sm self-start truncate max-w-full">
+                                                    Var: {item.variantName}
                                                   </span>
                                                 )}
                                               </div>
                                             </td>
 
                                             {/* COMPRA (COSTO) */}
-                                            <td className="py-3 px-4 text-right">
-                                              <div className="flex items-center justify-end gap-0.5 font-mono">
+                                            <td className="py-2 px-1.5 text-right whitespace-nowrap">
+                                              <div className="flex items-center justify-end gap-0.5 font-mono text-xs">
                                                 <span className="text-zinc-400 font-bold">$</span>
                                                 <input
                                                   type="number"
@@ -16618,22 +16710,22 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                                       (e.target as HTMLInputElement).blur();
                                                     }
                                                   }}
-                                                  className="w-16 text-right bg-transparent hover:bg-slate-100 dark:hover:bg-zinc-900 focus:bg-white dark:focus:bg-zinc-950 px-1 py-0.5 rounded-md border-0 focus:ring-1 focus:ring-indigo-500 font-bold text-slate-700 dark:text-zinc-200 outline-hidden transition"
+                                                  className="w-14 text-right bg-transparent hover:bg-slate-100 dark:hover:bg-zinc-900 focus:bg-white dark:focus:bg-zinc-950 px-1 py-0.5 rounded border-0 focus:ring-1 focus:ring-indigo-500 font-bold text-slate-700 dark:text-zinc-200 outline-hidden transition text-xs"
                                                 />
                                               </div>
                                             </td>
 
                                             {/* VENTA LOCAL */}
-                                            <td className="py-3 px-4 text-right select-none">
-                                              <div className="flex items-center justify-end gap-1 font-mono text-indigo-600 dark:text-indigo-400 font-extrabold pr-2">
+                                            <td className="py-2 px-1.5 text-right select-none whitespace-nowrap">
+                                              <div className="flex items-center justify-end gap-0.5 font-mono text-xs text-indigo-600 dark:text-indigo-400 font-extrabold">
                                                 <span className="opacity-80">$</span>
                                                 <span>{Math.round(item.price || 0).toLocaleString("es-UY")}</span>
-                                                <Lock className="h-3 w-3 text-zinc-400 dark:text-zinc-500 shrink-0 opacity-50 ml-1.5" title="La columna Venta Local no puede ser cambiada por el usuario" />
+                                                <Lock className="h-2.5 w-2.5 text-zinc-400 dark:text-zinc-500 shrink-0 opacity-50 ml-0.5" title="La columna Venta Local no puede ser cambiada por el usuario" />
                                               </div>
                                             </td>
 
                                             {/* GANANCIA ($) */}
-                                            <td className="py-3 px-4 text-right font-mono bg-emerald-500/5 dark:bg-emerald-500/10">
+                                            <td className="py-2 px-1.5 text-right font-mono text-xs whitespace-nowrap bg-emerald-500/5 dark:bg-emerald-500/10">
                                               {marginInfo.cost <= 0 ? (
                                                 <span className="text-zinc-400 text-[10px] font-bold">—</span>
                                               ) : (
@@ -16644,30 +16736,30 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                             </td>
 
                                             {/* MARGEN % */}
-                                            <td className="py-3 px-4 text-right font-mono bg-indigo-500/5 dark:bg-indigo-500/10">
+                                            <td className="py-2 px-1.5 text-right font-mono whitespace-nowrap bg-indigo-500/5 dark:bg-indigo-500/10">
                                               {marginInfo.cost <= 0 ? (
                                                 <span className="text-zinc-400 text-[10px] font-bold">N/A</span>
                                               ) : (
-                                                <div className="flex flex-col items-end">
-                                                  <span className={`font-black ${marginInfo.marginPct < 20 ? "text-amber-600 dark:text-amber-400" : "text-indigo-600 dark:text-indigo-300"}`}>
+                                                <div className="flex flex-col items-end leading-tight">
+                                                  <span className={`font-black text-xs ${marginInfo.marginPct < 20 ? "text-amber-600 dark:text-amber-400" : "text-indigo-600 dark:text-indigo-300"}`}>
                                                     {marginInfo.marginPct.toFixed(1)}%
                                                   </span>
-                                                  <span className="text-[9px] text-zinc-400 font-normal">
-                                                    (Markup: {marginInfo.markupPct.toFixed(0)}%)
+                                                  <span className="text-[8px] text-zinc-400 font-normal">
+                                                    {marginInfo.markupPct.toFixed(0)}% mk
                                                   </span>
                                                 </div>
                                               )}
                                             </td>
 
                                             {/* DIAGNÓSTICO DE PRECIO */}
-                                            <td className="py-3 px-4 text-center">
+                                            <td className="py-2 px-1.5 text-center whitespace-nowrap">
                                               <div className="relative group/diag inline-block">
-                                                <span className={`px-2 py-0.5 text-[10px] font-extrabold rounded-md border inline-flex items-center gap-1 cursor-help ${marginInfo.badgeClass}`}>
+                                                <span className={`px-1.5 py-0.5 text-[9px] font-extrabold rounded border inline-flex items-center gap-1 cursor-help ${marginInfo.badgeClass}`}>
                                                   {marginInfo.label}
                                                 </span>
 
                                                 {/* Tooltip explicativo de estrategia de precio */}
-                                                <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 opacity-0 pointer-events-none group-hover/diag:opacity-100 transition-all duration-200 z-50 w-56 p-2 bg-slate-900 text-white dark:bg-zinc-900 dark:border dark:border-zinc-700 text-[10px] rounded-lg shadow-xl text-left leading-snug">
+                                                <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 opacity-0 pointer-events-none group-hover/diag:opacity-100 transition-all duration-200 z-50 w-52 p-2 bg-slate-900 text-white dark:bg-zinc-900 dark:border dark:border-zinc-700 text-[10px] rounded-lg shadow-xl text-left leading-snug">
                                                   <p className="font-bold border-b border-white/10 pb-1 mb-1 text-indigo-300">
                                                     💡 Recomendación de Precio
                                                   </p>
@@ -16676,259 +16768,236 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                               </div>
                                             </td>
 
-                                      {/* VENTA ML */}
-                                      <td className="py-3 px-4 text-right">
-                                        <div className="flex items-center justify-end gap-0.5 font-mono">
-                                          <span className="text-zinc-400 font-bold">$</span>
-                                          <input
-                                            type="number"
-                                            defaultValue={Math.round(item.precioVentaML || 0)}
-                                            onBlur={(e) => {
-                                              const val = Math.round(parseFloat(e.target.value) || 0);
-                                              if (val !== Math.round(item.precioVentaML || 0)) {
-                                                handleUpdateStockItem(item, "precioVentaML", val);
-                                                showToast(`Precio ML de ${item.sku} actualizado a $${val}`, "success");
-                                              }
-                                            }}
-                                            onKeyDown={(e) => {
-                                              if (e.key === "Enter") {
-                                                (e.target as HTMLInputElement).blur();
-                                              }
-                                            }}
-                                            className="w-16 text-right bg-transparent hover:bg-slate-100 dark:hover:bg-zinc-900 focus:bg-white dark:focus:bg-zinc-950 px-1 py-0.5 rounded-md border-0 focus:ring-1 focus:ring-indigo-500 font-bold text-slate-700 dark:text-zinc-200 outline-hidden transition"
-                                          />
-                                        </div>
-                                      </td>
+                                            {/* VENTA ML */}
+                                            <td className="py-2 px-1.5 text-right whitespace-nowrap">
+                                              <div className="flex items-center justify-end gap-0.5 font-mono text-xs">
+                                                <span className="text-zinc-400 font-bold">$</span>
+                                                <input
+                                                  type="number"
+                                                  defaultValue={Math.round(item.precioVentaML || 0)}
+                                                  onBlur={(e) => {
+                                                    const val = Math.round(parseFloat(e.target.value) || 0);
+                                                    if (val !== Math.round(item.precioVentaML || 0)) {
+                                                      handleUpdateStockItem(item, "precioVentaML", val);
+                                                      showToast(`Precio ML de ${item.sku} actualizado a $${val}`, "success");
+                                                    }
+                                                  }}
+                                                  onKeyDown={(e) => {
+                                                    if (e.key === "Enter") {
+                                                      (e.target as HTMLInputElement).blur();
+                                                    }
+                                                  }}
+                                                  className="w-14 text-right bg-transparent hover:bg-slate-100 dark:hover:bg-zinc-900 focus:bg-white dark:focus:bg-zinc-950 px-1 py-0.5 rounded border-0 focus:ring-1 focus:ring-indigo-500 font-bold text-slate-700 dark:text-zinc-200 outline-hidden transition text-xs"
+                                                />
+                                              </div>
+                                            </td>
 
-                                      {/* COMISIÓN ML */}
-                                      <td className="py-3 px-4 text-right">
-                                        <div className="flex flex-col items-end">
-                                          <div className="flex items-center justify-end gap-0.5 font-mono">
-                                            <span className="text-zinc-400 font-bold">$</span>
-                                            <input
-                                              type="number"
-                                              defaultValue={Math.round(item.comisionML || 0)}
-                                              onBlur={(e) => {
-                                                const val = Math.round(parseFloat(e.target.value) || 0);
-                                                if (val !== Math.round(item.comisionML || 0)) {
-                                                  handleUpdateStockItem(item, "comisionML", val);
-                                                  showToast(`Comisión ML de ${item.sku} actualizada a $${val}`, "success");
-                                                }
-                                              }}
-                                              onKeyDown={(e) => {
-                                                if (e.key === "Enter") {
-                                                  (e.target as HTMLInputElement).blur();
-                                                }
-                                              }}
-                                              className="w-16 text-right bg-transparent hover:bg-slate-100 dark:hover:bg-zinc-900 focus:bg-white dark:focus:bg-zinc-950 px-1 py-0.5 rounded-md border-0 focus:ring-1 focus:ring-indigo-500 font-bold text-slate-700 dark:text-zinc-200 outline-hidden transition"
-                                            />
-                                          </div>
-                                          <span className="text-[8px] font-extrabold uppercase tracking-widest text-zinc-400 font-sans mr-2 select-none">
-                                            FIJO
-                                          </span>
-                                        </div>
-                                      </td>
+                                            {/* COMISIÓN ML */}
+                                            <td className="py-2 px-1.5 text-right whitespace-nowrap">
+                                              <div className="flex flex-col items-end leading-tight">
+                                                <div className="flex items-center justify-end gap-0.5 font-mono text-xs">
+                                                  <span className="text-zinc-400 font-bold">$</span>
+                                                  <input
+                                                    type="number"
+                                                    defaultValue={Math.round(item.comisionML || 0)}
+                                                    onBlur={(e) => {
+                                                      const val = Math.round(parseFloat(e.target.value) || 0);
+                                                      if (val !== Math.round(item.comisionML || 0)) {
+                                                        handleUpdateStockItem(item, "comisionML", val);
+                                                        showToast(`Comisión ML de ${item.sku} actualizada a $${val}`, "success");
+                                                      }
+                                                    }}
+                                                    onKeyDown={(e) => {
+                                                      if (e.key === "Enter") {
+                                                        (e.target as HTMLInputElement).blur();
+                                                      }
+                                                    }}
+                                                    className="w-14 text-right bg-transparent hover:bg-slate-100 dark:hover:bg-zinc-900 focus:bg-white dark:focus:bg-zinc-950 px-1 py-0.5 rounded border-0 focus:ring-1 focus:ring-indigo-500 font-bold text-slate-700 dark:text-zinc-200 outline-hidden transition text-xs"
+                                                  />
+                                                </div>
+                                                <span className="text-[7px] font-extrabold uppercase tracking-widest text-zinc-400 font-sans mr-1 select-none">
+                                                  FIJO
+                                                </span>
+                                              </div>
+                                            </td>
 
-                                      {/* STOCK MVD */}
-                                      <td className="py-3 px-4 text-center">
-                                        {item.productObj?.isCombo ? (
-                                          <div className="flex items-center justify-center gap-1 text-slate-500 dark:text-zinc-400 font-bold font-mono" title="El stock del combo es calculado de forma dinámica basado en sus componentes">
-                                            <span className="text-slate-800 dark:text-zinc-100 font-extrabold text-sm">
-                                              {Math.round(item.stockMontevideo || 0)}
-                                            </span>
-                                            <Lock className="h-3 w-3 text-slate-400 dark:text-zinc-500 shrink-0" />
-                                          </div>
-                                        ) : (
-                                          <div className="flex items-center justify-center gap-1 font-mono">
-                                            <button
-                                              type="button"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                const current = Number(item.stockMontevideo) || 0;
-                                                if (current <= 0) {
-                                                  showToast("El stock en Montevideo ya se encuentra en 0", "info");
-                                                  return;
-                                                }
-                                                requestStockAdjustment(item, "stockMontevideo", current - 1);
-                                              }}
-                                              className="w-6 h-6 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-rose-500 hover:text-white dark:bg-zinc-850 dark:hover:bg-rose-600 text-zinc-600 dark:text-zinc-300 transition font-black text-xs cursor-pointer shadow-xs active:scale-90"
-                                              title="Descontar unidades (solicitar motivo)"
-                                            >
-                                              -
-                                            </button>
-                                            <input
-                                              type="number"
-                                              min="0"
-                                              key={`${item.sku}-mvd-${item.stockMontevideo}`}
-                                              defaultValue={Math.round(item.stockMontevideo || 0)}
-                                              onBlur={(e) => {
-                                                const raw = e.target.value.trim();
-                                                if (raw === "") return;
-                                                const current = Math.round(Number(item.stockMontevideo) || 0);
-                                                const val = Math.max(0, parseInt(raw, 10) || 0);
-                                                if (val !== current) {
-                                                  requestStockAdjustment(item, "stockMontevideo", val);
-                                                }
-                                                e.target.value = String(current);
-                                              }}
-                                              onKeyDown={(e) => {
-                                                if (e.key === "Enter") {
-                                                  (e.target as HTMLInputElement).blur();
-                                                }
-                                              }}
-                                              className={`w-12 text-center bg-slate-50/70 hover:bg-slate-100 focus:bg-white dark:bg-zinc-900/60 dark:hover:bg-zinc-900 dark:focus:bg-zinc-950 rounded-lg border border-slate-200 dark:border-zinc-800 focus:ring-1 focus:ring-indigo-500 font-extrabold py-0.5 outline-hidden transition ${
-                                                item.stockMontevideo <= 0
-                                                  ? "text-zinc-400 dark:text-zinc-600"
-                                                  : "text-slate-800 dark:text-zinc-100"
-                                              }`}
-                                            />
-                                            <button
-                                              type="button"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                const current = Number(item.stockMontevideo) || 0;
-                                                requestStockAdjustment(item, "stockMontevideo", current + 1);
-                                              }}
-                                              className="w-6 h-6 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-emerald-500 hover:text-white dark:bg-zinc-850 dark:hover:bg-emerald-600 text-zinc-600 dark:text-zinc-300 transition font-black text-xs cursor-pointer shadow-xs active:scale-90"
-                                              title="Sumar unidades (solicitar motivo)"
-                                            >
-                                              +
-                                            </button>
-                                          </div>
-                                        )}
-                                      </td>
+                                            {/* STOCK MVD */}
+                                            <td className="py-2 px-1 text-center whitespace-nowrap">
+                                              {item.productObj?.isCombo ? (
+                                                <div className="flex items-center justify-center gap-1 text-slate-500 dark:text-zinc-400 font-bold font-mono" title="El stock del combo es calculado de forma dinámica basado en sus componentes">
+                                                  <span className="text-slate-800 dark:text-zinc-100 font-extrabold text-xs">
+                                                    {Math.round(item.stockMontevideo || 0)}
+                                                  </span>
+                                                  <Lock className="h-2.5 w-2.5 text-slate-400 dark:text-zinc-500 shrink-0" />
+                                                </div>
+                                              ) : (
+                                                <div className="flex items-center justify-center gap-1 font-mono">
+                                                  <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      const current = Number(item.stockMontevideo) || 0;
+                                                      if (current <= 0) {
+                                                        showToast("El stock en Montevideo ya se encuentra en 0", "info");
+                                                        return;
+                                                      }
+                                                      requestStockAdjustment(item, "stockMontevideo", current - 1);
+                                                    }}
+                                                    className="w-5.5 h-5.5 flex items-center justify-center rounded-md bg-rose-50 hover:bg-rose-500 border border-rose-200 hover:border-rose-500 dark:bg-rose-950/40 dark:border-rose-900/60 dark:hover:bg-rose-600 text-rose-600 hover:text-white dark:text-rose-400 dark:hover:text-white transition shadow-xs cursor-pointer active:scale-90 shrink-0"
+                                                    title="Descontar 1 unidad"
+                                                  >
+                                                    <Minus className="h-3 w-3 stroke-[2.5]" />
+                                                  </button>
+                                                  <input
+                                                    type="number"
+                                                    min="0"
+                                                    key={`${item.sku}-mvd-${item.stockMontevideo}`}
+                                                    defaultValue={Math.round(item.stockMontevideo || 0)}
+                                                    onBlur={(e) => {
+                                                      const raw = e.target.value.trim();
+                                                      if (raw === "") return;
+                                                      const current = Math.round(Number(item.stockMontevideo) || 0);
+                                                      const val = Math.max(0, parseInt(raw, 10) || 0);
+                                                      if (val !== current) {
+                                                        requestStockAdjustment(item, "stockMontevideo", val);
+                                                      }
+                                                      e.target.value = String(current);
+                                                    }}
+                                                    onKeyDown={(e) => {
+                                                      if (e.key === "Enter") {
+                                                        (e.target as HTMLInputElement).blur();
+                                                      }
+                                                    }}
+                                                    className={`w-10 text-center bg-white hover:bg-slate-50 focus:bg-white dark:bg-zinc-900 dark:hover:bg-zinc-850 dark:focus:bg-zinc-950 rounded-md border border-slate-300 dark:border-zinc-700 focus:ring-1 focus:ring-indigo-500 font-extrabold py-0.5 text-xs outline-hidden transition shadow-xs ${
+                                                      item.stockMontevideo <= 0
+                                                        ? "text-rose-500 dark:text-rose-400 font-bold"
+                                                        : "text-slate-900 dark:text-zinc-100 font-black"
+                                                    }`}
+                                                  />
+                                                  <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      const current = Number(item.stockMontevideo) || 0;
+                                                      requestStockAdjustment(item, "stockMontevideo", current + 1);
+                                                    }}
+                                                    className="w-5.5 h-5.5 flex items-center justify-center rounded-md bg-emerald-50 hover:bg-emerald-500 border border-emerald-200 hover:border-emerald-500 dark:bg-emerald-950/40 dark:border-emerald-900/60 dark:hover:bg-emerald-600 text-emerald-600 hover:text-white dark:text-emerald-400 dark:hover:text-white transition shadow-xs cursor-pointer active:scale-90 shrink-0"
+                                                    title="Sumar 1 unidad"
+                                                  >
+                                                    <Plus className="h-3 w-3 stroke-[2.5]" />
+                                                  </button>
+                                                </div>
+                                              )}
+                                            </td>
 
-                                      {/* STOCK PIN */}
-                                      <td className="py-3 px-4 text-center">
-                                        {item.productObj?.isCombo ? (
-                                          <div className="flex items-center justify-center gap-1 text-slate-500 dark:text-zinc-400 font-bold font-mono" title="El stock del combo es calculado de forma dinámica basado en sus componentes">
-                                            <span className="text-slate-800 dark:text-zinc-100 font-extrabold text-sm">
-                                              {Math.round(item.stockPinamar || 0)}
-                                            </span>
-                                            <Lock className="h-3 w-3 text-slate-400 dark:text-zinc-500 shrink-0" />
-                                          </div>
-                                        ) : (
-                                          <div className="flex items-center justify-center gap-1 font-mono">
-                                            <button
-                                              type="button"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                const current = Number(item.stockPinamar) || 0;
-                                                if (current <= 0) {
-                                                  showToast("El stock en Pinamar ya se encuentra en 0", "info");
-                                                  return;
-                                                }
-                                                requestStockAdjustment(item, "stockPinamar", current - 1);
-                                              }}
-                                              className="w-6 h-6 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-rose-500 hover:text-white dark:bg-zinc-850 dark:hover:bg-rose-600 text-zinc-600 dark:text-zinc-300 transition font-black text-xs cursor-pointer shadow-xs active:scale-90"
-                                              title="Descontar unidades (solicitar motivo)"
-                                            >
-                                              -
-                                            </button>
-                                            <input
-                                              type="number"
-                                              min="0"
-                                              key={`${item.sku}-pin-${item.stockPinamar}`}
-                                              defaultValue={Math.round(item.stockPinamar || 0)}
-                                              onBlur={(e) => {
-                                                const raw = e.target.value.trim();
-                                                if (raw === "") return;
-                                                const current = Math.round(Number(item.stockPinamar) || 0);
-                                                const val = Math.max(0, parseInt(raw, 10) || 0);
-                                                if (val !== current) {
-                                                  requestStockAdjustment(item, "stockPinamar", val);
-                                                }
-                                                e.target.value = String(current);
-                                              }}
-                                              onKeyDown={(e) => {
-                                                if (e.key === "Enter") {
-                                                  (e.target as HTMLInputElement).blur();
-                                                }
-                                              }}
-                                              className={`w-12 text-center bg-slate-50/70 hover:bg-slate-100 focus:bg-white dark:bg-zinc-900/60 dark:hover:bg-zinc-900 dark:focus:bg-zinc-950 rounded-lg border border-slate-200 dark:border-zinc-800 focus:ring-1 focus:ring-indigo-500 font-extrabold py-0.5 outline-hidden transition ${
-                                                item.stockPinamar <= 0
-                                                  ? "text-zinc-400 dark:text-zinc-600"
-                                                  : "text-slate-800 dark:text-zinc-100"
-                                              }`}
-                                            />
-                                            <button
-                                              type="button"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                const current = Number(item.stockPinamar) || 0;
-                                                requestStockAdjustment(item, "stockPinamar", current + 1);
-                                              }}
-                                              className="w-6 h-6 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-emerald-500 hover:text-white dark:bg-zinc-850 dark:hover:bg-emerald-600 text-zinc-600 dark:text-zinc-300 transition font-black text-xs cursor-pointer shadow-xs active:scale-90"
-                                              title="Sumar unidades (solicitar motivo)"
-                                            >
-                                              +
-                                            </button>
-                                          </div>
-                                        )}
-                                      </td>
+                                            {/* STOCK PIN */}
+                                            <td className="py-2 px-1 text-center whitespace-nowrap">
+                                              {item.productObj?.isCombo ? (
+                                                <div className="flex items-center justify-center gap-1 text-slate-500 dark:text-zinc-400 font-bold font-mono" title="El stock del combo es calculado de forma dinámica basado en sus componentes">
+                                                  <span className="text-slate-800 dark:text-zinc-100 font-extrabold text-xs">
+                                                    {Math.round(item.stockPinamar || 0)}
+                                                  </span>
+                                                  <Lock className="h-2.5 w-2.5 text-slate-400 dark:text-zinc-500 shrink-0" />
+                                                </div>
+                                              ) : (
+                                                <div className="flex items-center justify-center gap-1 font-mono">
+                                                  <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      const current = Number(item.stockPinamar) || 0;
+                                                      if (current <= 0) {
+                                                        showToast("El stock en Pinamar ya se encuentra en 0", "info");
+                                                        return;
+                                                      }
+                                                      requestStockAdjustment(item, "stockPinamar", current - 1);
+                                                    }}
+                                                    className="w-5.5 h-5.5 flex items-center justify-center rounded-md bg-rose-50 hover:bg-rose-500 border border-rose-200 hover:border-rose-500 dark:bg-rose-950/40 dark:border-rose-900/60 dark:hover:bg-rose-600 text-rose-600 hover:text-white dark:text-rose-400 dark:hover:text-white transition shadow-xs cursor-pointer active:scale-90 shrink-0"
+                                                    title="Descontar 1 unidad"
+                                                  >
+                                                    <Minus className="h-3 w-3 stroke-[2.5]" />
+                                                  </button>
+                                                  <input
+                                                    type="number"
+                                                    min="0"
+                                                    key={`${item.sku}-pin-${item.stockPinamar}`}
+                                                    defaultValue={Math.round(item.stockPinamar || 0)}
+                                                    onBlur={(e) => {
+                                                      const raw = e.target.value.trim();
+                                                      if (raw === "") return;
+                                                      const current = Math.round(Number(item.stockPinamar) || 0);
+                                                      const val = Math.max(0, parseInt(raw, 10) || 0);
+                                                      if (val !== current) {
+                                                        requestStockAdjustment(item, "stockPinamar", val);
+                                                      }
+                                                      e.target.value = String(current);
+                                                    }}
+                                                    onKeyDown={(e) => {
+                                                      if (e.key === "Enter") {
+                                                        (e.target as HTMLInputElement).blur();
+                                                      }
+                                                    }}
+                                                    className={`w-10 text-center bg-white hover:bg-slate-50 focus:bg-white dark:bg-zinc-900 dark:hover:bg-zinc-850 dark:focus:bg-zinc-950 rounded-md border border-slate-300 dark:border-zinc-700 focus:ring-1 focus:ring-indigo-500 font-extrabold py-0.5 text-xs outline-hidden transition shadow-xs ${
+                                                      item.stockPinamar <= 0
+                                                        ? "text-rose-500 dark:text-rose-400 font-bold"
+                                                        : "text-slate-900 dark:text-zinc-100 font-black"
+                                                    }`}
+                                                  />
+                                                  <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      const current = Number(item.stockPinamar) || 0;
+                                                      requestStockAdjustment(item, "stockPinamar", current + 1);
+                                                    }}
+                                                    className="w-5.5 h-5.5 flex items-center justify-center rounded-md bg-emerald-50 hover:bg-emerald-500 border border-emerald-200 hover:border-emerald-500 dark:bg-emerald-950/40 dark:border-emerald-900/60 dark:hover:bg-emerald-600 text-emerald-600 hover:text-white dark:text-emerald-400 dark:hover:text-white transition shadow-xs cursor-pointer active:scale-90 shrink-0"
+                                                    title="Sumar 1 unidad"
+                                                  >
+                                                    <Plus className="h-3 w-3 stroke-[2.5]" />
+                                                  </button>
+                                                </div>
+                                              )}
+                                            </td>
 
-                                      {/* ACCIONES */}
-                                      <td className="py-3 px-4 text-center">
-                                        <div className="flex items-center justify-center gap-1.5">
-                                          <button
-                                            disabled={item.productObj?.isCombo}
-                                            onClick={() => {
-                                              const totalStock = (item.stockPinamar || 0) + (item.stockMontevideo || 0);
-                                              if (totalStock <= 0) {
-                                                showToast(`Stock insuficiente: "${item.name}${item.variantName ? ` (${item.variantName})` : ''}" no tiene existencias en ningún depósito para transferir.`, "error");
-                                                return;
-                                              }
-                                              setTransferProductId(String(item.productId));
-                                              setTransferVariantId(item.variantId ? String(item.variantId) : "");
-                                              setTransferQty(1);
-                                              if ((item.stockPinamar || 0) >= (item.stockMontevideo || 0)) {
-                                                setTransferFrom("Pinamar");
-                                                setTransferTo("Montevideo");
-                                              } else {
-                                                setTransferFrom("Montevideo");
-                                                setTransferTo("Pinamar");
-                                              }
-                                              setStockSubSection("transfer");
-                                            }}
-                                            className={`px-2.5 py-1 text-white font-bold text-[10px] rounded-lg shadow-xs transition inline-flex items-center gap-1.5 ${
-                                              item.productObj?.isCombo
-                                                ? "bg-slate-200 dark:bg-zinc-800 text-slate-400 dark:text-zinc-500 cursor-not-allowed opacity-60"
-                                                : "bg-indigo-600 hover:bg-indigo-700 cursor-pointer"
-                                            }`}
-                                            title={
-                                              item.productObj?.isCombo
-                                                ? "Los combos no se transfieren directamente, se transfieren sus componentes"
-                                                : "Transferir stock de este artículo"
-                                            }
-                                          >
-                                            <ArrowLeftRight className="h-3 w-3" />
-                                            <span>Transferir</span>
-                                          </button>
-                                          <button
-                                            type="button"
-                                            disabled={item.productObj?.isCombo}
-                                            onClick={() => {
-                                              requestStockAdjustment(item, "stockMontevideo", Number(item.stockMontevideo) || 0);
-                                            }}
-                                            className="p-1.5 text-zinc-400 hover:text-amber-500 hover:bg-amber-500/10 dark:hover:bg-amber-500/20 rounded-lg transition cursor-pointer"
-                                            title="Auditar / Ajuste formal con motivo detallado"
-                                          >
-                                            <Scale className="h-3.5 w-3.5" />
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              setTraceabilityProductId(String(item.productId));
-                                              setTraceabilitySku(item.sku || item.productObj?.codigo || null);
-                                              navigateAdminSection("traceability");
-                                            }}
-                                            className="p-1.5 text-zinc-400 hover:text-[#E6BF76] hover:bg-[#D4AF37]/15 rounded-lg transition cursor-pointer"
-                                            title="Ver Trazabilidad Integral e Historial de Movimientos"
-                                          >
-                                            <History className="h-3.5 w-3.5" />
-                                          </button>
-                                        </div>
-                                      </td>
+                                            {/* ACCIONES */}
+                                            <td className="py-2 px-2 text-center whitespace-nowrap">
+                                              <div className="flex items-center justify-center">
+                                                <button
+                                                  disabled={item.productObj?.isCombo}
+                                                  onClick={() => {
+                                                    const totalStock = (item.stockPinamar || 0) + (item.stockMontevideo || 0);
+                                                    if (totalStock <= 0) {
+                                                      showToast(`Stock insuficiente: "${item.name}${item.variantName ? ` (${item.variantName})` : ''}" no tiene existencias en ningún depósito para transferir.`, "error");
+                                                      return;
+                                                    }
+                                                    setTransferProductId(String(item.productId));
+                                                    setTransferVariantId(item.variantId ? String(item.variantId) : "");
+                                                    setTransferQty(1);
+                                                    if ((item.stockPinamar || 0) >= (item.stockMontevideo || 0)) {
+                                                      setTransferFrom("Pinamar");
+                                                      setTransferTo("Montevideo");
+                                                    } else {
+                                                      setTransferFrom("Montevideo");
+                                                      setTransferTo("Pinamar");
+                                                    }
+                                                    setStockSubSection("transfer");
+                                                  }}
+                                                  className={`px-3 py-1 text-white font-bold text-[11px] rounded-lg shadow-xs transition inline-flex items-center gap-1.5 ${
+                                                    item.productObj?.isCombo
+                                                      ? "bg-slate-200 dark:bg-zinc-800 text-slate-400 dark:text-zinc-500 cursor-not-allowed opacity-60"
+                                                      : "bg-indigo-600 hover:bg-indigo-700 cursor-pointer active:scale-95"
+                                                  }`}
+                                                  title={
+                                                    item.productObj?.isCombo
+                                                      ? "Los combos no se transfieren directamente, se transfieren sus componentes"
+                                                      : "Transferir stock de este artículo"
+                                                  }
+                                                >
+                                                  <ArrowLeftRight className="h-3 w-3" />
+                                                  <span>Transferir</span>
+                                                </button>
+                                              </div>
+                                            </td>
                                     </tr>
                                   );
                                 })
