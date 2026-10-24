@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { 
   ShoppingBag, 
   TrendingUp, 
@@ -24,7 +24,13 @@ import {
   Sparkles,
   Award,
   ArrowDownRight,
-  Filter
+  Filter,
+  Search,
+  ChevronDown,
+  Truck,
+  Info,
+  Receipt,
+  CheckCircle2
 } from "lucide-react";
 import { ShopState, Product, AdminTask } from "../types";
 import { DashboardResumenGeneral } from "./DashboardResumenGeneral";
@@ -78,7 +84,11 @@ export function DashboardGeneral({
   const [activeTab, setActiveTab] = useState<"sales" | "monthly" | "finances">("sales");
   const [timeRange, setTimeRange] = useState<"last30" | "current_month" | "prev_month">("current_month");
   const [selectedYear, setSelectedYear] = useState<number>(2026);
-  const [selectedMonthlyMonth, setSelectedMonthlyMonth] = useState<number | null>(null);
+  const [selectedMonthlyMonth, setSelectedMonthlyMonth] = useState<number | null>(new Date().getMonth());
+  const [hoveredMonthlyMonth, setHoveredMonthlyMonth] = useState<number | null>(null);
+  const [monthSearchFilter, setMonthSearchFilter] = useState<string>("");
+  const [monthCanalFilter, setMonthCanalFilter] = useState<string>("all");
+  const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
 
   const activeProducts = store.products.filter(p => p.active !== false);
   const pausedProducts = activeProducts.filter(p => p.paused === true);
@@ -450,17 +460,19 @@ export function DashboardGeneral({
           sales += netTotal;
 
           let orderCost = 0;
+          let orderComision = 0;
           (o.items || []).forEach(item => {
             const p = store.products.find(prod => prod.id === item.productId);
             const is3D = p?.is3D || (item.productName || "").toLowerCase().includes("3d") || (item.productName || "").toLowerCase().includes("impres");
             const costPct = is3D ? 0.30 : 0.45;
             const calculatedCost = item.costPrice || (item.unitPrice * costPct);
-            orderCost += calculatedCost * item.quantity;
+            orderCost += calculatedCost * (item.quantity || 1);
+            orderComision += (Number(item.comisionML || 0) * (item.quantity || 1));
           });
           totalCost += orderCost;
+          const orderShipping = Number(o.shippingCost || 0);
+          profit += Math.max(0, netTotal - orderShipping - orderCost - orderComision);
         });
-
-        profit = sales - totalCost;
       } else {
         // Deterministic simulation engine for annual comparative analysis
         const seedRnd = getSeedRandom(`MonthlySeed_${selectedYear}_${idx}`);
@@ -723,6 +735,19 @@ export function DashboardGeneral({
                 Mes Anterior
               </button>
             </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedMonthlyMonth(new Date().getMonth());
+                setActiveTab("monthly");
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-bold transition shadow-sm cursor-pointer self-start sm:self-auto"
+              title="Ver desglose detallado de ventas, comisiones y dinero neto líquido"
+            >
+              <Receipt className="h-3.5 w-3.5 text-indigo-400" />
+              <span>Ver Liquidación Detallada del Mes</span>
+            </button>
           </div>
 
           {/* 2. Top Tier Sales & Profitability Performance Cards (5-Sec KPI Matrix) - Premium cards with glow and hover animation */}
@@ -1279,7 +1304,7 @@ export function DashboardGeneral({
                   <BarChart3 className="h-4 w-4 text-indigo-400" />
                   <span>Evolución Mensual de Ventas ({selectedYear})</span>
                 </h4>
-                <p className="text-[11px] text-zinc-400">Haz clic en cualquier barra o mes para inspeccionar sus métricas clave.</p>
+                <p className="text-[11px] text-zinc-400">Pasa el cursor sobre cualquier barra para ver cantidad de ventas, total vendido y ganancias.</p>
               </div>
               <div className="flex items-center gap-3 text-[10px] font-bold text-zinc-400">
                 <div className="flex items-center gap-1.5">
@@ -1293,34 +1318,127 @@ export function DashboardGeneral({
               </div>
             </div>
 
-            {/* Bars container */}
-            <div className="h-56 pt-6 pb-2 flex items-end justify-between gap-2 md:gap-3 px-2">
+            {/* Bars container with enhanced interactive hover popovers */}
+            <div className="h-64 sm:h-72 pt-16 pb-2 flex items-end justify-between gap-1.5 sm:gap-2 md:gap-3 px-2 relative">
               {monthlyDataWithGrowth.map((m) => {
                 const isBest = m.monthIndex === annualTotals.bestMonth?.monthIndex;
                 const isSelected = selectedMonthlyMonth === m.monthIndex;
+                const isHovered = hoveredMonthlyMonth === m.monthIndex;
                 const barHeightPercent = Math.max((m.sales / annualTotals.maxMonthSales) * 100, 6);
 
                 return (
                   <div
                     key={m.monthIndex}
                     onClick={() => setSelectedMonthlyMonth(isSelected ? null : m.monthIndex)}
-                    className="flex-1 flex flex-col items-center h-full justify-end group cursor-pointer"
+                    onMouseEnter={() => setHoveredMonthlyMonth(m.monthIndex)}
+                    onMouseLeave={() => setHoveredMonthlyMonth(null)}
+                    onTouchStart={() => setHoveredMonthlyMonth(m.monthIndex)}
+                    className="flex-1 flex flex-col items-center h-full justify-end group cursor-pointer relative"
                   >
-                    {/* Amount label on hover or if selected */}
+                    {/* Floating Detailed Hover Tooltip (Cantidad de ventas, Total Vendido y Ganancias) */}
+                    <div
+                      className={`absolute bottom-full mb-3 z-30 transition-all duration-200 pointer-events-none ${
+                        isHovered
+                          ? "opacity-100 scale-100 translate-y-0"
+                          : "opacity-0 scale-95 translate-y-2 group-hover:opacity-100 group-hover:scale-100 group-hover:translate-y-0"
+                      } ${
+                        m.monthIndex <= 1
+                          ? "left-0"
+                          : m.monthIndex >= 10
+                          ? "right-0"
+                          : "left-1/2 -translate-x-1/2"
+                      }`}
+                      style={{ minWidth: "215px" }}
+                    >
+                      <div className="bg-[#050B1A]/95 backdrop-blur-xl border border-indigo-500/40 rounded-xl p-3 shadow-2xl text-left space-y-2">
+                        {/* Header: Month and Year */}
+                        <div className="flex items-center justify-between gap-2 border-b border-zinc-800 pb-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`w-2 h-2 rounded-full ${isBest ? "bg-amber-400 animate-pulse" : "bg-indigo-400"}`} />
+                            <span className="text-xs font-black text-white capitalize">{m.monthName} {selectedYear}</span>
+                          </div>
+                          {isBest && (
+                            <span className="text-[9px] bg-amber-500/20 text-amber-300 font-extrabold px-1.5 py-0.5 rounded border border-amber-500/30">
+                              🏆 Récord
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Metric 1: Total Vendido */}
+                        <div className="flex items-center justify-between gap-3 text-xs">
+                          <span className="text-zinc-400 text-[11px] font-medium flex items-center gap-1">
+                            <DollarSign className="w-3.5 h-3.5 text-emerald-400 shrink-0" /> Total Vendido:
+                          </span>
+                          <span className="font-mono font-black text-emerald-400 text-xs">
+                            ${m.sales.toLocaleString("es-AR")} UYU
+                          </span>
+                        </div>
+
+                        {/* Metric 2: Cantidad de Ventas / Pedidos */}
+                        <div className="flex items-center justify-between gap-3 text-xs">
+                          <span className="text-zinc-400 text-[11px] font-medium flex items-center gap-1">
+                            <ShoppingBag className="w-3.5 h-3.5 text-indigo-400 shrink-0" /> Cant. de Ventas:
+                          </span>
+                          <span className="font-mono font-black text-white text-xs">
+                            {m.ordersCount} <span className="text-[10px] text-zinc-400 font-sans font-normal">{m.ordersCount === 1 ? 'venta' : 'ventas'}</span>
+                          </span>
+                        </div>
+
+                        {/* Metric 3: Ganancias */}
+                        <div className="flex items-center justify-between gap-3 text-xs">
+                          <span className="text-zinc-400 text-[11px] font-medium flex items-center gap-1">
+                            <TrendingUp className="w-3.5 h-3.5 text-[#E6BF76] shrink-0" /> Ganancias:
+                          </span>
+                          <div className="text-right">
+                            <span className="font-mono font-black text-[#E6BF76] text-xs">
+                              ${m.profit.toLocaleString("es-AR")} UYU
+                            </span>
+                            {m.sales > 0 && (
+                              <span className="text-[9.5px] text-emerald-400 font-bold ml-1 font-mono">
+                                ({Math.round((m.profit / m.sales) * 100)}%)
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Optional Footer: Ticket Promedio & MoM Growth */}
+                        {(m.ordersCount > 0 || m.growthPercent !== 0) && (
+                          <div className="pt-1.5 border-t border-zinc-800/80 flex items-center justify-between text-[10px] text-zinc-400 font-mono">
+                            <span>Ticket prom: ${m.avgTicket.toLocaleString("es-AR")}</span>
+                            {m.growthPercent !== 0 && (
+                              <span className={`font-bold ${m.growthPercent > 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                                {m.growthPercent > 0 ? `+${m.growthPercent}%` : `${m.growthPercent}%`} MoM
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Little triangle arrow pointing down to bar */}
+                        <div className={`absolute -bottom-1 w-2.5 h-2.5 bg-[#050B1A] border-b border-r border-indigo-500/40 transform rotate-45 ${
+                          m.monthIndex <= 1 ? "left-6" : m.monthIndex >= 10 ? "right-6" : "left-1/2 -translate-x-1/2"
+                        }`} />
+                      </div>
+                    </div>
+
+                    {/* Amount label above the bar */}
                     <div className={`text-[9px] font-mono font-bold transition-all mb-1 truncate max-w-full ${
-                      isSelected || isBest ? "text-amber-300 scale-105 font-black" : "text-zinc-500 group-hover:text-zinc-200"
+                      isSelected || isBest || isHovered ? "text-amber-300 scale-105 font-black" : "text-zinc-500 group-hover:text-zinc-200"
                     }`}>
                       ${m.sales >= 1000 ? `${Math.round(m.sales / 1000)}k` : m.sales}
                     </div>
 
                     {/* Bar visual */}
-                    <div className="w-full bg-zinc-950/80 rounded-t-xl h-full flex items-end p-0.5 border border-zinc-800/40 group-hover:border-indigo-500/40 transition-all">
+                    <div className={`w-full bg-zinc-950/80 rounded-t-xl h-full flex items-end p-0.5 border transition-all ${
+                      isHovered || isSelected 
+                        ? "border-indigo-400 ring-2 ring-indigo-500/30 shadow-lg" 
+                        : "border-zinc-800/40 group-hover:border-indigo-500/50"
+                    }`}>
                       <div
                         style={{ height: `${barHeightPercent}%` }}
                         className={`w-full rounded-t-lg transition-all duration-300 ${
                           isBest
                             ? "bg-gradient-to-t from-amber-600 to-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.4)]"
-                            : isSelected
+                            : isSelected || isHovered
                             ? "bg-gradient-to-t from-indigo-700 to-indigo-400 shadow-[0_0_12px_rgba(99,102,241,0.4)]"
                             : "bg-gradient-to-t from-indigo-950 to-indigo-600 group-hover:from-indigo-900 group-hover:to-indigo-500"
                         }`}
@@ -1329,7 +1447,7 @@ export function DashboardGeneral({
 
                     {/* Month short name label */}
                     <span className={`text-[10px] font-mono font-extrabold mt-2 uppercase transition-colors ${
-                      isSelected ? "text-indigo-400" : isBest ? "text-amber-400" : "text-zinc-400 group-hover:text-white"
+                      isSelected || isHovered ? "text-indigo-400 font-black" : isBest ? "text-amber-400" : "text-zinc-400 group-hover:text-white"
                     }`}>
                       {m.shortName}
                     </span>
@@ -1458,62 +1576,413 @@ export function DashboardGeneral({
             </div>
           </div>
 
-          {/* Selected Month Deep Dive Inspection Panel */}
+          {/* Selected Month Deep Dive Inspection Panel & Detailed Financial Sales Breakdown */}
           {selectedMonthlyMonth !== null && (() => {
             const m = monthlyDataWithGrowth[selectedMonthlyMonth];
             if (!m) return null;
             const daysInMonth = new Date(selectedYear, m.monthIndex + 1, 0).getDate();
             const dailyAvg = Math.round(m.sales / daysInMonth);
 
+            // Filter real orders for this specific month & year
+            const monthRawOrders = (store.orders || [])
+              .filter(o => o.status === "pago_aprobado")
+              .filter(o => {
+                const d = new Date(o.createdAt);
+                return d.getFullYear() === selectedYear && d.getMonth() === m.monthIndex;
+              })
+              .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+            // Compute financial aggregates for this month
+            const totalBrutoMes = monthRawOrders.reduce((acc, o) => acc + Number(o.total || 0), 0);
+            const totalEnviosMes = monthRawOrders.reduce((acc, o) => acc + Number(o.shippingCost || 0), 0);
+            const totalComisionesMes = monthRawOrders.reduce((acc, o) => {
+              return acc + (o.items || []).reduce((sum, it) => sum + (Number(it.comisionML || 0) * (it.quantity || 1)), 0);
+            }, 0);
+            const totalNetoCobroMes = Math.max(0, totalBrutoMes - totalEnviosMes - totalComisionesMes);
+            const totalCostoProdMes = monthRawOrders.reduce((acc, o) => {
+              return acc + (o.items || []).reduce((sum, it) => {
+                let cost = Number(it.costPrice || 0);
+                if (!cost && it.productId) {
+                  const p = store.products.find(prod => String(prod.id) === String(it.productId));
+                  if (p) cost = Number((p as any).precioCompra || (p as any).precio_compra || 0);
+                }
+                return sum + (cost * (it.quantity || 1));
+              }, 0);
+            }, 0);
+            const totalGananciaRealMes = Math.max(0, totalNetoCobroMes - totalCostoProdMes);
+
+            // Compute operational bills / expenses for this month
+            const monthBills = (store.bills || []).filter(b => {
+              if (!b.date) return false;
+              const bDate = new Date(b.date + "T12:00:00");
+              return bDate.getFullYear() === selectedYear && bDate.getMonth() === m.monthIndex;
+            });
+            const totalGastosFacturasMes = monthBills.reduce((acc, b) => acc + Number(b.total || 0), 0);
+            const balanceFinalCaja = totalNetoCobroMes - totalGastosFacturasMes;
+
+            // Filter by search & canal
+            const filteredMonthOrders = monthRawOrders.filter(o => {
+              if (monthCanalFilter !== "all") {
+                const canal = (o.canal || "Web").toLowerCase();
+                if (monthCanalFilter === "mercadolibre" && !canal.includes("mercado")) return false;
+                if (monthCanalFilter === "web" && (canal.includes("mercado") || canal.includes("whatsapp"))) return false;
+                if (monthCanalFilter === "whatsapp" && !canal.includes("whatsapp")) return false;
+              }
+              if (monthSearchFilter.trim()) {
+                const q = monthSearchFilter.toLowerCase();
+                const matchName = (o.customerName || "").toLowerCase().includes(q);
+                const matchId = (o.id || "").toLowerCase().includes(q);
+                const matchItems = (o.items || []).some(it => (it.productName || "").toLowerCase().includes(q) || (it.sku || "").toLowerCase().includes(q));
+                if (!matchName && !matchId && !matchItems) return false;
+              }
+              return true;
+            });
+
             return (
-              <div className="bg-gradient-to-r from-indigo-950/40 via-zinc-900/60 to-zinc-900/40 border border-indigo-500/30 rounded-2xl p-6 shadow-xl space-y-4 animate-scale-in">
-                <div className="flex items-center justify-between border-b border-indigo-500/20 pb-3">
+              <div className="bg-gradient-to-r from-indigo-950/40 via-zinc-900/60 to-zinc-900/40 border border-indigo-500/30 rounded-2xl p-5 md:p-6 shadow-xl space-y-6 animate-scale-in">
+                {/* Header */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-indigo-500/20 pb-4">
                   <div className="flex items-center gap-3">
-                    <div className="p-2.5 bg-indigo-500/20 text-indigo-300 rounded-xl border border-indigo-500/30">
+                    <div className="p-2.5 bg-indigo-500/20 text-indigo-300 rounded-xl border border-indigo-500/30 shadow-[0_0_15px_rgba(99,102,241,0.2)]">
                       <Sparkles className="h-5 w-5" />
                     </div>
                     <div>
-                      <h4 className="text-sm font-black text-white uppercase tracking-wider">
-                        Inspección Detallada: <span className="text-indigo-400">{m.monthName} {selectedYear}</span>
+                      <h4 className="text-base font-black text-white uppercase tracking-wider flex items-center gap-2">
+                        <span>Liquidación Financiera & Ventas:</span>
+                        <span className="text-indigo-400 capitalize">{m.monthName} {selectedYear}</span>
                       </h4>
-                      <p className="text-xs text-zinc-400 font-medium">Análisis operativo y métricas calculadas del período seleccionado</p>
+                      <p className="text-xs text-zinc-400 font-medium">
+                        Desglose transparente: Facturación Bruta, Envíos retenidos, Comisiones, Gastos operativos y Dinero Neto Real.
+                      </p>
                     </div>
                   </div>
                   <button
                     onClick={() => setSelectedMonthlyMonth(null)}
-                    className="text-xs font-bold text-zinc-400 hover:text-white px-3 py-1.5 bg-zinc-900 rounded-xl border border-zinc-800 transition-all cursor-pointer"
+                    className="text-xs font-bold text-zinc-400 hover:text-white px-3 py-1.5 bg-zinc-900 rounded-xl border border-zinc-800 hover:border-zinc-700 transition-all cursor-pointer self-start sm:self-auto"
                   >
-                    Cerrar Detalle
+                    Ocultar Desglose
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <div className="bg-zinc-950/60 p-4 rounded-xl border border-zinc-800 space-y-1">
-                    <span className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Venta Promedio Diaria</span>
-                    <p className="text-lg font-black font-mono text-emerald-400">${dailyAvg.toLocaleString("es-AR")} UYU / día</p>
-                    <span className="text-[10px] text-zinc-400 font-bold">Calculado sobre {daysInMonth} días</span>
+                {/* 5 Financial Reconciliation Cards (Bruto vs Envío vs Comisión vs Gastos vs Neto Líquido) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                  {/* Total Bruto */}
+                  <div className="bg-zinc-950/70 p-3.5 rounded-xl border border-indigo-500/20 space-y-1 relative overflow-hidden shadow-md">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9.5px] font-black uppercase text-indigo-300 tracking-wider">1. Venta Bruta</span>
+                      <DollarSign className="w-3.5 h-3.5 text-indigo-400" />
+                    </div>
+                    <p className="text-lg font-black font-mono text-white">
+                      ${totalBrutoMes.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-[9.5px] text-zinc-400 font-medium">Total cobrado al cliente</p>
                   </div>
 
-                  <div className="bg-zinc-950/60 p-4 rounded-xl border border-zinc-800 space-y-1">
-                    <span className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Costo Operativo Estimado</span>
-                    <p className="text-lg font-black font-mono text-zinc-300">${m.totalCost.toLocaleString("es-AR")} UYU</p>
-                    <span className="text-[10px] text-zinc-400 font-bold">Costo de mercadería e insumos</span>
+                  {/* Envíos Descontados */}
+                  <div className="bg-zinc-950/70 p-3.5 rounded-xl border border-amber-500/20 space-y-1 relative overflow-hidden shadow-md">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9.5px] font-black uppercase text-amber-300 tracking-wider">2. Envíos Retenidos</span>
+                      <Truck className="w-3.5 h-3.5 text-amber-400" />
+                    </div>
+                    <p className="text-lg font-black font-mono text-amber-400">
+                      -${totalEnviosMes.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-[9.5px] text-zinc-400 font-medium">Etiquetas Mercado Envíos</p>
                   </div>
 
-                  <div className="bg-zinc-950/60 p-4 rounded-xl border border-zinc-800 space-y-1">
-                    <span className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Ganancia Neta Calculada</span>
-                    <p className="text-lg font-black font-mono text-[#E6BF76]">${m.profit.toLocaleString("es-AR")} UYU</p>
-                    <span className="text-[10px] text-emerald-400 font-bold">
-                      Margen: {m.sales > 0 ? Math.round((m.profit / m.sales) * 100) : 0}% sobre ventas
+                  {/* Comisiones ML */}
+                  <div className="bg-zinc-950/70 p-3.5 rounded-xl border border-rose-500/20 space-y-1 relative overflow-hidden shadow-md">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9.5px] font-black uppercase text-rose-300 tracking-wider">3. Comisiones ML</span>
+                      <Percent className="w-3.5 h-3.5 text-rose-400" />
+                    </div>
+                    <p className="text-lg font-black font-mono text-rose-400">
+                      -${totalComisionesMes.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-[9.5px] text-zinc-400 font-medium">Aranceles de venta</p>
+                  </div>
+
+                  {/* Gastos Operativos / Facturas */}
+                  <div className="bg-zinc-950/70 p-3.5 rounded-xl border border-purple-500/20 space-y-1 relative overflow-hidden shadow-md">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9.5px] font-black uppercase text-purple-300 tracking-wider">4. Gastos / Facturas</span>
+                      <Receipt className="w-3.5 h-3.5 text-purple-400" />
+                    </div>
+                    <p className="text-lg font-black font-mono text-purple-400">
+                      {totalGastosFacturasMes > 0 
+                        ? `-$${totalGastosFacturasMes.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        : "$0,00"
+                      }
+                    </p>
+                    <p className="text-[9.5px] text-zinc-400 font-medium">
+                      {monthBills.length > 0 ? `${monthBills.length} facturas registradas` : "Sin boletas cargadas este mes"}
+                    </p>
+                  </div>
+
+                  {/* Dinero Neto Real Líquido */}
+                  <div className="bg-gradient-to-br from-emerald-950/50 to-zinc-950/80 p-3.5 rounded-xl border border-emerald-500/30 space-y-1 relative overflow-hidden shadow-lg shadow-emerald-950/30">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9.5px] font-black uppercase text-emerald-300 tracking-wider">5. Neto a Cobrar</span>
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    </div>
+                    <p className="text-lg font-black font-mono text-emerald-400">
+                      ${totalNetoCobroMes.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-[9.5px] text-emerald-300/80 font-bold">
+                      Líquido de ventas en mano
+                    </p>
+                  </div>
+                </div>
+
+                {/* Note about release status in Mercado Pago */}
+                <div className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-zinc-300">
+                  <Clock className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold text-amber-300">Plazos de acreditación en Mercado Pago:</span>
+                    <span className="text-[11px] text-zinc-400 ml-1.5">
+                      Las ventas recientes de los últimos 2-3 días permanecen temporalmente en estado <em>"A liberar"</em> hasta la entrega del paquete. Una vez confirmada la entrega, el saldo pasa a estar 100% disponible.
+                    </span>
+                  </div>
+                </div>
+
+                {/* Filter & Search Bar for Individual Orders */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2">
+                  <div className="flex items-center gap-2">
+                    <Receipt className="h-4 w-4 text-indigo-400" />
+                    <span className="text-xs font-black uppercase tracking-wider text-white">
+                      Listado de Ventas de {m.monthName} ({filteredMonthOrders.length})
                     </span>
                   </div>
 
-                  <div className="bg-zinc-950/60 p-4 rounded-xl border border-zinc-800 space-y-1">
-                    <span className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Desempeño MoM</span>
-                    <p className="text-lg font-black font-mono text-indigo-300">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Canal filters */}
+                    <div className="flex bg-zinc-950 p-0.5 rounded-lg border border-zinc-800 text-[10px] font-bold">
+                      <button
+                        onClick={() => setMonthCanalFilter("all")}
+                        className={`px-2.5 py-1 rounded transition cursor-pointer ${
+                          monthCanalFilter === "all" ? "bg-indigo-600 text-white font-black" : "text-zinc-400 hover:text-white"
+                        }`}
+                      >
+                        Todos ({monthRawOrders.length})
+                      </button>
+                      <button
+                        onClick={() => setMonthCanalFilter("mercadolibre")}
+                        className={`px-2.5 py-1 rounded transition cursor-pointer ${
+                          monthCanalFilter === "mercadolibre" ? "bg-amber-500 text-[#050B1A] font-black" : "text-zinc-400 hover:text-white"
+                        }`}
+                      >
+                        🟡 ML ({monthRawOrders.filter(o => (o.canal || "").toLowerCase().includes("mercado")).length})
+                      </button>
+                      <button
+                        onClick={() => setMonthCanalFilter("web")}
+                        className={`px-2.5 py-1 rounded transition cursor-pointer ${
+                          monthCanalFilter === "web" ? "bg-indigo-600 text-white font-black" : "text-zinc-400 hover:text-white"
+                        }`}
+                      >
+                        🌐 Web ({monthRawOrders.filter(o => !(o.canal || "").toLowerCase().includes("mercado") && !(o.canal || "").toLowerCase().includes("whatsapp")).length})
+                      </button>
+                    </div>
+
+                    {/* Search box */}
+                    <div className="relative flex-1 sm:w-56">
+                      <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-zinc-500" />
+                      <input
+                        type="text"
+                        placeholder="Buscar cliente o pedido..."
+                        value={monthSearchFilter}
+                        onChange={(e) => setMonthSearchFilter(e.target.value)}
+                        className="w-full bg-zinc-950 border border-zinc-800 text-zinc-200 placeholder-zinc-500 text-[11px] rounded-lg px-2.5 py-1.5 pl-8 focus:outline-none focus:border-indigo-500 font-sans"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Table of Orders */}
+                <div className="overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-950/70 shadow-inner">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-zinc-950 text-zinc-400 border-b border-zinc-800 text-[10px] uppercase font-black tracking-wider">
+                        <th className="py-3 px-3.5">Fecha</th>
+                        <th className="py-3 px-3.5">Cliente / Ref</th>
+                        <th className="py-3 px-3.5">Canal & Depósito</th>
+                        <th className="py-3 px-3.5 text-right">Total Bruto</th>
+                        <th className="py-3 px-3.5 text-right">Envío Retenido</th>
+                        <th className="py-3 px-3.5 text-right">Comisión ML</th>
+                        <th className="py-3 px-3.5 text-right font-black text-emerald-400">Neto a Cobrar</th>
+                        <th className="py-3 px-3.5 text-center">Estado Acreditación</th>
+                        <th className="py-3 px-3 text-center">Detalle</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-900/80 font-medium">
+                      {filteredMonthOrders.length === 0 ? (
+                        <tr>
+                          <td colSpan={9} className="py-8 text-center text-zinc-500 text-xs">
+                            No se encontraron ventas para los filtros seleccionados en este mes.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredMonthOrders.map((ord) => {
+                          const oDate = new Date(ord.createdAt);
+                          const dateFormatted = `${oDate.getDate().toString().padStart(2, '0')}/${(oDate.getMonth() + 1).toString().padStart(2, '0')} ${oDate.getHours().toString().padStart(2, '0')}:${oDate.getMinutes().toString().padStart(2, '0')}`;
+                          const oBruto = Number(ord.total || 0);
+                          const oEnvio = Number(ord.shippingCost || 0);
+                          const oComision = (ord.items || []).reduce((sum, it) => sum + (Number(it.comisionML || 0) * (it.quantity || 1)), 0);
+                          const oNeto = Math.max(0, oBruto - oEnvio - oComision);
+                          const isExpanded = expandedOrderId === ord.id;
+                          
+                          // Liberation status calculation
+                          const diffHours = (Date.now() - oDate.getTime()) / (1000 * 60 * 60);
+                          const isRecentML = diffHours < 72 && (ord.canal || "").toLowerCase().includes("mercado");
+
+                          return (
+                            <React.Fragment key={ord.id}>
+                              <tr className={`transition-colors hover:bg-zinc-900/40 ${isExpanded ? "bg-indigo-950/20" : ""}`}>
+                                <td className="py-3 px-3.5 font-mono text-zinc-400 whitespace-nowrap text-[11px]">
+                                  {dateFormatted}
+                                </td>
+                                <td className="py-3 px-3.5">
+                                  <div className="font-bold text-white max-w-[180px] truncate" title={ord.customerName}>
+                                    {ord.customerName}
+                                  </div>
+                                  <div className="text-[10px] text-zinc-500 font-mono">
+                                    #{ord.id.substring(0, 8)}
+                                  </div>
+                                </td>
+                                <td className="py-3 px-3.5 whitespace-nowrap">
+                                  <div className="flex items-center gap-1.5">
+                                    {(ord.canal || "").toLowerCase().includes("mercado") ? (
+                                      <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                        🟡 ML
+                                      </span>
+                                    ) : (ord.canal || "").toLowerCase().includes("whatsapp") ? (
+                                      <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                        💬 WhatsApp
+                                      </span>
+                                    ) : (
+                                      <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                                        🌐 Web
+                                      </span>
+                                    )}
+                                    <span className="text-[9.5px] text-zinc-400 font-bold">
+                                      📍 {ord.depositoOrigen || "Pinamar"}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className="py-3 px-3.5 text-right font-mono text-zinc-200 font-bold whitespace-nowrap">
+                                  ${oBruto.toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+                                </td>
+                                <td className="py-3 px-3.5 text-right font-mono text-amber-400 whitespace-nowrap">
+                                  {oEnvio > 0 ? (
+                                    <span title="Costo de etiqueta descontado por Mercado Envíos">
+                                      -${oEnvio.toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+                                    </span>
+                                  ) : (
+                                    <span className="text-zinc-600">$0,00</span>
+                                  )}
+                                </td>
+                                <td className="py-3 px-3.5 text-right font-mono text-rose-400 whitespace-nowrap">
+                                  {oComision > 0 ? (
+                                    <span>-${oComision.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</span>
+                                  ) : (
+                                    <span className="text-zinc-600">$0,00</span>
+                                  )}
+                                </td>
+                                <td className="py-3 px-3.5 text-right font-mono text-emerald-400 font-black whitespace-nowrap text-xs bg-emerald-500/5">
+                                  +${oNeto.toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+                                </td>
+                                <td className="py-3 px-3.5 text-center whitespace-nowrap">
+                                  {isRecentML ? (
+                                    <span className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                                      <Clock className="w-2.5 h-2.5" /> En entrega (A liberar)
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                                      <CheckCircle2 className="w-2.5 h-2.5" /> Acreditado
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="py-3 px-3 text-center">
+                                  <button
+                                    onClick={() => setExpandedOrderId(isExpanded ? null : ord.id)}
+                                    className="p-1 rounded-md hover:bg-zinc-800 text-zinc-400 hover:text-white transition cursor-pointer"
+                                    title={isExpanded ? "Ocultar productos" : "Ver productos"}
+                                  >
+                                    <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isExpanded ? "rotate-180 text-indigo-400" : ""}`} />
+                                  </button>
+                                </td>
+                              </tr>
+
+                              {/* Expanded items row */}
+                              {isExpanded && (
+                                <tr className="bg-zinc-950/90 border-b border-indigo-500/20">
+                                  <td colSpan={9} className="p-3.5 pl-6">
+                                    <div className="space-y-2">
+                                      <span className="text-[10px] font-black uppercase text-indigo-300 tracking-wider flex items-center gap-1.5">
+                                        <ShoppingBag className="w-3 h-3" /> Artículos del Pedido #{ord.id}:
+                                      </span>
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                                        {(ord.items || []).map((it, itIdx) => (
+                                          <div key={itIdx} className="p-2.5 rounded-lg bg-zinc-900 border border-zinc-800 text-xs space-y-1">
+                                            <div className="font-bold text-white truncate" title={it.productName}>
+                                              {it.quantity}x {it.productName}
+                                            </div>
+                                            <div className="flex items-center justify-between text-[10px] text-zinc-400 font-mono">
+                                              <span>Precio: ${Number(it.unitPrice || 0).toLocaleString("es-AR")}</span>
+                                              <span>Total: ${Number(it.totalPrice || 0).toLocaleString("es-AR")}</span>
+                                            </div>
+                                            {Number(it.comisionML || 0) > 0 && (
+                                              <div className="text-[9.5px] text-rose-400 font-mono">
+                                                Comisión ML: -${(Number(it.comisionML) * (it.quantity || 1)).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+                                                {Number(it.quantity || 1) > 1 && (
+                                                  <span className="text-[8.5px] text-zinc-400 font-sans ml-1">
+                                                    (${Number(it.comisionML).toLocaleString("es-AR", { minimumFractionDigits: 2 })} × {it.quantity} un.)
+                                                  </span>
+                                                )}
+                                              </div>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Secondary technical KPIs */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 pt-2 border-t border-zinc-800/80">
+                  <div className="bg-zinc-950/40 p-3 rounded-xl border border-zinc-850 space-y-0.5">
+                    <span className="text-[9.5px] font-black uppercase text-zinc-500 tracking-wider">Venta Promedio Diaria</span>
+                    <p className="text-base font-black font-mono text-emerald-400">${dailyAvg.toLocaleString("es-AR")} / día</p>
+                    <span className="text-[9.5px] text-zinc-400">Calculado sobre {daysInMonth} días</span>
+                  </div>
+
+                  <div className="bg-zinc-950/40 p-3 rounded-xl border border-zinc-850 space-y-0.5">
+                    <span className="text-[9.5px] font-black uppercase text-zinc-500 tracking-wider">Costo Operativo Estimado</span>
+                    <p className="text-base font-black font-mono text-zinc-300">${m.totalCost.toLocaleString("es-AR")} UYU</p>
+                    <span className="text-[9.5px] text-zinc-400">Costo mercadería e insumos</span>
+                  </div>
+
+                  <div className="bg-zinc-950/40 p-3 rounded-xl border border-zinc-850 space-y-0.5">
+                    <span className="text-[9.5px] font-black uppercase text-zinc-500 tracking-wider">Ganancia Neta Real</span>
+                    <p className="text-base font-black font-mono text-[#E6BF76]">${totalGananciaRealMes.toLocaleString("es-AR")} UYU</p>
+                    <span className="text-[9.5px] text-emerald-400 font-bold">
+                      Margen: {totalBrutoMes > 0 ? Math.round((totalGananciaRealMes / totalBrutoMes) * 100) : 0}% neto
+                    </span>
+                  </div>
+
+                  <div className="bg-zinc-950/40 p-3 rounded-xl border border-zinc-850 space-y-0.5">
+                    <span className="text-[9.5px] font-black uppercase text-zinc-500 tracking-wider">Desempeño MoM</span>
+                    <p className="text-base font-black font-mono text-indigo-300">
                       {m.growthPercent > 0 ? `+${m.growthPercent}%` : `${m.growthPercent}%`}
                     </p>
-                    <span className="text-[10px] text-zinc-400 font-bold">Respecto al mes anterior</span>
+                    <span className="text-[9.5px] text-zinc-400">Respecto al mes anterior</span>
                   </div>
                 </div>
               </div>

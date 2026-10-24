@@ -535,15 +535,18 @@ export default function App() {
 
   // Anti-download image protection: prevents right-click saving and dragging images to desktop/tabs
   useEffect(() => {
+    const isImageElement = (target: EventTarget | null): boolean => {
+      if (!target || !(target instanceof Element)) return false;
+      return target.tagName === "IMG" || (typeof target.closest === "function" && !!target.closest("img"));
+    };
+
     const handleContextMenu = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (target && (target.tagName === "IMG" || target.closest("img"))) {
+      if (isImageElement(e.target)) {
         e.preventDefault();
       }
     };
     const handleDragStart = (e: DragEvent) => {
-      const target = e.target as HTMLElement;
-      if (target && (target.tagName === "IMG" || target.closest("img"))) {
+      if (isImageElement(e.target)) {
         e.preventDefault();
       }
     };
@@ -2902,8 +2905,8 @@ export default function App() {
   // Click outside detector to close active dropdown menus cleanly
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as HTMLElement;
-      if (!target.closest(".category-dropdown-container")) {
+      const target = event.target as HTMLElement | null;
+      if (target && typeof target.closest === "function" && !target.closest(".category-dropdown-container")) {
         setActiveDropdown(null);
       }
     };
@@ -5453,8 +5456,8 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
           ? "bg-[#050B1A] md:bg-[#050B1A]/95 border-b border-[#D4A55A]/20 md:backdrop-blur-md shadow-lg shadow-black/30" 
           : "bg-[#050B1A] border-b border-[#D4A55A]/15 shadow-md shadow-black/10"
       }`}>
-        {/* Top Banner Message for Promotions & Free Shipping Slider */}
-        {bannerSlides.length > 0 && (
+        {/* Top Banner Message for Promotions & Free Shipping Slider - Hidden in Admin for maximum workspace */}
+        {bannerSlides.length > 0 && activeTab === "storefront" && (
           <div className="theme-promo-banner h-9 px-4 md:px-12 text-center text-[11px] md:text-xs font-semibold relative z-30 flex items-center justify-between overflow-hidden font-sans group transition-all duration-300">
             {/* Mobile View: Continuous Scrolling Train (Marquee) */}
             <div className="flex md:hidden flex-1 h-full items-center overflow-hidden w-full">
@@ -5501,8 +5504,12 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
           </div>
         )}
 
-        {/* Main Layout Header based on design HTML & Professional Polish theme */}
-        <header className="min-h-[3.5rem] h-14 md:h-16 flex items-center justify-between px-4 md:px-6 shrink-0 relative z-40 gap-3 md:gap-4 transition-all duration-300 bg-transparent">
+        {/* Main Layout Header based on design HTML & Professional Polish theme - Compact in Admin */}
+        <header className={`${
+          activeTab === "admin"
+            ? "min-h-[2.75rem] h-11 md:h-12 px-3 md:px-5"
+            : "min-h-[3.5rem] h-14 md:h-16 px-4 md:px-6"
+        } flex items-center justify-between shrink-0 relative z-40 gap-2 md:gap-4 transition-all duration-300 bg-transparent`}>
         
         {/* Logo and container */}
         <div className="flex items-center gap-2 md:gap-4 select-none">
@@ -5516,24 +5523,29 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
               setIsHeaderSearchOpen(false);
               window.scrollTo({ top: 0, behavior: "smooth" });
             }}
-            className="flex items-center gap-2 md:gap-4 shrink-0 cursor-pointer border-none bg-transparent text-left outline-none p-0"
+            className="flex items-center gap-2 md:gap-3 shrink-0 cursor-pointer border-none bg-transparent text-left outline-none p-0"
           >
             {/* Elegant Circular Logo inspired by Juem logo from design HTML */}
             {store.settings.logoType === "image" && Boolean(store.settings.logoImageUrl?.trim()) ? (
               <img
                 src={store.settings.logoImageUrl || null}
                 alt={store.settings.siteTitle}
-                className="w-8 h-8 rounded-xl object-cover shadow-sm"
+                className={`${activeTab === "admin" ? "w-6 h-6 md:w-7 md:h-7" : "w-8 h-8"} rounded-xl object-cover shadow-sm`}
                 referrerPolicy="no-referrer"
               />
             ) : (
-              <div className="w-8 h-8 bg-[#D4A55A] rounded-xl flex items-center justify-center text-[#050B1A] font-bold text-lg shadow-sm">
+              <div className={`${activeTab === "admin" ? "w-6 h-6 md:w-7 md:h-7 text-xs md:text-sm" : "w-8 h-8 text-lg"} bg-[#D4A55A] rounded-xl flex items-center justify-center text-[#050B1A] font-bold shadow-sm`}>
                 {store.settings.logoText || "J"}
               </div>
             )}
             <div>
-              <h1 className="font-serif font-bold text-base md:text-xl tracking-widest text-[#F4EAD7] flex items-center gap-1.5">
+              <h1 className={`font-serif font-bold ${activeTab === "admin" ? "text-sm md:text-base" : "text-base md:text-xl"} tracking-widest text-[#F4EAD7] flex items-center gap-1.5`}>
                 <span>{store.settings.siteTitle}</span>
+                {activeTab === "admin" && (
+                  <span className="text-[8.5px] font-mono font-bold px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 uppercase tracking-normal">
+                    Admin
+                  </span>
+                )}
               </h1>
             </div>
           </button>
@@ -5955,33 +5967,35 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
               </div>
 
               {/* Session Security and Activity Indicator */}
-              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#D4AF37]/12 text-[#F3E5AB] rounded-full border border-[#D4AF37]/30 shadow-[0_0_12px_rgba(212,175,55,0.12)] transition-all duration-300" title="Su sesión se renueva automáticamente con el movimiento o clics.">
+              <div className={`flex items-center gap-1.5 ${activeTab === "admin" ? "px-2 py-0.5" : "px-3 py-1.5"} bg-[#D4AF37]/12 text-[#F3E5AB] rounded-full border border-[#D4AF37]/30 shadow-[0_0_12px_rgba(212,175,55,0.12)] transition-all duration-300`} title="Su sesión se renueva automáticamente con el movimiento o clics.">
                 <ShieldCheck className="w-3.5 h-3.5 text-[#E6BF76]" />
-                <span className="text-[10px] font-bold uppercase tracking-wider hidden md:inline text-[#F3E5AB]">Sesión Protegida (Áurea)</span>
-                <span className="text-[10px] font-bold uppercase tracking-wider md:hidden text-[#F3E5AB]">Sesión Protegida</span>
+                <span className="text-[9px] font-bold uppercase tracking-wider hidden md:inline text-[#F3E5AB]">Sesión Protegida</span>
               </div>
 
               {/* View Store button */}
               <button
-                onClick={() => setActiveTab("storefront")}
-                className="flex items-center gap-1.5 text-xs font-bold py-1.5 px-3.5 rounded-xl bg-gradient-to-r from-[#D4AF37]/20 via-[#D4A55A]/15 to-transparent hover:from-[#D4AF37]/30 hover:to-[#B89628]/25 text-[#F3E5AB] border border-[#D4AF37]/35 transition-all shadow-[0_2px_12px_rgba(212,175,55,0.15)] cursor-pointer"
+                onClick={() => {
+                  setActiveTab("storefront");
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+                className={`flex items-center gap-1.5 ${activeTab === "admin" ? "text-[11px] py-1 px-2.5" : "text-xs py-1.5 px-3.5"} font-bold rounded-xl bg-gradient-to-r from-[#D4AF37]/20 via-[#D4A55A]/15 to-transparent hover:from-[#D4AF37]/30 hover:to-[#B89628]/25 text-[#F3E5AB] border border-[#D4AF37]/35 transition-all shadow-[0_2px_12px_rgba(212,175,55,0.15)] cursor-pointer`}
               >
-                <ArrowLeft className="h-3.5 w-3.5 text-[#E6BF76]" />
+                <ArrowLeft className="h-3 w-3 text-[#E6BF76]" />
                 <span>Ver Tienda</span>
               </button>
 
               {/* Active account details (Juem) */}
-              <div className="flex items-center gap-2.5 pl-3 border-l border-[#D4AF37]/25">
+              <div className="flex items-center gap-2 pl-2 border-l border-[#D4AF37]/25">
                 <div className="hidden md:block text-right">
-                  <p className="text-xs font-bold leading-none text-[#F3E5AB]">Juem</p>
-                  <p className="text-[9px] text-[#D4A55A]/80 font-medium">Administrador Principal</p>
+                  <p className="text-[11px] font-bold leading-none text-[#F3E5AB]">Juem</p>
+                  <p className="text-[8.5px] text-[#D4A55A]/80 font-medium">Administrador</p>
                 </div>
                 <button
                   onClick={handleLogout}
-                  className="p-1.5 text-rose-400 hover:bg-rose-500/15 rounded-lg border border-rose-500/20 transition cursor-pointer"
+                  className="p-1 text-rose-400 hover:bg-rose-500/15 rounded-lg border border-rose-500/20 transition cursor-pointer"
                   title="Cerrar sesión"
                 >
-                  <LogOut className="h-4 w-4" />
+                  <LogOut className="h-3.5 w-3.5" />
                 </button>
               </div>
             </>
@@ -5993,7 +6007,9 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
     {/* Dynamic Spacer to prevent content from slipping under fixed navbar */}
     <div 
       className={
-        bannerSlides.length > 0
+        activeTab === "admin"
+          ? "h-[44px] md:h-[48px]"
+          : bannerSlides.length > 0
           ? "h-[80px] sm:h-[84px] lg:h-[86px]"
           : "h-[54px] lg:h-[60px]"
       }
