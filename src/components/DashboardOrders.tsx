@@ -623,60 +623,6 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
         const orderId = isEdit ? editingOrderId! : data.orderId;
         const orderNumber = orderId ? orderId.substring(0, 6).toUpperCase() : "MANUAL";
 
-        if (orderId) {
-          const existingShip = store.shippings?.find(s => s.orderId === orderId);
-          if (newSaleCustomerAddress.trim()) {
-            const shipPayload = {
-              orderNumber: orderNumber,
-              customerName: payload.customerName,
-              customerPhone: payload.customerPhone || "",
-              deliveryHours: newSaleDeliveryHours.trim(),
-              deliveryAddress: newSaleCustomerAddress.trim(),
-              comments: payload.notes || "",
-              branch: payload.depositoOrigen,
-              shippingCost: payload.shippingCost,
-              status: newSaleShippingStatus,
-              orderId: orderId
-            };
-
-            try {
-              const shipUrl = existingShip ? `/api/shippings/${existingShip.id}` : "/api/shippings";
-              const shipMethod = existingShip ? "PUT" : "POST";
-              await fetch(shipUrl, {
-                method: shipMethod,
-                headers: {
-                  "Content-Type": "application/json",
-                  "Authorization": `Bearer ${activeToken}`
-                },
-                body: JSON.stringify(shipPayload)
-              });
-            } catch (shipErr) {
-              console.error("Error creating/updating shipping record auto:", shipErr);
-            }
-          } else if (existingShip) {
-            // If address is cleared, delete associated shipping record
-            try {
-              await fetch(`/api/shippings/${existingShip.id}`, {
-                method: "DELETE",
-                headers: {
-                  "Authorization": `Bearer ${activeToken}`
-                }
-              });
-            } catch (delShipErr) {
-              console.error("Error deleting shipping record auto:", delShipErr);
-            }
-          }
-        }
-
-        // Trigger parent state synchronization for real-time update
-        if (onRefreshStore) {
-          try {
-            await onRefreshStore();
-          } catch (refreshErr) {
-            console.error("Error invoking onRefreshStore:", refreshErr);
-          }
-        }
-
         if (isEdit) {
           const updatedOrder: Order = {
             id: editingOrderId!,
@@ -719,7 +665,7 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
           }
           setEditingOrderId(null);
         } else {
-          // Construct Order object for local React state inclusion
+          // Construct Order object for instant local React state inclusion
           const createdOrder: Order = {
             id: data.orderId || "manual-" + Math.random().toString(36).substring(2, 9),
             customerName: payload.customerName,
@@ -761,7 +707,8 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
           }
         }
 
-        // Reset state
+        // Close modal and reset state immediately for instant feedback
+        setIsModalOpen(false);
         setNewSaleItems([]);
         setNewSaleCustomerPhone("");
         setNewSaleCustomerAddress("");
@@ -778,7 +725,61 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
           return localDate.toISOString().split("T")[0];
         })();
         setNewSaleDate(todayStr);
-        setIsModalOpen(false);
+
+        // Background synchronization for shipping and store state without blocking the UI
+        (async () => {
+          if (orderId) {
+            const existingShip = store.shippings?.find(s => s.orderId === orderId);
+            if (newSaleCustomerAddress.trim()) {
+              const shipPayload = {
+                orderNumber: orderNumber,
+                customerName: payload.customerName,
+                customerPhone: payload.customerPhone || "",
+                deliveryHours: newSaleDeliveryHours.trim(),
+                deliveryAddress: newSaleCustomerAddress.trim(),
+                comments: payload.notes || "",
+                branch: payload.depositoOrigen,
+                shippingCost: payload.shippingCost,
+                status: newSaleShippingStatus,
+                orderId: orderId
+              };
+
+              try {
+                const shipUrl = existingShip ? `/api/shippings/${existingShip.id}` : "/api/shippings";
+                const shipMethod = existingShip ? "PUT" : "POST";
+                await fetch(shipUrl, {
+                  method: shipMethod,
+                  headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${activeToken}`
+                  },
+                  body: JSON.stringify(shipPayload)
+                });
+              } catch (shipErr) {
+                console.error("Error creating/updating shipping record auto:", shipErr);
+              }
+            } else if (existingShip) {
+              try {
+                await fetch(`/api/shippings/${existingShip.id}`, {
+                  method: "DELETE",
+                  headers: {
+                    "Authorization": `Bearer ${activeToken}`
+                  }
+                });
+              } catch (delShipErr) {
+                console.error("Error deleting shipping record auto:", delShipErr);
+              }
+            }
+          }
+
+          if (onRefreshStore) {
+            try {
+              await onRefreshStore();
+            } catch (refreshErr) {
+              console.error("Error invoking onRefreshStore in background:", refreshErr);
+            }
+          }
+        })();
       } else {
         setNewSaleErrorMessage(data.message || "Error al registrar la venta en el servidor.");
         modalBodyRef.current?.scrollTo({ top: 0, behavior: "smooth" });

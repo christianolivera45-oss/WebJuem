@@ -1834,7 +1834,7 @@ function checkAndClearExpiredBannerText(state: ShopState): { state: ShopState, u
 
 let cachedDbState: ShopState | null = null;
 let cachedDbStateTime = 0;
-const DB_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutos de caché en memoria para proteger la cuota de transferencia (Egress) en Supabase
+const DB_CACHE_TTL_MS = 15 * 1000; // 15 segundos de caché en memoria para lecturas; mutaciones invalidan inmediatamente
 
 function invalidateDbCache() {
   cachedDbState = null;
@@ -5358,7 +5358,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       const pool = getDbPool();
       if (pool && !dbUnavailable) {
         // Force refresh state from SQL
-        const dbState = await getDbState();
+        invalidateDbCache();
+        const dbState = await getDbState(true);
         currentStoreState = dbState;
       }
       res.json({ success: true, orders: currentStoreState.orders || [] });
@@ -10303,7 +10304,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         }
         
         // Force reload cache with database state
-        const dbState = await getDbState();
+        invalidateDbCache();
+        const dbState = await getDbState(true);
         currentStoreState = dbState;
       } else {
         // Safe, verified file-system backup fallback:
@@ -10606,7 +10608,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
           client.release();
         }
 
-        const dbState = await getDbState();
+        invalidateDbCache();
+        const dbState = await getDbState(true);
         currentStoreState = dbState;
       } else {
         // Fallback for file-system storage:
@@ -10707,7 +10710,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
           }
         }
 
-        const dbState = await getDbState();
+        invalidateDbCache();
+        const dbState = await getDbState(true);
         currentStoreState = dbState;
       } else {
         if (currentStoreState.orders) {
@@ -10832,7 +10836,11 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
             }
           }
           
-          // Cascade delete on public.order_items is active in DB, so we only need to delete from public.orders
+          // Clean up any dependent records in related tables to ensure clean deletion without FK blocks
+          await client.query("DELETE FROM public.payments WHERE order_id = $1;", [id]);
+          await client.query("DELETE FROM public.shippings WHERE order_id = $1;", [id]);
+          await client.query("DELETE FROM public.order_items WHERE order_id = $1;", [id]);
+          await client.query("DELETE FROM public.order_status_history WHERE order_id = $1;", [id]);
           await client.query("DELETE FROM public.orders WHERE id = $1;", [id]);
           await client.query("COMMIT;");
         } catch (txErr: any) {
@@ -10843,7 +10851,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
           client.release();
         }
         
-        const dbState = await getDbState();
+        invalidateDbCache();
+        const dbState = await getDbState(true);
         currentStoreState = dbState;
       } else {
         if (currentStoreState.orders) {
@@ -10854,6 +10863,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
           currentStoreState.orders = currentStoreState.orders.filter((o: any) => o.id !== id);
           fs.writeFileSync(STORE_FILE, JSON.stringify(currentStoreState, null, 2), "utf-8");
         }
+        invalidateDbCache();
       }
 
       res.json({ success: true, message: "Pedido eliminado correctamente de la base de datos.", state: currentStoreState });

@@ -7738,6 +7738,8 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                         ...prev,
                         orders: (prev.orders || []).filter(o => o.id !== id)
                       }));
+                      // Background silent sync to confirm persistence with PostgreSQL
+                      fetchStoreData(true);
                     } else {
                       showAdminToast(d.message || "Error al eliminar el pedido.", "error");
                     }
@@ -7748,7 +7750,8 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                 onOrderCreated={(newOrder) => {
                   showAdminToast("Venta manual registrada con éxito.", "success");
                   setStore(prev => {
-                    const updatedOrders = [newOrder, ...(prev.orders || [])];
+                    const filtered = (prev.orders || []).filter(o => o.id !== newOrder.id);
+                    const updatedOrders = [newOrder, ...filtered];
                     let updatedProducts = prev.products || [];
                     if (newOrder.status === "pago_aprobado" && newOrder.items) {
                       updatedProducts = deductProductsStockClient(prev.products || [], newOrder.items, newOrder.depositoOrigen || "Pinamar");
