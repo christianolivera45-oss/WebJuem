@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { ShopState, Order, Product, ProductVariant } from "../types";
 import { normalizeText } from "../utils/shopLogic.tsx";
 import { 
@@ -94,8 +95,27 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSubmittingNewSale, setIsSubmittingNewSale] = useState(false);
   const [newSaleErrorMessage, setNewSaleErrorMessage] = useState<string | null>(null);
+  const modalBodyRef = useRef<HTMLDivElement>(null);
 
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(initialExpandedOrderId || null);
+
+  // Prevent background scroll and support ESC to close modal
+  useEffect(() => {
+    if (!isModalOpen) return;
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setIsModalOpen(false);
+        setEditingOrderId(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isModalOpen]);
 
   useEffect(() => {
     if (initialStatusFilter !== undefined) {
@@ -460,6 +480,7 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
 
     setProductSearchQuery("");
     setSearchResults([]);
+    setNewSaleErrorMessage(null);
   };
 
   // Remove item from transaction cart
@@ -532,12 +553,14 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
   // Dispatch sale/invoice creation
   const handleDispatchSale = async () => {
     if (newSaleItems.length === 0) {
-      setNewSaleErrorMessage("Debe agregar al menos un artículo a la transacción.");
+      setNewSaleErrorMessage("Debe agregar al menos un artículo a la transacción antes de confirmar la venta.");
+      modalBodyRef.current?.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
 
     if (!newSaleCustomerName.trim()) {
-      setNewSaleErrorMessage("El nombre del cliente es obligatorio.");
+      setNewSaleErrorMessage("El nombre del cliente es obligatorio para registrar la venta.");
+      modalBodyRef.current?.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
 
@@ -758,9 +781,11 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
         setIsModalOpen(false);
       } else {
         setNewSaleErrorMessage(data.message || "Error al registrar la venta en el servidor.");
+        modalBodyRef.current?.scrollTo({ top: 0, behavior: "smooth" });
       }
     } catch (err: any) {
       setNewSaleErrorMessage("Error de comunicación con el servidor. Verifique su conexión.");
+      modalBodyRef.current?.scrollTo({ top: 0, behavior: "smooth" });
     } finally {
       setIsSubmittingNewSale(false);
     }
@@ -1161,6 +1186,7 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
         <button
           onClick={() => {
             setEditingOrderId(null);
+            setNewSaleErrorMessage(null);
             setNewSaleCustomerName("Cliente WhatsApp / Consumidor final");
             setNewSaleCustomerEmail("");
             setNewSaleCustomerPhone("");
@@ -1815,9 +1841,17 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
       </div>
 
       {/* REGISTRAR NUEVA VENTA MODAL */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-[100] bg-black/75 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-zinc-900/95 backdrop-blur-xl w-full max-w-4xl rounded-2xl border border-zinc-800 shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex flex-col max-h-[90vh] overflow-hidden animate-in fade-in zoom-in duration-150">
+      {isModalOpen && typeof document !== "undefined" && createPortal(
+        <div 
+          className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-in fade-in duration-200"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setIsModalOpen(false);
+              setEditingOrderId(null);
+            }
+          }}
+        >
+          <div className="bg-zinc-900/98 backdrop-blur-2xl w-full max-w-4xl rounded-2xl border border-zinc-700/80 shadow-[0_25px_60px_rgba(0,0,0,0.85)] flex flex-col max-h-[88vh] my-auto overflow-hidden animate-in zoom-in-95 duration-200 ring-1 ring-white/10">
             
             {/* Modal Header */}
             <div className="p-5 border-b border-zinc-800/85 flex justify-between items-center bg-zinc-950/40">
@@ -1836,12 +1870,20 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
             </div>
 
             {/* Modal Body */}
-            <div className="p-6 overflow-y-auto space-y-6 flex-1">
+            <div ref={modalBodyRef} className="p-6 overflow-y-auto space-y-6 flex-1 relative scroll-smooth">
               
               {newSaleErrorMessage && (
-                <div className="p-3.5 bg-rose-500/15 border border-rose-500/30 rounded-xl text-rose-400 text-xs flex items-center gap-2.5 font-bold animate-pulse">
-                  <AlertCircle className="h-4 w-4 shrink-0" />
-                  <span>{newSaleErrorMessage}</span>
+                <div className="sticky top-0 z-50 p-4 bg-rose-950/95 backdrop-blur-md border-2 border-rose-500 rounded-2xl text-rose-100 text-xs sm:text-sm flex items-center justify-center gap-3 font-extrabold shadow-2xl shadow-rose-950/80 text-center animate-in fade-in zoom-in-95 duration-200">
+                  <AlertCircle className="h-5 w-5 text-rose-400 shrink-0 animate-bounce" />
+                  <span className="flex-1 text-center font-black">{newSaleErrorMessage}</span>
+                  <button
+                    type="button"
+                    onClick={() => setNewSaleErrorMessage(null)}
+                    className="p-1.5 text-rose-300 hover:text-white hover:bg-rose-900/60 rounded-xl transition cursor-pointer shrink-0"
+                    title="Cerrar advertencia"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
                 </div>
               )}
 
@@ -2054,12 +2096,23 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
                   
                   {/* Customer name */}
                   <div className="space-y-1">
-                    <span className="text-[10px] font-black text-zinc-500 uppercase tracking-wider">Cliente Comprador</span>
+                    <span className="text-[10px] font-black text-zinc-500 uppercase tracking-wider flex items-center justify-between">
+                      <span>Cliente Comprador</span>
+                      <span className="text-[9px] text-rose-400 font-bold">* Obligatorio</span>
+                    </span>
                     <input
                       type="text"
                       value={newSaleCustomerName}
-                      onChange={(e) => setNewSaleCustomerName(e.target.value)}
-                      className="w-full px-3.5 py-2.5 bg-zinc-950/60 border border-zinc-800 focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/30 rounded-xl text-xs font-bold text-white placeholder-zinc-500 outline-none shadow-inner"
+                      onChange={(e) => {
+                        setNewSaleCustomerName(e.target.value);
+                        if (newSaleErrorMessage) setNewSaleErrorMessage(null);
+                      }}
+                      placeholder="Nombre del cliente"
+                      className={`w-full px-3.5 py-2.5 bg-zinc-950/60 border rounded-xl text-xs font-bold text-white placeholder-zinc-500 outline-none shadow-inner transition-all ${
+                        newSaleErrorMessage && !newSaleCustomerName.trim()
+                          ? "border-rose-500 ring-2 ring-rose-500/30 bg-rose-950/20"
+                          : "border-zinc-800 focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/30"
+                      }`}
                     />
                   </div>
 
@@ -2373,38 +2426,47 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
             </div>
 
             {/* Modal Footer */}
-            <div className="p-5 border-t border-zinc-800/80 bg-zinc-950/40 flex flex-col sm:flex-row justify-between items-center gap-3">
-              <button
-                type="button"
-                onClick={() => { setIsModalOpen(false); setEditingOrderId(null); }}
-                className="px-4 py-2 text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-850 rounded-xl transition-all w-full sm:w-auto text-center border border-transparent hover:border-zinc-800 cursor-pointer"
-              >
-                {editingOrderId ? "Cancelar" : "Cerrar (Mantener Borrador)"}
-              </button>
-              
-              <button
-                type="button"
-                disabled={isSubmittingNewSale || newSaleItems.length === 0}
-                onClick={handleDispatchSale}
-                className={`px-6 py-2.5 rounded-xl text-xs font-black text-white flex items-center justify-center gap-1.5 cursor-pointer w-full sm:w-auto shadow-lg transition-all active:scale-[0.98] ${
-                  isSubmittingNewSale || newSaleItems.length === 0
-                    ? "bg-zinc-850 text-zinc-500 border border-zinc-800/80 cursor-not-allowed shadow-none"
-                    : "bg-indigo-600 hover:bg-indigo-500 shadow-[0_0_15px_rgba(79,70,229,0.3)] hover:shadow-[0_0_20px_rgba(79,70,229,0.45)] border border-indigo-500/50"
-                }`}
-              >
-                {isSubmittingNewSale ? (
-                  <span>{editingOrderId ? "Guardando cambios..." : "Procesando venta..."}</span>
-                ) : (
-                  <>
-                    <ArrowRight className="h-4 w-4" />
-                    <span>{editingOrderId ? "Guardar Cambios" : "Despachar Factura"} ({newSaleItems.reduce((acc, it) => acc + it.quantity, 0)} items)</span>
-                  </>
-                )}
-              </button>
+            <div className="p-5 border-t border-zinc-800/80 bg-zinc-950/90 flex flex-col gap-3">
+              {newSaleErrorMessage && (
+                <div className="p-3 bg-rose-950/90 border border-rose-500/60 rounded-xl text-rose-200 text-xs font-bold flex items-center justify-center gap-2.5 text-center shadow-lg animate-in fade-in duration-150">
+                  <AlertCircle className="h-4 w-4 text-rose-400 shrink-0" />
+                  <span className="text-center font-extrabold">{newSaleErrorMessage}</span>
+                </div>
+              )}
+              <div className="flex flex-col sm:flex-row justify-between items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => { setIsModalOpen(false); setEditingOrderId(null); }}
+                  className="px-4 py-2 text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-850 rounded-xl transition-all w-full sm:w-auto text-center border border-transparent hover:border-zinc-800 cursor-pointer"
+                >
+                  {editingOrderId ? "Cancelar" : "Cerrar (Mantener Borrador)"}
+                </button>
+                
+                <button
+                  type="button"
+                  disabled={isSubmittingNewSale}
+                  onClick={handleDispatchSale}
+                  className={`px-6 py-2.5 rounded-xl text-xs font-black text-white flex items-center justify-center gap-1.5 cursor-pointer w-full sm:w-auto shadow-lg transition-all active:scale-[0.98] ${
+                    isSubmittingNewSale
+                      ? "bg-zinc-850 text-zinc-500 border border-zinc-800/80 cursor-not-allowed shadow-none"
+                      : "bg-indigo-600 hover:bg-indigo-500 shadow-[0_0_15px_rgba(79,70,229,0.3)] hover:shadow-[0_0_20px_rgba(79,70,229,0.45)] border border-indigo-500/50"
+                  }`}
+                >
+                  {isSubmittingNewSale ? (
+                    <span>{editingOrderId ? "Guardando cambios..." : "Procesando venta..."}</span>
+                  ) : (
+                    <>
+                      <ArrowRight className="h-4 w-4" />
+                      <span>{editingOrderId ? "Guardar Cambios" : "Despachar Factura"} ({newSaleItems.reduce((acc, it) => acc + it.quantity, 0)} items)</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
 
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
     </div>
