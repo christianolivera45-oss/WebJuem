@@ -7680,6 +7680,7 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                 setIsNewProductMode={setIsNewProductMode}
                 setEditingProduct={(p) => setEditingProduct(prepareProductForEditing(p as any))}
                 adminTasks={adminTasks}
+                initialTab={adminSection === "finances" ? "finances" : "sales"}
               />
             ) : adminSection === "sales" ? (
               <DashboardOrders
@@ -7688,6 +7689,7 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                 onRefreshStore={async () => { await fetchStoreData(true); }}
                 initialStatusFilter={salesInitialFilter}
                 initialExpandedOrderId={salesInitialOrderId}
+                onNavigateAdminSection={navigateAdminSection}
                 onUpdateStatus={async (id, newStatus) => {
                   try {
                     const response = await fetch(`/api/orders/${id}/status`, {

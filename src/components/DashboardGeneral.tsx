@@ -30,7 +30,9 @@ import {
   Truck,
   Info,
   Receipt,
-  CheckCircle2
+  CheckCircle2,
+  Handshake,
+  Store
 } from "lucide-react";
 import { ShopState, Product, AdminTask } from "../types";
 import { DashboardResumenGeneral } from "./DashboardResumenGeneral";
@@ -70,6 +72,7 @@ export interface DashboardGeneralProps {
   setIsNewProductMode?: (mode: boolean) => void;
   setEditingProduct?: (product: Product | null) => void;
   adminTasks?: AdminTask[];
+  initialTab?: "sales" | "monthly" | "finances";
 }
 
 export function DashboardGeneral({
@@ -78,10 +81,18 @@ export function DashboardGeneral({
   setStockFilterTab,
   setIsNewProductMode,
   setEditingProduct,
-  adminTasks
+  adminTasks,
+  initialTab
 }: DashboardGeneralProps) {
 
-  const [activeTab, setActiveTab] = useState<"sales" | "monthly" | "finances">("sales");
+  const [activeTab, setActiveTab] = useState<"sales" | "monthly" | "finances">(initialTab || "sales");
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
+
   const [timeRange, setTimeRange] = useState<"last30" | "current_month" | "prev_month">("current_month");
   const [selectedYear, setSelectedYear] = useState<number>(2026);
   const [selectedMonthlyMonth, setSelectedMonthlyMonth] = useState<number | null>(new Date().getMonth());
@@ -94,11 +105,40 @@ export function DashboardGeneral({
   const pausedProducts = activeProducts.filter(p => p.paused === true);
   const liveProducts = activeProducts.filter(p => p.paused !== true);
 
-  // Core Stock and Coupon computations (Demoted to secondary metrics)
-  const totalInventoryValue = activeProducts.reduce((sum, p) => sum + (p.stock || 0) * p.price, 0);
+  // Core Stock and Coupon computations
+  const totalPhysicalUnits = useMemo(() => {
+    return activeProducts.reduce((sum, p) => sum + (Number(p.stock) || 0), 0);
+  }, [activeProducts]);
+
+  const totalStockMvd = useMemo(() => {
+    return activeProducts.reduce((sum, p) => sum + (Number(p.stockMontevideo) || 0), 0);
+  }, [activeProducts]);
+
+  const totalStockPinamar = useMemo(() => {
+    return activeProducts.reduce((sum, p) => sum + (Number(p.stockPinamar) || 0), 0);
+  }, [activeProducts]);
+
+  // Valor total del inventario a precio de venta al público (PVP)
+  const totalInventoryRetailValue = useMemo(() => {
+    return activeProducts.reduce((sum, p) => sum + (Number(p.stock) || 0) * (Number(p.price) || 0), 0);
+  }, [activeProducts]);
+
+  // Valor total del inventario a costo de compra (Inversión neta en mercadería)
+  const totalInventoryCostValue = useMemo(() => {
+    return activeProducts.reduce((sum, p) => {
+      const cost = p.precioCompra !== undefined && p.precioCompra !== null && Number(p.precioCompra) > 0 
+        ? Number(p.precioCompra) 
+        : (p.is3D ? Number(p.price) * 0.30 : Number(p.price) * 0.45);
+      return sum + (Number(p.stock) || 0) * cost;
+    }, 0);
+  }, [activeProducts]);
+
+  const totalInventoryProfitMargin = totalInventoryRetailValue - totalInventoryCostValue;
+  const totalInventoryMarginPct = totalInventoryCostValue > 0 ? (totalInventoryProfitMargin / totalInventoryCostValue) * 100 : 0;
+
   const lowStockThresholdSetting = typeof store.settings?.lowStockThreshold === 'number' ? store.settings.lowStockThreshold : 5;
-  const outOfStockProducts = activeProducts.filter(p => p.stock <= 0);
-  const lowStockProducts = activeProducts.filter(p => p.stock > 0 && p.stock <= lowStockThresholdSetting);
+  const outOfStockProducts = activeProducts.filter(p => (Number(p.stock) || 0) <= 0);
+  const lowStockProducts = activeProducts.filter(p => (Number(p.stock) || 0) > 0 && (Number(p.stock) || 0) <= lowStockThresholdSetting);
   const totalStockAlerts = outOfStockProducts.length + lowStockProducts.length;
 
   const couponsList = store.coupons || [];
@@ -402,31 +442,74 @@ export function DashboardGeneral({
   const currentChartSelected = hoveredDay || defaultSelectedDay;
 
   // Categories distribution list
-  const categoriesList = store.dbCategories || [
+  // Categories distribution list
+  const categoriesList = store.dbCategories && store.dbCategories.length > 0 ? store.dbCategories : [
     { id: "ropa", nombre: "Ropa", icono: "Shirt" },
-    { id: "electronica", nombre: "Artículos electrónicos", icono: "Smartphone" },
+    { id: "electronica", nombre: "Informática", icono: "Smartphone" },
     { id: "accesorios", nombre: "Accesorios", icono: "Sparkles" },
     { id: "hogar", nombre: "Hogar", icono: "Home" }
   ];
 
-  const distribution = categoriesList.map(cat => {
-    const count = activeProducts.filter(p => 
-      p.categoria_id === cat.id || 
-      p.category.toLowerCase() === cat.nombre.toLowerCase()
-    ).length;
-    
-    const value = activeProducts
-      .filter(p => p.categoria_id === cat.id || p.category.toLowerCase() === cat.nombre.toLowerCase())
-      .reduce((sum, p) => sum + (p.stock || 0) * p.price, 0);
+  const distribution = useMemo(() => {
+    const list = categoriesList.map(cat => {
+      const matchingProducts = activeProducts.filter(p => 
+        p.categoria_id === cat.id || 
+        (p.category && p.category.toLowerCase() === (cat.nombre || "").toLowerCase()) ||
+        (p.category && p.category.toLowerCase() === (cat.id || "").toLowerCase())
+      );
+      
+      const count = matchingProducts.length;
+      const totalUnits = matchingProducts.reduce((sum, p) => sum + (Number(p.stock) || 0), 0);
+      const value = matchingProducts.reduce((sum, p) => sum + (Number(p.stock) || 0) * (Number(p.price) || 0), 0);
+      const costValue = matchingProducts.reduce((sum, p) => {
+        const cost = p.precioCompra !== undefined && p.precioCompra !== null && Number(p.precioCompra) > 0 
+          ? Number(p.precioCompra) 
+          : (p.is3D ? Number(p.price) * 0.30 : Number(p.price) * 0.45);
+        return sum + (Number(p.stock) || 0) * cost;
+      }, 0);
 
-    return {
-      ...cat,
-      count,
-      value
-    };
-  }).sort((a, b) => b.count - a.count);
+      return {
+        ...cat,
+        count,
+        totalUnits,
+        value,
+        costValue
+      };
+    });
 
-  const maxProductsCategory = Math.max(...distribution.map(d => d.count), 1);
+    const uncatProducts = activeProducts.filter(p => 
+      !categoriesList.some(c => 
+        p.categoria_id === c.id || 
+        (p.category && p.category.toLowerCase() === (c.nombre || "").toLowerCase()) ||
+        (p.category && p.category.toLowerCase() === (c.id || "").toLowerCase())
+      )
+    );
+    if (uncatProducts.length > 0) {
+      const uncatUnits = uncatProducts.reduce((sum, p) => sum + (Number(p.stock) || 0), 0);
+      const uncatValue = uncatProducts.reduce((sum, p) => sum + (Number(p.stock) || 0) * (Number(p.price) || 0), 0);
+      const uncatCost = uncatProducts.reduce((sum, p) => {
+        const cost = p.precioCompra !== undefined && p.precioCompra !== null && Number(p.precioCompra) > 0 
+          ? Number(p.precioCompra) 
+          : (p.is3D ? Number(p.price) * 0.30 : Number(p.price) * 0.45);
+        return sum + (Number(p.stock) || 0) * cost;
+      }, 0);
+      list.push({
+        id: "otros",
+        nombre: "Otros / Sin Categoría",
+        icono: "Folder",
+        count: uncatProducts.length,
+        totalUnits: uncatUnits,
+        value: uncatValue,
+        costValue: uncatCost
+      });
+    }
+
+    return list.filter(c => c.count > 0 || c.totalUnits > 0).sort((a, b) => b.totalUnits - a.totalUnits);
+  }, [categoriesList, activeProducts]);
+
+  const maxUnitsCategory = useMemo(() => {
+    return Math.max(...distribution.map(d => d.totalUnits), 1);
+  }, [distribution]);
 
   // Month Names in Spanish
   const monthNames = [
@@ -567,69 +650,6 @@ export function DashboardGeneral({
 
   return (
     <div className="w-full space-y-6 animate-fade-in relative">
-      
-      {/* Alerta de Tareas Pendientes del Asistente */}
-      {adminTasks && adminTasks.filter(t => t.status === "pending").length > 0 && (
-        <div className="bg-gradient-to-r from-indigo-950/30 to-zinc-900/60 border border-indigo-500/20 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-md">
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0 mt-0.5">
-              <Sparkles className="h-5 w-5 animate-pulse text-indigo-400" />
-            </div>
-            <div>
-              <h4 className="text-xs font-black text-white tracking-tight flex items-center gap-2">
-                <span>Recordatorios y Tareas Pendientes</span>
-                <span className="px-1.5 py-0.5 bg-indigo-600/30 text-indigo-400 border border-indigo-500/30 rounded-full text-[9px] font-black font-mono">
-                  {adminTasks.filter(t => t.status === "pending").length} Activas
-                </span>
-              </h4>
-              <p className="text-zinc-400 text-[11px] leading-relaxed mt-0.5">
-                Tienes tareas de gestión y recordatorios activos que requieren atención de tu parte.
-                {adminTasks.some(t => t.status === "pending" && t.priority === "high") && (
-                  <span className="text-rose-400 font-bold ml-1">
-                    ¡Atención: hay tareas de alta prioridad urgentes pendientes!
-                  </span>
-                )}
-              </p>
-              
-              {/* Mostrar hasta las 2 tareas más urgentes pendientes */}
-              <div className="mt-2 flex flex-col gap-1.5">
-                {adminTasks
-                  .filter(t => t.status === "pending")
-                  .sort((a, b) => {
-                    const priorityWeight = { high: 3, medium: 2, low: 1 };
-                    return (priorityWeight[b.priority] || 1) - (priorityWeight[a.priority] || 1);
-                  })
-                  .slice(0, 2)
-                  .map(task => (
-                    <div key={task.id} className="flex items-center gap-2 text-[11px] text-zinc-300">
-                      <span className={`w-1.5 h-1.5 rounded-full ${
-                        task.priority === "high" 
-                          ? "bg-rose-500 shadow-[0_0_6px_#f43f5e]" 
-                          : task.priority === "medium" 
-                          ? "bg-amber-500" 
-                          : "bg-emerald-500"
-                      }`} />
-                      <span className="font-bold max-w-md truncate">{task.title}</span>
-                      {task.dueDate && (
-                        <span className="text-zinc-500 text-[10px] font-mono">
-                          (Vence: {task.dueDate})
-                        </span>
-                      )}
-                    </div>
-                  ))}
-              </div>
-            </div>
-          </div>
-          
-          <button
-            onClick={() => navigateAdminSection("assistant")}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all active:scale-95 shadow-sm cursor-pointer self-start md:self-center flex items-center gap-1.5"
-          >
-            <span>Gestionar Tareas</span>
-            <ChevronRight className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
 
       {/* Tab Switcher and Status Indicators */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-800/80 pb-3">
@@ -666,8 +686,8 @@ export function DashboardGeneral({
                 : "text-zinc-400 hover:text-zinc-200"
             }`}
           >
-            <Scale className="h-4 w-4" />
-            <span>Resumen Financiero y Gastos</span>
+            <Scale className="h-4 w-4 text-indigo-400" />
+            <span>Resumen Financiero</span>
           </button>
         </div>
 
@@ -845,7 +865,7 @@ export function DashboardGeneral({
         </div>
  
       </div>
- 
+
       {/* 3. Operational Analytics Core Grid (Interactive Charts & Key Sales Indicators) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
  
@@ -1092,23 +1112,53 @@ export function DashboardGeneral({
           <div className="lg:col-span-4 space-y-4">
             
             {/* KPI Card Section: Inventory Value */}
-            <div className="bg-zinc-900/40 backdrop-blur-md p-5 rounded-2xl border border-zinc-850/85 shadow-sm flex flex-col justify-between space-y-4">
+            <div 
+              onClick={() => navigateAdminSection("stock")}
+              className="bg-zinc-900/40 backdrop-blur-md p-5 rounded-2xl border border-zinc-850/85 hover:border-indigo-500/30 shadow-sm flex flex-col justify-between space-y-4 cursor-pointer transition-all duration-300 group"
+            >
               <div className="flex items-center justify-between">
                 <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider">Valor total del Inventario</span>
-                <Box className="h-4 w-4 text-zinc-500" />
+                <div className="flex items-center gap-1.5 text-zinc-500 group-hover:text-indigo-400 transition-colors">
+                  <Box className="h-4 w-4" />
+                  <span className="text-[9px] font-bold uppercase tracking-wider">Ver Stock</span>
+                  <ChevronRight className="h-3 w-3" />
+                </div>
               </div>
               <div>
-                <div className="flex items-baseline gap-1.5">
+                <div className="flex items-baseline gap-2">
                   <span className="text-xl font-bold tracking-tight text-white font-sans">
-                    ${totalInventoryValue.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    ${totalInventoryRetailValue.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-[9.5px] uppercase font-black px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    Venta (PVP)
                   </span>
                 </div>
-                <p className="text-[10px] text-zinc-500 font-bold mt-1.5">
-                  {activeProducts.reduce((sum, p) => sum + p.stock, 0)} unidades físicas valorizadas en costo-compras.
-                </p>
+
+                <div className="mt-2.5 pt-2.5 border-t border-zinc-800/60 space-y-1.5 text-[10.5px]">
+                  <div className="flex justify-between items-center text-zinc-400">
+                    <span>Inversión en Costo:</span>
+                    <span className="font-mono font-bold text-zinc-200">
+                      ${totalInventoryCostValue.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-zinc-400">
+                    <span>Ganancia Proyectada:</span>
+                    <span className="font-mono font-bold text-emerald-400">
+                      +${totalInventoryProfitMargin.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({totalInventoryMarginPct.toFixed(0)}%)
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mt-3 pt-2.5 border-t border-zinc-800/60 flex items-center justify-between text-[10px] text-zinc-400">
+                  <span className="font-bold text-white">{totalPhysicalUnits} uds. físicas</span>
+                  <div className="flex items-center gap-2 font-mono">
+                    <span className="px-1.5 py-0.5 rounded bg-zinc-800/80 text-zinc-300">MVD: {totalStockMvd}</span>
+                    <span className="px-1.5 py-0.5 rounded bg-zinc-800/80 text-zinc-300">PIN: {totalStockPinamar}</span>
+                  </div>
+                </div>
               </div>
             </div>
- 
+
             {/* KPI Card: Coupons Admin Section */}
             <div 
               onClick={() => navigateAdminSection("promos")} 
@@ -1131,7 +1181,7 @@ export function DashboardGeneral({
                 </p>
               </div>
             </div>
- 
+
             {/* KPI Card: Payments Admin Section */}
             <div 
               onClick={() => navigateAdminSection("payments")} 
@@ -1158,30 +1208,43 @@ export function DashboardGeneral({
                 </p>
               </div>
             </div>
- 
+
           </div>
- 
+
           {/* Table representing category volume shares */}
           <div className="lg:col-span-8 bg-zinc-900/40 backdrop-blur-md p-5 rounded-2xl border border-zinc-850/85 shadow-sm flex flex-col space-y-4 justify-between">
-            <div>
-              <h5 className="font-bold text-xs uppercase text-zinc-200 tracking-wide flex items-center gap-2">
-                <Folder className="h-4.5 w-4.5 text-zinc-400" />
-                <span>Distribución del Stock por Categorías</span>
-              </h5>
-              <p className="text-[10px] text-zinc-500 font-bold">Cantidad y valor monetario del inventario clasificado.</p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h5 className="font-bold text-xs uppercase text-zinc-200 tracking-wide flex items-center gap-2">
+                  <Folder className="h-4.5 w-4.5 text-zinc-400" />
+                  <span>Distribución del Stock por Categorías</span>
+                </h5>
+                <p className="text-[10px] text-zinc-500 font-bold">Unidades físicas reales, modelos y valor monetario clasificado.</p>
+              </div>
+              <span className="text-[10px] font-mono font-bold text-zinc-400 bg-zinc-800/60 px-2 py-0.5 rounded-md self-start sm:self-auto">
+                {totalPhysicalUnits} uds. en {activeProducts.length} productos
+              </span>
             </div>
- 
-            <div className="space-y-3.5 pt-2 max-h-[175px] overflow-y-auto pr-1 custom-scrollbar">
+
+            <div className="space-y-3.5 pt-2 max-h-[220px] overflow-y-auto pr-1 custom-scrollbar">
               {distribution.map((cat) => {
-                const barPercent = Math.min((cat.count / maxProductsCategory) * 100, 100);
- 
+                const barPercent = Math.min((cat.totalUnits / maxUnitsCategory) * 100, 100);
+
                 return (
                   <div key={cat.id} className="space-y-1.5 group">
                     <div className="flex justify-between items-center text-[10.5px]">
-                      <span className="font-bold text-zinc-350 group-hover:text-zinc-200 transition-colors">{cat.nombre}</span>
-                      <span className="font-mono text-zinc-450 font-bold">
-                        {cat.count} uds. <span className="text-zinc-500 font-normal font-sans">(${cat.value.toLocaleString("es-AR")})</span>
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-zinc-300 group-hover:text-white transition-colors">{cat.nombre}</span>
+                        <span className="text-[9.5px] text-zinc-500 font-normal">({cat.count} {cat.count === 1 ? 'modelo' : 'modelos'})</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-indigo-300 font-black">
+                          {cat.totalUnits} uds.
+                        </span>
+                        <span className="text-zinc-500 font-normal font-sans text-[10px]">
+                          (Venta: <strong className="text-zinc-300">${cat.value.toLocaleString("es-AR")}</strong> • Costo: <strong className="text-zinc-400">${cat.costValue.toLocaleString("es-AR")}</strong>)
+                        </span>
+                      </div>
                     </div>
                     <div className="w-full h-1.5 bg-zinc-950 rounded-full overflow-hidden border border-zinc-900/50">
                       <div 

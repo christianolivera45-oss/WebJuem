@@ -28,7 +28,9 @@ import {
   MapPin,
   AlertCircle,
   Edit,
-  Truck
+  Truck,
+  Handshake,
+  Scale
 } from "lucide-react";
 
 interface DashboardOrdersProps {
@@ -41,6 +43,7 @@ interface DashboardOrdersProps {
   onRefreshStore?: () => Promise<void>;
   initialStatusFilter?: string;
   initialExpandedOrderId?: string | null;
+  onNavigateAdminSection?: (section: any) => void;
 }
 
 export const DashboardOrders: React.FC<DashboardOrdersProps> = ({ 
@@ -52,7 +55,8 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
   onOrderUpdated,
   onRefreshStore,
   initialStatusFilter,
-  initialExpandedOrderId
+  initialExpandedOrderId,
+  onNavigateAdminSection
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>(initialStatusFilter || "all");

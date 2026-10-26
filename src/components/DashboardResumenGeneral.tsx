@@ -17,7 +17,11 @@ import {
   RefreshCw,
   Search,
   ShoppingCart,
-  Receipt
+  Receipt,
+  Truck,
+  Handshake,
+  ChevronDown,
+  ChevronUp
 } from "lucide-react";
 
 interface DashboardResumenGeneralProps {
@@ -31,6 +35,7 @@ export const DashboardResumenGeneral: React.FC<DashboardResumenGeneralProps> = (
   const [endDate, setEndDate] = useState("");
   const [ledgerSearch, setLedgerSearch] = useState("");
   const [ledgerType, setLedgerType] = useState<"all" | "income" | "expense">("all");
+  const [showMontevideoOrders, setShowMontevideoOrders] = useState<boolean>(false);
 
   const orders: Order[] = useMemo(() => store.orders || [], [store.orders]);
   const bills: Bill[] = useMemo(() => store.bills || [], [store.bills]);
@@ -231,6 +236,48 @@ export const DashboardResumenGeneral: React.FC<DashboardResumenGeneralProps> = (
     const pinamarExpense = pinamarBills.reduce((acc, b) => acc + (b.currency === "USD" ? b.total * 40 : b.total), 0);
     const montevideoExpense = montevideoBills.reduce((acc, b) => acc + (b.currency === "USD" ? b.total * 40 : b.total), 0);
 
+    // Commercial Agreement for Montevideo: 40% Net Product Profit + 100% Shipping
+    let montevideoFacturadoTotal = 0;
+    let montevideoTotalCostoArticulos = 0;
+    let montevideoTotalComisionML = 0;
+    let montevideoTotalEnvios = 0;
+
+    montevideoOrders.forEach(o => {
+      const netProduct = (o.subtotal || 0) - (o.discountAmount || 0);
+      montevideoFacturadoTotal += netProduct;
+      montevideoTotalEnvios += Number(o.shippingCost || 0);
+
+      (o.items || []).forEach(item => {
+        const p = store.products?.find(prod => String(prod.id) === String(item.productId));
+        const itemCost = item.costPrice || p?.precioCompra || 0;
+        montevideoTotalCostoArticulos += (Number(item.quantity) || 1) * itemCost;
+
+        const isML = (o.canal && o.canal.toLowerCase() === "mercado libre");
+        if (isML) {
+          const comm = item.comisionML !== undefined ? item.comisionML : (p?.comisionML || 0);
+          montevideoTotalComisionML += (Number(item.quantity) || 1) * comm;
+        }
+      });
+    });
+
+    const montevideoGananciaNeta = Math.max(0, montevideoFacturadoTotal - montevideoTotalCostoArticulos - montevideoTotalComisionML);
+    const montevideoComisionVentas = 0.4 * montevideoGananciaNeta;
+    const montevideoTotalALiquidar = montevideoComisionVentas + montevideoTotalEnvios;
+    const montevideoRetornoJuem = montevideoTotalCostoArticulos + (0.6 * montevideoGananciaNeta);
+
+    const agreement = {
+      ordersCount: montevideoOrders.length,
+      facturadoTotal: montevideoFacturadoTotal,
+      totalCostoArticulos: montevideoTotalCostoArticulos,
+      totalComisionML: montevideoTotalComisionML,
+      gananciaNeta: montevideoGananciaNeta,
+      comisionVentas: montevideoComisionVentas,
+      totalEnvios: montevideoTotalEnvios,
+      totalALiquidar: montevideoTotalALiquidar,
+      retornoJuem: montevideoRetornoJuem,
+      ordersList: montevideoOrders
+    };
+
     return {
       pinamar: {
         income: pinamarIncome,
@@ -240,10 +287,11 @@ export const DashboardResumenGeneral: React.FC<DashboardResumenGeneralProps> = (
       montevideo: {
         income: montevideoIncome,
         expense: montevideoExpense,
-        balance: montevideoIncome - montevideoExpense
+        balance: montevideoIncome - montevideoExpense,
+        agreement
       }
     };
-  }, [orders, bills]);
+  }, [orders, bills, store.products]);
 
   return (
     <div id="dashboard-general-finances-root" className="space-y-6">
@@ -403,59 +451,76 @@ export const DashboardResumenGeneral: React.FC<DashboardResumenGeneralProps> = (
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
         {/* Pinamar Stats */}
-        <div className="bg-zinc-950 p-5 rounded-2xl border border-zinc-850 shadow-md lg:col-span-6 space-y-4">
-          <div className="flex items-center gap-2 pb-3 border-b border-zinc-900">
-            <Store className="h-4 w-4 text-emerald-400" />
-            <h3 className="font-bold text-sm text-zinc-200">Rendimiento Sucursal Pinamar</h3>
+        <div className="bg-zinc-950 p-5 rounded-2xl border border-zinc-850 shadow-md lg:col-span-5 space-y-4 flex flex-col justify-between">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-900">
+              <div className="flex items-center gap-2">
+                <Store className="h-4 w-4 text-emerald-400" />
+                <h3 className="font-bold text-sm text-zinc-200">Rendimiento Sucursal Pinamar</h3>
+              </div>
+              <span className="text-[9px] font-mono uppercase px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold">
+                Casa Central
+              </span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-zinc-900/40 p-3 rounded-xl border border-zinc-850/55">
+                <span className="text-[9px] uppercase font-bold text-zinc-500 block">Ingresos</span>
+                <span className="text-xs font-bold text-emerald-400 font-mono">
+                  $ {branchBreakdown.pinamar.income.toLocaleString("es-UY")}
+                </span>
+              </div>
+              <div className="bg-zinc-900/40 p-3 rounded-xl border border-zinc-850/55">
+                <span className="text-[9px] uppercase font-bold text-zinc-500 block">Egresos</span>
+                <span className="text-xs font-bold text-rose-400 font-mono">
+                  $ {branchBreakdown.pinamar.expense.toLocaleString("es-UY")}
+                </span>
+              </div>
+              <div className="bg-zinc-900/40 p-3 rounded-xl border border-zinc-850/55">
+                <span className="text-[9px] uppercase font-bold text-zinc-500 block">Saldo</span>
+                <span className={`text-xs font-black font-mono ${
+                  branchBreakdown.pinamar.balance >= 0 ? "text-indigo-400" : "text-rose-400"
+                }`}>
+                  $ {branchBreakdown.pinamar.balance.toLocaleString("es-UY")}
+                </span>
+              </div>
+            </div>
+
+            {/* Simple dynamic bar chart */}
+            <div className="space-y-1.5 pt-2">
+              <div className="flex justify-between text-[10px] text-zinc-400">
+                <span>Utilidad / Relación de caja</span>
+                <span>{branchBreakdown.pinamar.income > 0 ? ((branchBreakdown.pinamar.balance / branchBreakdown.pinamar.income) * 100).toFixed(0) : 0}% neto</span>
+              </div>
+              <div className="w-full bg-zinc-900 h-2 rounded-full overflow-hidden">
+                <div 
+                  className="bg-emerald-500 h-full rounded-full" 
+                  style={{
+                    width: `${Math.min(100, Math.max(0, branchBreakdown.pinamar.income > 0 
+                      ? (branchBreakdown.pinamar.balance / branchBreakdown.pinamar.income) * 100 
+                      : 0))}%`
+                  }}
+                ></div>
+              </div>
+            </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
-            <div className="bg-zinc-900/40 p-3 rounded-xl border border-zinc-850/55">
-              <span className="text-[9px] uppercase font-bold text-zinc-500 block">Ingresos</span>
-              <span className="text-xs font-bold text-emerald-400 font-mono">
-                $ {branchBreakdown.pinamar.income.toLocaleString("es-UY")}
-              </span>
-            </div>
-            <div className="bg-zinc-900/40 p-3 rounded-xl border border-zinc-850/55">
-              <span className="text-[9px] uppercase font-bold text-zinc-500 block">Egresos</span>
-              <span className="text-xs font-bold text-rose-400 font-mono">
-                $ {branchBreakdown.pinamar.expense.toLocaleString("es-UY")}
-              </span>
-            </div>
-            <div className="bg-zinc-900/40 p-3 rounded-xl border border-zinc-850/55">
-              <span className="text-[9px] uppercase font-bold text-zinc-500 block">Saldo</span>
-              <span className={`text-xs font-black font-mono ${
-                branchBreakdown.pinamar.balance >= 0 ? "text-indigo-400" : "text-rose-400"
-              }`}>
-                $ {branchBreakdown.pinamar.balance.toLocaleString("es-UY")}
-              </span>
-            </div>
-          </div>
-
-          {/* Simple dynamic bar chart */}
-          <div className="space-y-1.5 pt-2">
-            <div className="flex justify-between text-[10px] text-zinc-400">
-              <span>Utilidad / Relación de caja</span>
-              <span>{branchBreakdown.pinamar.income > 0 ? ((branchBreakdown.pinamar.balance / branchBreakdown.pinamar.income) * 100).toFixed(0) : 0}% neto</span>
-            </div>
-            <div className="w-full bg-zinc-900 h-2 rounded-full overflow-hidden">
-              <div 
-                className="bg-emerald-500 h-full rounded-full" 
-                style={{ 
-                  width: `${Math.min(100, Math.max(0, branchBreakdown.pinamar.income > 0 
-                    ? (branchBreakdown.pinamar.balance / branchBreakdown.pinamar.income) * 100 
-                    : 0))}%` 
-                }}
-              ></div>
-            </div>
+          <div className="p-3 rounded-xl bg-zinc-900/30 border border-zinc-850/60 text-[10.5px] text-zinc-400">
+            <span className="font-bold text-zinc-300 block mb-0.5">Casa Central (Pinamar)</span>
+            Gestiona la fabricación 3D, reposición de inventario y retiene el costo de mercadería + el 60% de ganancia de ventas de Montevideo.
           </div>
         </div>
 
         {/* Montevideo Stats */}
-        <div className="bg-zinc-950 p-5 rounded-2xl border border-zinc-850 shadow-md lg:col-span-6 space-y-4">
-          <div className="flex items-center gap-2 pb-3 border-b border-zinc-900">
-            <Store className="h-4 w-4 text-sky-400" />
-            <h3 className="font-bold text-sm text-zinc-200">Rendimiento Sucursal Montevideo</h3>
+        <div className="bg-zinc-950 p-5 rounded-2xl border border-zinc-850 shadow-md lg:col-span-7 space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-zinc-900">
+            <div className="flex items-center gap-2">
+              <Store className="h-4 w-4 text-sky-400" />
+              <h3 className="font-bold text-sm text-zinc-200">Rendimiento e Histórico Sucursal Montevideo</h3>
+            </div>
+            <span className="text-[9px] font-mono uppercase px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20 font-bold">
+              Franquicia Oficial
+            </span>
           </div>
 
           <div className="grid grid-cols-3 gap-3">
@@ -482,7 +547,7 @@ export const DashboardResumenGeneral: React.FC<DashboardResumenGeneralProps> = (
           </div>
 
           {/* Simple dynamic bar chart */}
-          <div className="space-y-1.5 pt-2">
+          <div className="space-y-1.5 pt-1">
             <div className="flex justify-between text-[10px] text-zinc-400">
               <span>Utilidad / Relación de caja</span>
               <span>{branchBreakdown.montevideo.income > 0 ? ((branchBreakdown.montevideo.balance / branchBreakdown.montevideo.income) * 100).toFixed(0) : 0}% neto</span>
@@ -490,13 +555,164 @@ export const DashboardResumenGeneral: React.FC<DashboardResumenGeneralProps> = (
             <div className="w-full bg-zinc-900 h-2 rounded-full overflow-hidden">
               <div 
                 className="bg-sky-500 h-full rounded-full" 
-                style={{ 
+                style={{
                   width: `${Math.min(100, Math.max(0, branchBreakdown.montevideo.income > 0 
                     ? (branchBreakdown.montevideo.balance / branchBreakdown.montevideo.income) * 100 
-                    : 0))}%` 
+                    : 0))}%`
                 }}
               ></div>
             </div>
+          </div>
+
+          {/* LIQUIDACIÓN A SUCURSAL MONTEVIDEO (ACUERDO COMERCIAL) */}
+          <div className="bg-gradient-to-r from-sky-950/60 via-indigo-950/40 to-zinc-950 border-2 border-sky-500/40 rounded-2xl p-4 sm:p-5 shadow-xl space-y-4 mt-2">
+            
+            {/* Header of settlement */}
+            <div className="flex items-start sm:items-center justify-between gap-3">
+              <div className="flex items-start sm:items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-sky-500/20 border border-sky-400/40 flex items-center justify-center text-sky-400 shrink-0 shadow-[0_0_15px_rgba(56,189,248,0.25)]">
+                  <Handshake className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="text-sm font-black text-white uppercase tracking-wide">
+                      Liquidación a Sucursal Montevideo (Acuerdo Comercial)
+                    </h4>
+                    <span className="text-[10px] font-mono px-2 py-0.5 bg-sky-500/20 text-sky-300 rounded-full border border-sky-500/30 font-bold">
+                      {branchBreakdown.montevideo.agreement.ordersCount} ventas aprobadas
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-300 mt-1">
+                    Regla acordada: Montevideo recibe el <strong className="text-sky-300">40% de la Ganancia Neta</strong> de artículos + el <strong className="text-sky-300">100% de los Envíos</strong> cobrados.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Total Highlight Box */}
+            <div className="bg-zinc-900/90 p-4 rounded-xl border border-sky-500/40 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <span className="text-[10.5px] uppercase font-bold text-zinc-400 block tracking-wider">
+                  Total a Dar / Entregar a Montevideo:
+                </span>
+                <span className="text-[10px] text-zinc-500">
+                  Comisión por ventas + reembolso íntegro de fletes
+                </span>
+              </div>
+              <div className="text-2xl sm:text-3xl font-black text-sky-300 font-mono">
+                $ {branchBreakdown.montevideo.agreement.totalALiquidar.toLocaleString("es-UY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-xs text-zinc-400 font-normal">UYU</span>
+              </div>
+            </div>
+
+            {/* 4 Pillars Breakdown */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="bg-zinc-900/70 p-3 rounded-xl border border-zinc-800">
+                <span className="text-[10px] uppercase font-bold text-zinc-400 block">Facturación Neta Artículos</span>
+                <span className="text-sm font-mono font-bold text-zinc-200 mt-0.5 block">
+                  $ {branchBreakdown.montevideo.agreement.facturadoTotal.toLocaleString("es-UY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                <span className="text-[10px] text-zinc-500">Total vendido en Montevideo</span>
+              </div>
+
+              <div className="bg-zinc-900/70 p-3 rounded-xl border border-zinc-800">
+                <span className="text-[10px] uppercase font-bold text-sky-400 block">40% Ganancia Neta (Comisión)</span>
+                <span className="text-sm font-mono font-black text-sky-300 mt-0.5 block">
+                  $ {branchBreakdown.montevideo.agreement.comisionVentas.toLocaleString("es-UY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                <span className="text-[10px] text-zinc-500">
+                  De ganancia neta total: ${branchBreakdown.montevideo.agreement.gananciaNeta.toLocaleString("es-UY", { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+
+              <div className="bg-zinc-900/70 p-3 rounded-xl border border-zinc-800">
+                <span className="text-[10px] uppercase font-bold text-indigo-400 block">100% Envíos (Fletes)</span>
+                <span className="text-sm font-mono font-black text-indigo-300 mt-0.5 block">
+                  $ {branchBreakdown.montevideo.agreement.totalEnvios.toLocaleString("es-UY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                <span className="text-[10px] text-zinc-500">Envíos cobrados por la sucursal</span>
+              </div>
+
+              <div className="bg-zinc-900/70 p-3 rounded-xl border border-zinc-800">
+                <span className="text-[10px] uppercase font-bold text-emerald-400 block">Retorno Casa Central JUEM</span>
+                <span className="text-sm font-mono font-bold text-emerald-300 mt-0.5 block">
+                  $ {branchBreakdown.montevideo.agreement.retornoJuem.toLocaleString("es-UY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                <span className="text-[10px] text-zinc-500">
+                  Costo mercadería (${branchBreakdown.montevideo.agreement.totalCostoArticulos.toLocaleString("es-UY")}) + 60% ganancia
+                </span>
+              </div>
+            </div>
+
+            {/* Expandable sales table for Montevideo */}
+            <div className="pt-2 border-t border-sky-500/20">
+              <button
+                type="button"
+                onClick={() => setShowMontevideoOrders(!showMontevideoOrders)}
+                className="w-full flex items-center justify-between p-2.5 rounded-xl bg-zinc-900/60 hover:bg-zinc-900 text-xs text-sky-300 font-bold transition border border-zinc-800 cursor-pointer"
+              >
+                <span className="flex items-center gap-2">
+                  <ShoppingCart className="h-4 w-4 text-sky-400" />
+                  <span>{showMontevideoOrders ? "Ocultar desglose de ventas" : `Ver detalle de las ${branchBreakdown.montevideo.agreement.ordersCount} ventas de Montevideo`}</span>
+                </span>
+                {showMontevideoOrders ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </button>
+
+              {showMontevideoOrders && (
+                <div className="mt-3 overflow-x-auto border border-zinc-800 rounded-xl max-h-72 overflow-y-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-zinc-900 text-zinc-400 uppercase text-[9.5px] border-b border-zinc-800 sticky top-0">
+                      <tr>
+                        <th className="p-2.5">ID / Fecha</th>
+                        <th className="p-2.5">Cliente</th>
+                        <th className="p-2.5 text-right">Artículos</th>
+                        <th className="p-2.5 text-right">Costo</th>
+                        <th className="p-2.5 text-right text-emerald-400">G. Neta</th>
+                        <th className="p-2.5 text-right text-sky-400">40% Com.</th>
+                        <th className="p-2.5 text-right text-indigo-400">100% Envío</th>
+                        <th className="p-2.5 text-right text-sky-300 font-black">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-850 text-zinc-300">
+                      {branchBreakdown.montevideo.agreement.ordersList.map(o => {
+                        const netProduct = (o.subtotal || 0) - (o.discountAmount || 0);
+                        const shipping = Number(o.shippingCost || 0);
+                        let cost = 0;
+                        let comisionML = 0;
+                        (o.items || []).forEach(it => {
+                          const p = store.products?.find(x => String(x.id) === String(it.productId));
+                          cost += (Number(it.quantity) || 1) * (it.costPrice || p?.precioCompra || 0);
+                          if (o.canal && o.canal.toLowerCase() === "mercado libre") {
+                            comisionML += (Number(it.quantity) || 1) * (it.comisionML !== undefined ? it.comisionML : (p?.comisionML || 0));
+                          }
+                        });
+                        const ganancia = Math.max(0, netProduct - cost - comisionML);
+                        const com40 = 0.4 * ganancia;
+                        const totalLiq = com40 + shipping;
+
+                        return (
+                          <tr key={o.id} className="hover:bg-zinc-900/50">
+                            <td className="p-2.5 font-mono font-bold text-zinc-300">
+                              #{o.id.substring(0, 6).toUpperCase()}
+                              <div className="text-[9px] text-zinc-500 font-sans">{o.createdAt ? o.createdAt.split("T")[0] : ""}</div>
+                            </td>
+                            <td className="p-2.5 text-zinc-200">
+                              {o.customerName}
+                            </td>
+                            <td className="p-2.5 text-right font-mono text-zinc-300">${netProduct.toLocaleString("es-UY")}</td>
+                            <td className="p-2.5 text-right font-mono text-zinc-400">${cost.toLocaleString("es-UY")}</td>
+                            <td className="p-2.5 text-right font-mono text-emerald-400 font-bold">${ganancia.toLocaleString("es-UY")}</td>
+                            <td className="p-2.5 text-right font-mono text-sky-400 font-bold">${com40.toLocaleString("es-UY")}</td>
+                            <td className="p-2.5 text-right font-mono text-indigo-400 font-bold">${shipping.toLocaleString("es-UY")}</td>
+                            <td className="p-2.5 text-right font-mono text-sky-300 font-black bg-sky-500/5">${totalLiq.toLocaleString("es-UY")}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
           </div>
         </div>
 
