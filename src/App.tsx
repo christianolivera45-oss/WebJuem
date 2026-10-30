@@ -1045,6 +1045,7 @@ export default function App() {
     const pComision = Number(p.comisionML || 0);
     const isAuto = p.calcWebPriceFromML !== false;
     const pWeb = isAuto ? Number((pVentaML - pComision).toFixed(2)) : Number(p.precioWeb || 0);
+    const pComisionMP = (p.comisionMP !== undefined && p.comisionMP !== null) ? Number(p.comisionMP) : Number((pWeb * 0.12).toFixed(2));
     const desc = Number(p.descuentoPorcentaje || 0);
     
     let sPinamar = Number(p.stockPinamar || 0);
@@ -1064,6 +1065,7 @@ export default function App() {
       ...p,
       precioCon40: pCon40,
       precioWeb: pWeb,
+      comisionMP: pComisionMP,
       stockPinamar: sPinamar,
       stockMontevideo: sMontevideo,
       stockTotalActual: sTotal,
@@ -1080,6 +1082,7 @@ export default function App() {
     const precioVentaML = p.precioVentaML !== undefined ? p.precioVentaML : (p.price || 0);
     const calcWebPriceFromML = p.calcWebPriceFromML === true;
     const precioWeb = p.precioWeb !== undefined ? p.precioWeb : (calcWebPriceFromML ? Number((precioVentaML - comisionML).toFixed(2)) : 0);
+    const comisionMP = p.comisionMP !== undefined ? p.comisionMP : Number((precioWeb * 0.12).toFixed(2));
     
     let descuentoPorcentaje = p.descuentoPorcentaje !== undefined ? p.descuentoPorcentaje : 0;
     if (descuentoPorcentaje === 0 && p.originalPrice && p.price && p.originalPrice > p.price) {
@@ -1110,6 +1113,7 @@ export default function App() {
       precioCompra,
       precioCon40,
       comisionML,
+      comisionMP,
       precioVentaML,
       precioWeb,
       descuentoPorcentaje,
@@ -1159,6 +1163,7 @@ export default function App() {
     precioCompra: 0,
     precioCon40: 0,
     comisionML: 0,
+    comisionMP: 0,
     precioVentaML: 0,
     precioWeb: 0,
     calcWebPriceFromML: false,
@@ -4276,6 +4281,7 @@ export default function App() {
       precioCompra: Number(newProduct.precioCompra || 0),
       precioCon40: Number(newProduct.precioCon40 || 0),
       comisionML: Number(newProduct.comisionML || 0),
+      comisionMP: Number(newProduct.comisionMP !== undefined ? newProduct.comisionMP : ((Number(newProduct.precioWeb || 0)) * 0.12).toFixed(2)),
       precioVentaML: Number(newProduct.precioVentaML || 0),
       precioWeb: Number(newProduct.precioWeb || 0),
       descuentoPorcentaje: Number(newProduct.descuentoPorcentaje || 0),
@@ -4333,6 +4339,7 @@ export default function App() {
         precioCompra: 0,
         precioCon40: 0,
         comisionML: 0,
+        comisionMP: 0,
         precioVentaML: 0,
         precioWeb: 0,
         calcWebPriceFromML: true,
@@ -4551,6 +4558,8 @@ export default function App() {
           updatedProduct.precioVentaML = Math.max(0, Math.round(parseFloat(value) || 0));
         } else if (field === "comisionML") {
           updatedProduct.comisionML = Math.max(0, Math.round(parseFloat(value) || 0));
+        } else if (field === "comisionMP") {
+          updatedProduct.comisionMP = Math.max(0, Math.round(parseFloat(value) || 0));
         }
       } else {
         if (field === "stockMontevideo") {
@@ -4569,6 +4578,8 @@ export default function App() {
           updatedProduct.precioVentaML = Math.max(0, Math.round(parseFloat(value) || 0));
         } else if (field === "comisionML") {
           updatedProduct.comisionML = Math.max(0, Math.round(parseFloat(value) || 0));
+        } else if (field === "comisionMP") {
+          updatedProduct.comisionMP = Math.max(0, Math.round(parseFloat(value) || 0));
         }
 
         if (updatedProduct.variants && updatedProduct.variants.length === 1) {
@@ -7643,6 +7654,7 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                           precioCompra: 0,
                           precioCon40: 0,
                           comisionML: 0,
+                          comisionMP: 0,
                           precioVentaML: 0,
                           precioWeb: 0,
                           calcWebPriceFromML: true,
@@ -11193,22 +11205,26 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                       <div key="new-step-2" className="space-y-6 animate-fade-in unique-step-two relative z-10">
                         
                         {/* Finanzas, Costos y Precios Card */}
-                        <div className="p-6 rounded-2xl bg-[#050B1A]/40 border border-zinc-800 space-y-5">
-                          <h4 className="text-xs font-black text-[#D4A55A] uppercase tracking-wider flex items-center gap-2">
-                            <span className="p-1.5 bg-[#D4A55A]/10 rounded-lg text-[#D4A55A]">💵</span> 
-                            <span>Finanzas, Costos y Precios</span>
-                          </h4>
+                        <div className="p-4 sm:p-5 rounded-2xl bg-[#050B1A]/40 border border-zinc-800 space-y-3.5 shadow-xl">
+                          <div className="flex items-center justify-between border-b border-zinc-850 pb-2.5">
+                            <h4 className="text-xs font-black text-[#D4A55A] uppercase tracking-wider flex items-center gap-2">
+                              <span className="p-1 bg-[#D4A55A]/10 rounded-md text-[#D4A55A]">💵</span> 
+                              <span>Finanzas, Costos y Precios</span>
+                            </h4>
+                            <span className="text-[10px] text-zinc-500 font-semibold uppercase tracking-wider">Márgenes y Canales</span>
+                          </div>
                           
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                          {/* Fila 1: Costos Base y Descuento */}
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                             {/* Precio Compra */}
-                            <div className="space-y-1.5">
-                              <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest">
+                            <div className="space-y-1">
+                              <label className="block text-[9px] font-bold text-zinc-400 uppercase tracking-wider">
                                 Precio Compra ($)
                               </label>
                               {newProduct.isCombo ? (
-                                <div className="w-full px-4 py-3.5 bg-[#D4A55A]/5 border border-[#D4A55A]/20 rounded-xl text-xs font-mono font-bold text-[#D4A55A] flex flex-col justify-center min-h-[46px]">
-                                  <span className="text-sm">${getComboPurchaseCost(newProduct.comboComponents || [])}</span>
-                                  <span className="text-[9px] font-semibold text-zinc-500 uppercase tracking-wider mt-0.5">Suma auto de componentes</span>
+                                <div className="w-full px-3 py-1.5 bg-[#D4A55A]/5 border border-[#D4A55A]/20 rounded-lg text-xs font-mono font-bold text-[#D4A55A] flex items-center justify-between h-9">
+                                  <span>${getComboPurchaseCost(newProduct.comboComponents || [])}</span>
+                                  <span className="text-[8px] text-zinc-500 uppercase">Combo Auto</span>
                                 </div>
                               ) : (
                                 <input
@@ -11220,26 +11236,28 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                     const val = e.target.value === "" ? "" : Number(e.target.value);
                                     setNewProduct(updateProductCalculations({ ...newProduct, precioCompra: val as any }));
                                   }}
-                                  className="w-full px-4 py-3 bg-[#050B1A] border border-zinc-800 hover:border-zinc-750 focus:border-[#D4A55A] rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#D4A55A]/20 text-[#F4EAD7] font-mono font-bold transition-all duration-300"
+                                  className="w-full px-3 py-1.5 h-9 bg-[#050B1A] border border-zinc-800 hover:border-zinc-700 focus:border-[#D4A55A] rounded-lg text-xs outline-none focus:ring-1 focus:ring-[#D4A55A]/20 text-[#F4EAD7] font-mono font-bold transition-all"
                                 />
                               )}
                             </div>
 
                             {/* Precio con 40% auto */}
-                            <div className="space-y-1.5">
-                              <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-1.5">
-                                <span>Precio con 40%</span>
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between">
+                                <label className="block text-[9px] font-bold text-zinc-400 uppercase tracking-wider">
+                                  Costo + 40%
+                                </label>
                                 <span className="text-[8px] bg-zinc-800/80 px-1.5 py-0.5 rounded font-bold uppercase text-zinc-400">auto</span>
-                              </label>
-                              <div className="w-full px-4 py-3.5 bg-[#0c1325] border border-zinc-800/60 rounded-xl text-xs text-zinc-500 font-mono font-bold select-none cursor-not-allowed flex items-center min-h-[46px]">
+                              </div>
+                              <div className="w-full px-3 py-1.5 h-9 bg-[#0c1325] border border-zinc-800/60 rounded-lg text-xs text-zinc-400 font-mono font-bold flex items-center select-none cursor-not-allowed">
                                 ${newProduct.precioCon40 || 0}
                               </div>
                             </div>
 
                             {/* Descuento Porcentaje */}
-                            <div className="space-y-1.5">
-                              <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest">
-                                Descuento (%)
+                            <div className="space-y-1">
+                              <label className="block text-[9px] font-bold text-zinc-400 uppercase tracking-wider">
+                                Descuento Web (%)
                               </label>
                               <input
                                 type="number"
@@ -11251,33 +11269,17 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                   const val = e.target.value === "" ? "" : Math.min(99, Math.max(0, Number(e.target.value)));
                                   setNewProduct(updateProductCalculations({ ...newProduct, descuentoPorcentaje: val as any }));
                                 }}
-                                className="w-full px-4 py-3 bg-[#050B1A] border border-zinc-800 hover:border-zinc-750 focus:border-[#D4A55A] rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#D4A55A]/20 text-[#D4A55A] font-mono font-bold transition-all duration-300"
+                                className="w-full px-3 py-1.5 h-9 bg-[#050B1A] border border-zinc-800 hover:border-zinc-750 focus:border-[#D4A55A] rounded-lg text-xs outline-none focus:ring-1 focus:ring-[#D4A55A]/20 text-[#D4A55A] font-mono font-bold transition-all"
                               />
                             </div>
+                          </div>
 
-                            {/* Comisión ML */}
-                            <div className="space-y-1.5">
-                              <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest">
-                                Comisión ML ($)
-                              </label>
-                              <input
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                placeholder="Ej: 350"
-                                value={newProduct.comisionML ?? ""}
-                                onChange={(e) => {
-                                  const val = e.target.value === "" ? "" : Number(e.target.value);
-                                  setNewProduct(updateProductCalculations({ ...newProduct, comisionML: val as any }));
-                                }}
-                                className="w-full px-4 py-3 bg-[#050B1A] border border-zinc-800 hover:border-zinc-750 focus:border-[#D4A55A] rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#D4A55A]/20 text-[#F4EAD7] font-mono font-bold transition-all duration-300"
-                              />
-                            </div>
-
+                          {/* Fila 2: Canales de Venta (ML y Web) */}
+                          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
                             {/* Precio Venta ML */}
-                            <div className="space-y-1.5">
-                              <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest">
-                                Precio Venta ML ($)
+                            <div className="space-y-1">
+                              <label className="block text-[9px] font-bold text-amber-400/90 uppercase tracking-wider">
+                                Venta ML ($)
                               </label>
                               <input
                                 type="number"
@@ -11289,20 +11291,34 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                   const val = e.target.value === "" ? "" : Number(e.target.value);
                                   setNewProduct(updateProductCalculations({ ...newProduct, precioVentaML: val as any }));
                                 }}
-                                className="w-full px-4 py-3 bg-[#050B1A] border border-zinc-800 hover:border-zinc-750 focus:border-[#D4A55A] rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#D4A55A]/20 text-[#F4EAD7] font-mono font-bold transition-all duration-300"
+                                className="w-full px-3 py-1.5 h-9 bg-[#050B1A] border border-zinc-800 hover:border-amber-500/40 focus:border-amber-500 rounded-lg text-xs outline-none focus:ring-1 focus:ring-amber-500/20 text-[#F4EAD7] font-mono font-bold transition-all"
+                              />
+                            </div>
+
+                            {/* Comisión ML */}
+                            <div className="space-y-1">
+                              <label className="block text-[9px] font-bold text-zinc-400 uppercase tracking-wider">
+                                Com. ML ($)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                placeholder="Ej: 350"
+                                value={newProduct.comisionML ?? ""}
+                                onChange={(e) => {
+                                  const val = e.target.value === "" ? "" : Number(e.target.value);
+                                  setNewProduct(updateProductCalculations({ ...newProduct, comisionML: val as any }));
+                                }}
+                                className="w-full px-3 py-1.5 h-9 bg-[#050B1A] border border-zinc-800 hover:border-zinc-700 focus:border-[#D4A55A] rounded-lg text-xs outline-none focus:ring-1 focus:ring-[#D4A55A]/20 text-[#F4EAD7] font-mono font-bold transition-all"
                               />
                             </div>
 
                             {/* Precio Web */}
-                            <div className="space-y-1.5 col-span-1">
-                              <div className="flex items-center justify-between gap-2">
-                                <label className="block text-[10px] font-black text-[#5346ff] uppercase tracking-widest flex items-center gap-1.5">
-                                  <span>Precio Web ($)</span>
-                                  {newProduct.calcWebPriceFromML !== false ? (
-                                    <span className="text-[8px] bg-[#5346ff]/10 px-1.5 py-0.5 rounded font-bold uppercase text-[#9086ff]">auto</span>
-                                  ) : (
-                                    <span className="text-[8px] bg-amber-500/10 px-1.5 py-0.5 rounded font-bold uppercase text-amber-500">manual</span>
-                                  )}
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between gap-1">
+                                <label className="block text-[9px] font-bold text-[#9086ff] uppercase tracking-wider">
+                                  Precio Web ($)
                                 </label>
                                 <button
                                   type="button"
@@ -11313,58 +11329,99 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                       calcWebPriceFromML: nextAuto
                                     }));
                                   }}
-                                  className={`text-[9px] font-bold px-2 py-0.5 rounded-lg border transition-all duration-300 flex items-center gap-1 cursor-pointer ${
+                                  className={`text-[8px] font-bold px-1.5 py-0.5 rounded border transition-all cursor-pointer ${
                                     newProduct.calcWebPriceFromML !== false
-                                      ? "bg-[#5346ff]/10 border-[#5346ff]/30 text-[#9086ff] hover:bg-[#5346ff]/25"
-                                      : "bg-amber-500/10 border-amber-500/30 text-amber-500 hover:bg-amber-500/25"
+                                      ? "bg-[#5346ff]/10 border-[#5346ff]/30 text-[#9086ff] hover:bg-[#5346ff]/20"
+                                      : "bg-amber-500/10 border-amber-500/30 text-amber-500 hover:bg-amber-500/20"
                                   }`}
+                                  title={newProduct.calcWebPriceFromML !== false ? "Cambiar a precio manual" : "Cambiar a auto (ML - Comisión)"}
                                 >
-                                  {newProduct.calcWebPriceFromML !== false ? "🔗 Auto (ML - Comisión)" : "✏️ Manual"}
+                                  {newProduct.calcWebPriceFromML !== false ? "🔗 Auto" : "✏️ Man"}
                                 </button>
                               </div>
                               
                               {newProduct.calcWebPriceFromML !== false ? (
-                                <div className="w-full px-4 py-3 bg-[#5346ff]/5 border border-[#5346ff]/15 rounded-xl text-xs text-[#9086ff] font-mono font-black select-none cursor-not-allowed flex items-center justify-between min-h-[46px]">
+                                <div className="w-full px-3 py-1.5 h-9 bg-[#5346ff]/5 border border-[#5346ff]/15 rounded-lg text-xs text-[#9086ff] font-mono font-bold select-none cursor-not-allowed flex items-center justify-between">
                                   <span>${newProduct.precioWeb || 0}</span>
-                                  <span className="text-[10px] text-zinc-500 italic font-sans font-normal">(Auto)</span>
+                                  <span className="text-[8px] text-zinc-500 italic">(ML-Com)</span>
                                 </div>
                               ) : (
-                                <div className="space-y-1.5">
-                                  <div className="relative">
-                                    <input
-                                      type="number"
-                                      step="0.01"
-                                      min="0"
-                                      placeholder="Ej: 4000"
-                                      value={newProduct.precioWeb ?? ""}
-                                      onChange={(e) => {
-                                        const val = e.target.value === "" ? "" : Number(e.target.value);
-                                        setNewProduct(updateProductCalculations({ ...newProduct, precioWeb: val as any }));
-                                      }}
-                                      className="w-full pl-4 pr-32 py-3 bg-[#050B1A] border border-amber-500/50 hover:border-amber-500 focus:border-amber-500 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500/20 text-amber-500 font-mono font-bold transition-all duration-300"
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const ml = Number(newProduct.precioVentaML || 0);
-                                        const com = Number(newProduct.comisionML || 0);
-                                        const calculated = Math.max(0, ml - com);
-                                        setNewProduct(updateProductCalculations({
-                                          ...newProduct,
-                                          precioWeb: calculated
-                                        }));
-                                        showAdminToast(`Precio Web calculado: $${calculated} (ML: $${ml} - Com: $${com})`, "success");
-                                      }}
-                                      className="absolute right-2 top-2 px-2.5 py-1.5 bg-amber-500/10 hover:bg-amber-500 hover:text-[#050B1A] text-amber-400 border border-amber-500/25 rounded-lg text-[9px] font-extrabold uppercase tracking-wider transition-all duration-300 cursor-pointer"
-                                    >
-                                      ⚡ Calcular
-                                    </button>
-                                  </div>
-                                  <p className="text-[9px] text-zinc-500 font-semibold tracking-wide leading-normal">
-                                    Presiona <span className="text-[#D4A55A]">⚡ Calcular</span> para estimar <code className="bg-zinc-950 px-1 py-0.5 rounded font-mono text-zinc-400">Venta ML - Comisión ML</code> de una sola vez.
-                                  </p>
+                                <div className="relative">
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    placeholder="Ej: 4000"
+                                    value={newProduct.precioWeb ?? ""}
+                                    onChange={(e) => {
+                                      const val = e.target.value === "" ? "" : Number(e.target.value);
+                                      setNewProduct(updateProductCalculations({ ...newProduct, precioWeb: val as any }));
+                                    }}
+                                    className="w-full pl-3 pr-14 py-1.5 h-9 bg-[#050B1A] border border-amber-500/50 hover:border-amber-500 focus:border-amber-500 rounded-lg text-xs outline-none focus:ring-1 focus:ring-amber-500/20 text-amber-500 font-mono font-bold transition-all"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const ml = Number(newProduct.precioVentaML || 0);
+                                      const com = Number(newProduct.comisionML || 0);
+                                      const calculated = Math.max(0, ml - com);
+                                      setNewProduct(updateProductCalculations({
+                                        ...newProduct,
+                                        precioWeb: calculated
+                                      }));
+                                      showAdminToast(`Precio Web: $${calculated}`, "success");
+                                    }}
+                                    className="absolute right-1 top-1 px-1.5 py-1 bg-amber-500/15 hover:bg-amber-500 hover:text-[#050B1A] text-amber-400 border border-amber-500/30 rounded text-[8px] font-bold uppercase transition-all cursor-pointer"
+                                    title="Calcular ML - Comisión ML"
+                                  >
+                                    ⚡ Calc
+                                  </button>
                                 </div>
                               )}
+                            </div>
+
+                            {/* Comisión Mercado Pago (12%) */}
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between gap-1">
+                                <label className="block text-[9px] font-bold text-[#009ee3] uppercase tracking-wider flex items-center gap-1">
+                                  <span>Com. MP ($)</span>
+                                  <span className="text-[7px] bg-[#009ee3]/10 px-1 py-0.2 rounded font-black text-[#009ee3]">12%</span>
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const pWeb = Number(newProduct.precioWeb || 0);
+                                    const calcMP = Number((pWeb * 0.12).toFixed(2));
+                                    setNewProduct({
+                                      ...newProduct,
+                                      comisionMP: calcMP
+                                    });
+                                    showAdminToast(`Comisión MP: $${calcMP}`, "success");
+                                  }}
+                                  className="text-[8px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider bg-[#009ee3]/10 border-[#009ee3]/30 text-[#009ee3] hover:bg-[#009ee3]/20 transition-all cursor-pointer"
+                                  title="Calcular 12% sobre Precio Web"
+                                >
+                                  ⚡ 12%
+                                </button>
+                              </div>
+                              <div className="relative">
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  placeholder="Ej: 16.68"
+                                  value={newProduct.comisionMP ?? ""}
+                                  onChange={(e) => {
+                                    const val = e.target.value === "" ? "" : Number(e.target.value);
+                                    setNewProduct({ ...newProduct, comisionMP: val as any });
+                                  }}
+                                  className="w-full px-3 py-1.5 h-9 bg-[#050B1A] border border-[#009ee3]/30 hover:border-[#009ee3] focus:border-[#009ee3] rounded-lg text-xs outline-none focus:ring-1 focus:ring-[#009ee3]/20 text-[#009ee3] font-mono font-bold transition-all"
+                                />
+                              </div>
+                              <div className="text-[8px] text-zinc-500 font-medium flex items-center justify-between">
+                                <span>12% Web</span>
+                                <span>Neto: <strong className="text-emerald-400 font-mono">${Math.max(0, Number(newProduct.precioWeb || 0) - Number(newProduct.comisionMP !== undefined && newProduct.comisionMP !== "" ? newProduct.comisionMP : (Number(newProduct.precioWeb || 0) * 0.12))).toFixed(2)}</strong></span>
+                              </div>
                             </div>
                           </div>
 
@@ -11381,19 +11438,24 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                               {/* Rentabilidad Canal Web */}
                               {(() => {
+                                const pWeb = Number(newProduct.precioWeb || 0);
+                                const commMP = (newProduct.comisionMP !== undefined && newProduct.comisionMP !== null && newProduct.comisionMP !== "")
+                                  ? Number(newProduct.comisionMP)
+                                  : Number((pWeb * 0.12).toFixed(2));
                                 const { profit, marginPercent, markupPercent } = calculateMargins(
                                   newProduct.isCombo ? getComboPurchaseCost(newProduct.comboComponents || []) : Number(newProduct.precioCompra || 0),
-                                  Number(newProduct.precioWeb || 0),
-                                  0
+                                  pWeb,
+                                  commMP
                                 );
                                 const isOk = marginPercent >= 28;
                                 const isCritical = marginPercent < 15;
+                                const netoRecibido = Math.max(0, pWeb - commMP);
                                 return (
                                   <div className="p-4 bg-[#030712]/60 border border-zinc-850 rounded-2xl space-y-2.5 shadow-inner transition-all hover:border-zinc-750 duration-300">
                                     <div className="flex items-center justify-between">
                                       <span className="text-[10px] font-black uppercase text-zinc-400 tracking-widest flex items-center gap-1">
                                         <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
-                                        Canal Web 🌐
+                                        Canal Web (Mercado Pago 12%) 🌐💳
                                       </span>
                                       <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-lg border uppercase tracking-wider ${
                                         isCritical ? "bg-red-500/10 text-red-400 border-red-500/20" :
@@ -11423,6 +11485,10 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                       <div className="flex items-center justify-between text-[9px] text-zinc-500 font-medium">
                                         <span>Markup (Multiplicador): +{markupPercent}%</span>
                                         <span>Costo: ${newProduct.isCombo ? getComboPurchaseCost(newProduct.comboComponents || []) : (newProduct.precioCompra || 0)}</span>
+                                      </div>
+                                      <div className="flex items-center justify-between text-[9px] text-zinc-400 font-medium pt-1 border-t border-zinc-800/40">
+                                        <span className="text-sky-400">Comisión MP (12%): -${commMP.toLocaleString('es-UY', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                        <span className="text-emerald-400 font-semibold">Neto en cuenta: ${netoRecibido.toLocaleString('es-UY', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
                                       </div>
                                     </div>
                                   </div>
@@ -11472,7 +11538,11 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                       </div>
                                       <div className="flex items-center justify-between text-[9px] text-zinc-500 font-medium">
                                         <span>Markup (Multiplicador): +{markupPercent}%</span>
-                                        <span>Comisión ML: ${newProduct.comisionML || 0}</span>
+                                        <span>Costo: ${newProduct.isCombo ? getComboPurchaseCost(newProduct.comboComponents || []) : (newProduct.precioCompra || 0)}</span>
+                                      </div>
+                                      <div className="flex items-center justify-between text-[9px] text-zinc-400 font-medium pt-1 border-t border-zinc-800/40">
+                                        <span className="text-amber-400">Comisión ML: -${Number(newProduct.comisionML || 0).toLocaleString('es-UY', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                        <span className="text-emerald-400 font-semibold">Neto recibido: ${(Math.max(0, Number(newProduct.precioVentaML || 0) - Number(newProduct.comisionML || 0))).toLocaleString('es-UY', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
                                       </div>
                                     </div>
                                   </div>
@@ -12982,22 +13052,26 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                       <div key="edit-step-2" className="space-y-6 animate-fade-in unique-step-two">
                         
                         {/* Finanzas y Precios */}
-                        <div className="p-6 rounded-2xl bg-[#050B1A]/40 border border-zinc-800 space-y-5 shadow-xl">
-                          <h4 className="text-xs font-black text-[#D4A55A] uppercase tracking-wider flex items-center gap-2">
-                            <span className="p-1.5 bg-[#D4A55A]/10 rounded-lg text-[#D4A55A]">💵</span> 
-                            <span>Finanzas, Costos y Precios</span>
-                          </h4>
+                        <div className="p-4 sm:p-5 rounded-2xl bg-[#050B1A]/40 border border-zinc-800 space-y-3.5 shadow-xl">
+                          <div className="flex items-center justify-between border-b border-zinc-850 pb-2.5">
+                            <h4 className="text-xs font-black text-[#D4A55A] uppercase tracking-wider flex items-center gap-2">
+                              <span className="p-1 bg-[#D4A55A]/10 rounded-md text-[#D4A55A]">💵</span> 
+                              <span>Finanzas, Costos y Precios</span>
+                            </h4>
+                            <span className="text-[10px] text-zinc-500 font-semibold uppercase tracking-wider">Márgenes y Canales</span>
+                          </div>
                           
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                          {/* Fila 1: Costos Base y Descuento */}
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                             {/* Precio Compra */}
-                            <div className="space-y-1.5">
-                              <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest">
+                            <div className="space-y-1">
+                              <label className="block text-[9px] font-bold text-zinc-400 uppercase tracking-wider">
                                 Precio Compra ($)
                               </label>
                               {editingProduct.isCombo ? (
-                                <div className="w-full px-4 py-3.5 bg-[#D4A55A]/5 border border-[#D4A55A]/20 rounded-xl text-xs font-mono font-bold text-[#D4A55A] flex flex-col justify-center min-h-[46px]">
-                                  <span className="text-sm">${getComboPurchaseCost(editingProduct.comboComponents || [])}</span>
-                                  <span className="text-[9px] font-semibold text-zinc-500 uppercase tracking-wider mt-0.5">Suma auto de componentes</span>
+                                <div className="w-full px-3 py-1.5 bg-[#D4A55A]/5 border border-[#D4A55A]/20 rounded-lg text-xs font-mono font-bold text-[#D4A55A] flex items-center justify-between h-9">
+                                  <span>${getComboPurchaseCost(editingProduct.comboComponents || [])}</span>
+                                  <span className="text-[8px] text-zinc-500 uppercase">Combo Auto</span>
                                 </div>
                               ) : (
                                 <input
@@ -13008,26 +13082,28 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                     const val = e.target.value === "" ? "" : Math.round(Number(e.target.value));
                                     setEditingProduct(updateProductCalculations({ ...editingProduct, precioCompra: val as any }) as Product);
                                   }}
-                                  className="w-full px-4 py-3 bg-[#050B1A] border border-zinc-800 hover:border-zinc-750 focus:border-[#D4A55A] rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#D4A55A]/20 text-[#F4EAD7] font-mono font-bold transition-all duration-300"
+                                  className="w-full px-3 py-1.5 h-9 bg-[#050B1A] border border-zinc-800 hover:border-zinc-700 focus:border-[#D4A55A] rounded-lg text-xs outline-none focus:ring-1 focus:ring-[#D4A55A]/20 text-[#F4EAD7] font-mono font-bold transition-all"
                                 />
                               )}
                             </div>
 
                             {/* Precio con 40% */}
-                            <div className="space-y-1.5">
-                              <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-1.5">
-                                <span>Precio con 40%</span>
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between">
+                                <label className="block text-[9px] font-bold text-zinc-400 uppercase tracking-wider">
+                                  Costo + 40%
+                                </label>
                                 <span className="text-[8px] bg-zinc-800/80 px-1.5 py-0.5 rounded font-bold uppercase text-zinc-400">auto</span>
-                              </label>
-                              <div className="w-full px-4 py-3.5 bg-[#0c1325] border border-zinc-800/60 rounded-xl text-xs text-zinc-500 font-mono font-bold select-none cursor-not-allowed flex items-center min-h-[46px]">
+                              </div>
+                              <div className="w-full px-3 py-1.5 h-9 bg-[#0c1325] border border-zinc-800/60 rounded-lg text-xs text-zinc-400 font-mono font-bold flex items-center select-none cursor-not-allowed">
                                 ${editingProduct.precioCon40 || 0}
                               </div>
                             </div>
 
                             {/* Descuento Porcentaje */}
-                            <div className="space-y-1.5">
-                              <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest">
-                                Descuento (%)
+                            <div className="space-y-1">
+                              <label className="block text-[9px] font-bold text-zinc-400 uppercase tracking-wider">
+                                Descuento Web (%)
                               </label>
                               <input
                                 type="number"
@@ -13039,33 +13115,17 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                   const val = e.target.value === "" ? "" : Math.min(99, Math.max(0, Number(e.target.value)));
                                   setEditingProduct(updateProductCalculations({ ...editingProduct, descuentoPorcentaje: val as any }) as Product);
                                 }}
-                                className="w-full px-4 py-3 bg-[#050B1A] border border-zinc-800 hover:border-zinc-750 focus:border-[#D4A55A] rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#D4A55A]/20 text-[#D4A55A] font-mono font-bold transition-all duration-300"
+                                className="w-full px-3 py-1.5 h-9 bg-[#050B1A] border border-zinc-800 hover:border-zinc-750 focus:border-[#D4A55A] rounded-lg text-xs outline-none focus:ring-1 focus:ring-[#D4A55A]/20 text-[#D4A55A] font-mono font-bold transition-all"
                               />
                             </div>
+                          </div>
 
-                            {/* Comisión ML */}
-                            <div className="space-y-1.5">
-                              <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest">
-                                Comisión ML ($)
-                              </label>
-                              <input
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                placeholder="Ej: 350"
-                                value={(editingProduct.comisionML !== undefined && editingProduct.comisionML !== "") ? editingProduct.comisionML : ""}
-                                onChange={(e) => {
-                                  const val = e.target.value === "" ? "" : Number(e.target.value);
-                                  setEditingProduct(updateProductCalculations({ ...editingProduct, comisionML: val as any }) as Product);
-                                }}
-                                className="w-full px-4 py-3 bg-[#050B1A] border border-zinc-800 hover:border-zinc-750 focus:border-[#D4A55A] rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#D4A55A]/20 text-[#F4EAD7] font-mono font-bold transition-all duration-300"
-                              />
-                            </div>
-
+                          {/* Fila 2: Canales de Venta (ML y Web) */}
+                          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
                             {/* Precio Venta ML */}
-                            <div className="space-y-1.5">
-                              <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest">
-                                Precio Venta ML ($)
+                            <div className="space-y-1">
+                              <label className="block text-[9px] font-bold text-amber-400/90 uppercase tracking-wider">
+                                Venta ML ($)
                               </label>
                               <input
                                 type="number"
@@ -13077,20 +13137,34 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                   const val = e.target.value === "" ? "" : Number(e.target.value);
                                   setEditingProduct(updateProductCalculations({ ...editingProduct, precioVentaML: val as any }) as Product);
                                 }}
-                                className="w-full px-4 py-3 bg-[#050B1A] border border-zinc-800 hover:border-zinc-750 focus:border-[#D4A55A] rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#D4A55A]/20 text-[#F4EAD7] font-mono font-bold transition-all duration-300"
+                                className="w-full px-3 py-1.5 h-9 bg-[#050B1A] border border-zinc-800 hover:border-amber-500/40 focus:border-amber-500 rounded-lg text-xs outline-none focus:ring-1 focus:ring-amber-500/20 text-[#F4EAD7] font-mono font-bold transition-all"
+                              />
+                            </div>
+
+                            {/* Comisión ML */}
+                            <div className="space-y-1">
+                              <label className="block text-[9px] font-bold text-zinc-400 uppercase tracking-wider">
+                                Com. ML ($)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                placeholder="Ej: 350"
+                                value={(editingProduct.comisionML !== undefined && editingProduct.comisionML !== "") ? editingProduct.comisionML : ""}
+                                onChange={(e) => {
+                                  const val = e.target.value === "" ? "" : Number(e.target.value);
+                                  setEditingProduct(updateProductCalculations({ ...editingProduct, comisionML: val as any }) as Product);
+                                }}
+                                className="w-full px-3 py-1.5 h-9 bg-[#050B1A] border border-zinc-800 hover:border-zinc-700 focus:border-[#D4A55A] rounded-lg text-xs outline-none focus:ring-1 focus:ring-[#D4A55A]/20 text-[#F4EAD7] font-mono font-bold transition-all"
                               />
                             </div>
 
                             {/* Precio Web */}
-                            <div className="space-y-1.5">
-                              <div className="flex items-center justify-between gap-2">
-                                <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest flex items-center gap-1.5">
-                                  <span>Precio Web ($)</span>
-                                  {editingProduct.calcWebPriceFromML !== false ? (
-                                    <span className="text-[8px] bg-[#5346ff]/10 px-1.5 py-0.5 rounded font-black uppercase text-[#9086ff] border border-[#5346ff]/20">auto</span>
-                                  ) : (
-                                    <span className="text-[8px] bg-amber-500/10 px-1.5 py-0.5 rounded font-black uppercase text-amber-400 border border-amber-500/20">manual</span>
-                                  )}
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between gap-1">
+                                <label className="block text-[9px] font-bold text-[#9086ff] uppercase tracking-wider">
+                                  Precio Web ($)
                                 </label>
                                 <button
                                   type="button"
@@ -13101,58 +13175,99 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                       calcWebPriceFromML: nextAuto
                                     }) as Product);
                                   }}
-                                  className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded border uppercase tracking-wider transition-all duration-300 flex items-center gap-1 cursor-pointer ${
+                                  className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded border uppercase tracking-wider transition-all cursor-pointer ${
                                     editingProduct.calcWebPriceFromML !== false
                                       ? "bg-indigo-500/10 border-indigo-500/20 text-indigo-400 hover:bg-indigo-500/20"
                                       : "bg-amber-500/10 border-amber-500/20 text-amber-400 hover:bg-amber-500/20"
                                   }`}
+                                  title={editingProduct.calcWebPriceFromML !== false ? "Cambiar a precio manual" : "Cambiar a auto (ML - Comisión)"}
                                 >
-                                  {editingProduct.calcWebPriceFromML !== false ? "🔗 Auto (ML - Comisión)" : "✏️ Manual"}
+                                  {editingProduct.calcWebPriceFromML !== false ? "🔗 Auto" : "✏️ Man"}
                                 </button>
                               </div>
 
                               {editingProduct.calcWebPriceFromML !== false ? (
-                                <div className="w-full px-4 py-3.5 bg-[#0c1325] border border-zinc-800/60 rounded-xl text-xs text-zinc-500 font-mono font-bold select-none cursor-not-allowed flex items-center justify-between min-h-[46px]">
+                                <div className="w-full px-3 py-1.5 h-9 bg-[#0c1325] border border-zinc-800/60 rounded-lg text-xs text-zinc-400 font-mono font-bold select-none cursor-not-allowed flex items-center justify-between">
                                   <span>${editingProduct.precioWeb || 0}</span>
-                                  <span className="text-[9px] font-semibold text-zinc-500 uppercase tracking-wider">Calculado de ML</span>
+                                  <span className="text-[8px] text-zinc-500 uppercase">(ML-Com)</span>
                                 </div>
                               ) : (
-                                <div className="space-y-1.5">
-                                  <div className="relative">
-                                    <input
-                                      type="number"
-                                      step="0.01"
-                                      min="0"
-                                      placeholder="Ej: 4000"
-                                      value={editingProduct.precioWeb ?? ""}
-                                      onChange={(e) => {
-                                        const val = e.target.value === "" ? "" : Number(e.target.value);
-                                        setEditingProduct(updateProductCalculations({ ...editingProduct, precioWeb: val as any }) as Product);
-                                      }}
-                                      className="w-full pl-4 pr-32 py-3 bg-[#050B1A] border border-amber-500/50 hover:border-amber-500 focus:border-amber-500 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500/20 text-amber-500 font-mono font-bold transition-all duration-300"
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const ml = Number(editingProduct.precioVentaML || 0);
-                                        const com = Number(editingProduct.comisionML || 0);
-                                        const calculated = Math.max(0, ml - com);
-                                        setEditingProduct(updateProductCalculations({
-                                          ...editingProduct,
-                                          precioWeb: calculated
-                                        }) as Product);
-                                        showAdminToast(`Precio Web calculado: $${calculated} (ML: $${ml} - Com: $${com})`, "success");
-                                      }}
-                                      className="absolute right-2 top-2 px-2.5 py-1.5 bg-amber-500/10 hover:bg-amber-500 hover:text-[#050B1A] text-amber-400 border border-amber-500/25 rounded-lg text-[9px] font-extrabold uppercase tracking-wider transition-all duration-300 cursor-pointer"
-                                    >
-                                      ⚡ Calcular
-                                    </button>
-                                  </div>
-                                  <p className="text-[9px] text-zinc-500 font-semibold tracking-wide leading-normal">
-                                    Presiona <span className="text-[#D4A55A]">⚡ Calcular</span> para estimar <code className="bg-zinc-950 px-1 py-0.5 rounded font-mono text-zinc-400">Venta ML - Comisión ML</code> de una sola vez.
-                                  </p>
+                                <div className="relative">
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    placeholder="Ej: 4000"
+                                    value={editingProduct.precioWeb ?? ""}
+                                    onChange={(e) => {
+                                      const val = e.target.value === "" ? "" : Number(e.target.value);
+                                      setEditingProduct(updateProductCalculations({ ...editingProduct, precioWeb: val as any }) as Product);
+                                    }}
+                                    className="w-full pl-3 pr-14 py-1.5 h-9 bg-[#050B1A] border border-amber-500/50 hover:border-amber-500 focus:border-amber-500 rounded-lg text-xs outline-none focus:ring-1 focus:ring-amber-500/20 text-amber-500 font-mono font-bold transition-all"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const ml = Number(editingProduct.precioVentaML || 0);
+                                      const com = Number(editingProduct.comisionML || 0);
+                                      const calculated = Math.max(0, ml - com);
+                                      setEditingProduct(updateProductCalculations({
+                                        ...editingProduct,
+                                        precioWeb: calculated
+                                      }) as Product);
+                                      showAdminToast(`Precio Web: $${calculated}`, "success");
+                                    }}
+                                    className="absolute right-1 top-1 px-1.5 py-1 bg-amber-500/15 hover:bg-amber-500 hover:text-[#050B1A] text-amber-400 border border-amber-500/30 rounded text-[8px] font-bold uppercase transition-all cursor-pointer"
+                                    title="Calcular ML - Comisión ML"
+                                  >
+                                    ⚡ Calc
+                                  </button>
                                 </div>
                               )}
+                            </div>
+
+                            {/* Comisión Mercado Pago (12%) */}
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between gap-1">
+                                <label className="block text-[9px] font-bold text-[#009ee3] uppercase tracking-wider flex items-center gap-1">
+                                  <span>Com. MP ($)</span>
+                                  <span className="text-[7px] bg-[#009ee3]/10 px-1 py-0.2 rounded font-black text-[#009ee3]">12%</span>
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const pWeb = Number(editingProduct.precioWeb || 0);
+                                    const calcMP = Number((pWeb * 0.12).toFixed(2));
+                                    setEditingProduct(updateProductCalculations({
+                                      ...editingProduct,
+                                      comisionMP: calcMP
+                                    }) as Product);
+                                    showAdminToast(`Comisión MP: $${calcMP}`, "success");
+                                  }}
+                                  className="text-[8px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider bg-[#009ee3]/10 border-[#009ee3]/30 text-[#009ee3] hover:bg-[#009ee3]/20 transition-all cursor-pointer"
+                                  title="Calcular 12% sobre Precio Web"
+                                >
+                                  ⚡ 12%
+                                </button>
+                              </div>
+                              <div className="relative">
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  placeholder="Ej: 16.68"
+                                  value={(editingProduct.comisionMP !== undefined && editingProduct.comisionMP !== "") ? editingProduct.comisionMP : ""}
+                                  onChange={(e) => {
+                                    const val = e.target.value === "" ? "" : Number(e.target.value);
+                                    setEditingProduct(updateProductCalculations({ ...editingProduct, comisionMP: val as any }) as Product);
+                                  }}
+                                  className="w-full px-3 py-1.5 h-9 bg-[#050B1A] border border-[#009ee3]/30 hover:border-[#009ee3] focus:border-[#009ee3] rounded-lg text-xs outline-none focus:ring-1 focus:ring-[#009ee3]/20 text-[#009ee3] font-mono font-bold transition-all"
+                                />
+                              </div>
+                              <div className="text-[8px] text-zinc-500 font-medium flex items-center justify-between">
+                                <span>12% Web</span>
+                                <span>Neto: <strong className="text-emerald-400 font-mono">${Math.max(0, Number(editingProduct.precioWeb || 0) - Number(editingProduct.comisionMP !== undefined && editingProduct.comisionMP !== "" ? editingProduct.comisionMP : (Number(editingProduct.precioWeb || 0) * 0.12))).toFixed(2)}</strong></span>
+                              </div>
                             </div>
                           </div>
 
@@ -13169,19 +13284,24 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                               {/* Rentabilidad Canal Web */}
                               {(() => {
+                                const pWeb = Number(editingProduct.precioWeb || 0);
+                                const commMP = (editingProduct.comisionMP !== undefined && editingProduct.comisionMP !== null && editingProduct.comisionMP !== "")
+                                  ? Number(editingProduct.comisionMP)
+                                  : Number((pWeb * 0.12).toFixed(2));
                                 const { profit, marginPercent, markupPercent } = calculateMargins(
                                   editingProduct.isCombo ? getComboPurchaseCost(editingProduct.comboComponents || []) : Number(editingProduct.precioCompra || 0),
-                                  Number(editingProduct.precioWeb || 0),
-                                  0
+                                  pWeb,
+                                  commMP
                                 );
                                 const isOk = marginPercent >= 28;
                                 const isCritical = marginPercent < 15;
+                                const netoRecibido = Math.max(0, pWeb - commMP);
                                 return (
                                   <div className="p-4 bg-[#030712]/60 border border-zinc-850 rounded-2xl space-y-2.5 shadow-inner transition-all hover:border-zinc-750 duration-300">
                                     <div className="flex items-center justify-between">
                                       <span className="text-[10px] font-black uppercase text-zinc-400 tracking-widest flex items-center gap-1">
                                         <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
-                                        Canal Web 🌐
+                                        Canal Web (Mercado Pago 12%) 🌐💳
                                       </span>
                                       <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-lg border uppercase tracking-wider ${
                                         isCritical ? "bg-red-500/10 text-red-400 border-red-500/20" :
@@ -13211,6 +13331,10 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                       <div className="flex items-center justify-between text-[9px] text-zinc-500 font-medium">
                                         <span>Markup (Multiplicador): +{markupPercent}%</span>
                                         <span>Costo: ${editingProduct.isCombo ? getComboPurchaseCost(editingProduct.comboComponents || []) : (editingProduct.precioCompra || 0)}</span>
+                                      </div>
+                                      <div className="flex items-center justify-between text-[9px] text-zinc-400 font-medium pt-1 border-t border-zinc-800/40">
+                                        <span className="text-sky-400">Comisión MP (12%): -${commMP.toLocaleString('es-UY', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                        <span className="text-emerald-400 font-semibold">Neto en cuenta: ${netoRecibido.toLocaleString('es-UY', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
                                       </div>
                                     </div>
                                   </div>
@@ -13260,7 +13384,11 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                       </div>
                                       <div className="flex items-center justify-between text-[9px] text-zinc-500 font-medium">
                                         <span>Markup (Multiplicador): +{markupPercent}%</span>
-                                        <span>Comisión ML: ${editingProduct.comisionML || 0}</span>
+                                        <span>Costo: ${editingProduct.isCombo ? getComboPurchaseCost(editingProduct.comboComponents || []) : (editingProduct.precioCompra || 0)}</span>
+                                      </div>
+                                      <div className="flex items-center justify-between text-[9px] text-zinc-400 font-medium pt-1 border-t border-zinc-800/40">
+                                        <span className="text-amber-400">Comisión ML: -${Number(editingProduct.comisionML || 0).toLocaleString('es-UY', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                        <span className="text-emerald-400 font-semibold">Neto recibido: ${(Math.max(0, Number(editingProduct.precioVentaML || 0) - Number(editingProduct.comisionML || 0))).toLocaleString('es-UY', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
                                       </div>
                                     </div>
                                   </div>
@@ -15871,6 +15999,8 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                             price: variant.price || product.price,
                             precioVentaML: product.precioVentaML || 0,
                             comisionML: product.comisionML || 0,
+                            precioWeb: product.precioWeb || 0,
+                            comisionMP: product.comisionMP !== undefined ? product.comisionMP : Number(((product.precioWeb || product.price || 0) * 0.12).toFixed(2)),
                             stockMontevideo: variant.stockMontevideo || 0,
                             stockPinamar: variant.stockPinamar || 0,
                             isVariant: true,
@@ -15891,6 +16021,8 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                           price: product.price,
                           precioVentaML: product.precioVentaML || 0,
                           comisionML: product.comisionML || 0,
+                          precioWeb: product.precioWeb || 0,
+                          comisionMP: product.comisionMP !== undefined ? product.comisionMP : Number(((product.precioWeb || product.price || 0) * 0.12).toFixed(2)),
                           stockMontevideo: product.stockMontevideo || 0,
                           stockPinamar: product.stockPinamar || 0,
                           isVariant: false,
@@ -15913,6 +16045,11 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                     const commML = Number(item.comisionML) || 0;
                     const profitML = priceML - cost - commML;
                     const marginMLPct = priceML > 0 ? (profitML / priceML) * 100 : 0;
+
+                    const priceWeb = Number(item.precioWeb) || price;
+                    const commMP = (item.comisionMP !== undefined && item.comisionMP !== null) ? Number(item.comisionMP) : Number((priceWeb * 0.12).toFixed(2));
+                    const profitWeb = priceWeb - cost - commMP;
+                    const marginWebPct = priceWeb > 0 ? (profitWeb / priceWeb) * 100 : 0;
 
                     let status: 'noCost' | 'loss' | 'low' | 'optimal' | 'high' | 'flexible' = 'optimal';
                     let label = '🟢 Margen Óptimo';
@@ -15961,6 +16098,10 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                       commML,
                       profitML,
                       marginMLPct,
+                      priceWeb,
+                      commMP,
+                      profitWeb,
+                      marginWebPct,
                       status,
                       label,
                       badgeClass,

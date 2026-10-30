@@ -242,10 +242,12 @@ export const DashboardResumenGeneral: React.FC<DashboardResumenGeneralProps> = (
     let montevideoTotalComisionML = 0;
     let montevideoTotalEnvios = 0;
 
+    let montevideoTotalPaymentFees = 0;
     montevideoOrders.forEach(o => {
       const netProduct = (o.subtotal || 0) - (o.discountAmount || 0);
       montevideoFacturadoTotal += netProduct;
       montevideoTotalEnvios += Number(o.shippingCost || 0);
+      montevideoTotalPaymentFees += Number(o.paymentFee || 0);
 
       (o.items || []).forEach(item => {
         const p = store.products?.find(prod => String(prod.id) === String(item.productId));
@@ -260,7 +262,7 @@ export const DashboardResumenGeneral: React.FC<DashboardResumenGeneralProps> = (
       });
     });
 
-    const montevideoGananciaNeta = Math.max(0, montevideoFacturadoTotal - montevideoTotalCostoArticulos - montevideoTotalComisionML);
+    const montevideoGananciaNeta = Math.max(0, montevideoFacturadoTotal - montevideoTotalCostoArticulos - montevideoTotalComisionML - montevideoTotalPaymentFees);
     const montevideoComisionVentas = 0.4 * montevideoGananciaNeta;
     const montevideoTotalALiquidar = montevideoComisionVentas + montevideoTotalEnvios;
     const montevideoRetornoJuem = montevideoTotalCostoArticulos + (0.6 * montevideoGananciaNeta);
@@ -685,7 +687,8 @@ export const DashboardResumenGeneral: React.FC<DashboardResumenGeneralProps> = (
                             comisionML += (Number(it.quantity) || 1) * (it.comisionML !== undefined ? it.comisionML : (p?.comisionML || 0));
                           }
                         });
-                        const ganancia = Math.max(0, netProduct - cost - comisionML);
+                        const pFee = Number(o.paymentFee || 0);
+                        const ganancia = Math.max(0, netProduct - cost - comisionML - pFee);
                         const com40 = 0.4 * ganancia;
                         const totalLiq = com40 + shipping;
 

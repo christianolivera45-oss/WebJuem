@@ -55,6 +55,7 @@ export interface Product {
   precioCompra?: number;
   precioCon40?: number;
   comisionML?: number;
+  comisionMP?: number;
   precioVentaML?: number;
   precioWeb?: number;
   calcWebPriceFromML?: boolean;
@@ -281,6 +282,27 @@ export interface Order {
   depositoOrigen?: 'Pinamar' | 'Montevideo';
   canal?: string;
   paymentMethod?: string;
+  paymentId?: string;
+  paymentFee?: number;
+  paymentNetReceived?: number;
+  paymentDetails?: {
+    paymentId?: string;
+    status?: string;
+    statusDetail?: string;
+    transactionAmount?: number;
+    netReceivedAmount?: number;
+    totalFee?: number;
+    fees?: Array<{
+      type: string;
+      name: string;
+      amount: number;
+    }>;
+    paymentMethodId?: string;
+    paymentTypeId?: string;
+    installments?: number;
+    cardLastFour?: string;
+    operationNumber?: string;
+  };
 }
 
 export interface BillItem {

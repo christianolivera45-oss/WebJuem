@@ -30,7 +30,10 @@ import {
   Edit,
   Truck,
   Handshake,
-  Scale
+  Scale,
+  RefreshCw,
+  Copy,
+  Check
 } from "lucide-react";
 
 interface DashboardOrdersProps {
@@ -143,10 +146,51 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isDeletingLoading, setIsDeletingLoading] = useState<string | null>(null);
 
+  // Mercado Pago on-demand sync state
+  const [syncingOrderId, setSyncingOrderId] = useState<string | null>(null);
+  const [syncSuccessMsg, setSyncSuccessMsg] = useState<{ id: string; msg: string } | null>(null);
+  const [syncErrorMsg, setSyncErrorMsg] = useState<{ id: string; msg: string } | null>(null);
+
+  const handleSyncMercadoPago = async (orderId: string) => {
+    setSyncingOrderId(orderId);
+    setSyncSuccessMsg(null);
+    setSyncErrorMsg(null);
+    try {
+      const res = await fetch(`/api/orders/${orderId}/sync-mercadopago`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${authToken || localStorage.getItem("juem_admin_token") || ""}`
+        }
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Error al sincronizar con Mercado Pago.");
+      }
+      setSyncSuccessMsg({ id: orderId, msg: "¡Sincronizado con Mercado Pago con éxito!" });
+      if (onOrderUpdated && data.order) {
+        onOrderUpdated(data.order);
+      }
+      if (onRefreshStore) {
+        await onRefreshStore();
+      }
+      setTimeout(() => {
+        setSyncSuccessMsg(null);
+      }, 4000);
+    } catch (err: any) {
+      setSyncErrorMsg({ id: orderId, msg: err.message || "No se pudo sincronizar con Mercado Pago." });
+      setTimeout(() => {
+        setSyncErrorMsg(null);
+      }, 6000);
+    } finally {
+      setSyncingOrderId(null);
+    }
+  };
+
   const orders: Order[] = store.orders || [];
   const productsList: Product[] = store.products || [];
 
-  // Formula helper to compute cost, net profit, and shipping cost for an order
+  // Formula helper to compute cost, net profit, and shipping cost for an order (factoring in ML commissions & MP gateway fees)
   const getOrderCostAndProfit = (order: Order, products: Product[]) => {
     let totalCost = 0;
     let totalComisionML = 0;
@@ -164,8 +208,9 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
       }
     }
     const totalPriceProducts = order.subtotal - order.discountAmount;
-    const gananciaNeta = totalPriceProducts - totalCost - totalComisionML;
-    return { totalCost, gananciaNeta, totalPriceProducts, totalComisionML };
+    const paymentFee = Number(order.paymentFee || 0);
+    const gananciaNeta = totalPriceProducts - totalCost - totalComisionML - paymentFee;
+    return { totalCost, gananciaNeta, totalPriceProducts, totalComisionML, paymentFee };
   };
 
   // Metrics (computed over ALL APPROVED sales)
@@ -191,7 +236,7 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
   let totalJuem = 0;
 
   for (const o of approvedOrders) {
-    const { totalCost, gananciaNeta, totalPriceProducts, totalComisionML } = getOrderCostAndProfit(o, productsList);
+    const { totalCost, gananciaNeta, totalPriceProducts, totalComisionML, paymentFee } = getOrderCostAndProfit(o, productsList);
     const isMontevideo = o.depositoOrigen === "Montevideo";
     
     if (isMontevideo) {
@@ -201,9 +246,9 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
       totalJuem += totalCost + (0.6 * gananciaNeta);
     } else {
       // Pinamar (JUEM): 100% of net profit + product cost + shipping cost = totalPriceProducts + shippingCost
-      // (Deduct Mercado Libre commission from JUEM's total if sold via Mercado Libre)
+      // (Deduct Mercado Libre commission and Mercado Pago gateway fee from JUEM's total)
       totalFranquicia += 0;
-      totalJuem += totalPriceProducts - totalComisionML + (o.shippingCost || 0);
+      totalJuem += totalPriceProducts - totalComisionML - paymentFee + (o.shippingCost || 0);
     }
   }
 
@@ -276,7 +321,7 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
   let monthlyJuem = 0;
 
   for (const o of monthlyApprovedOrders) {
-    const { totalCost, gananciaNeta, totalPriceProducts, totalComisionML } = getOrderCostAndProfit(o, productsList);
+    const { totalCost, gananciaNeta, totalPriceProducts, totalComisionML, paymentFee } = getOrderCostAndProfit(o, productsList);
     const isMontevideo = o.depositoOrigen === "Montevideo";
     
     if (isMontevideo) {
@@ -284,7 +329,7 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
       monthlyJuem += totalCost + (0.6 * gananciaNeta);
     } else {
       monthlyFranquicia += 0;
-      monthlyJuem += totalPriceProducts - totalComisionML + (o.shippingCost || 0);
+      monthlyJuem += totalPriceProducts - totalComisionML - paymentFee + (o.shippingCost || 0);
     }
   }
 
@@ -1375,13 +1420,13 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
                   const statusInfo = getStatusLabelAndStyle(order.status);
                   
                   // Math breakdowns
-                  const { totalCost, gananciaNeta, totalPriceProducts, totalComisionML } = getOrderCostAndProfit(order, productsList);
+                  const { totalCost, gananciaNeta, totalPriceProducts, totalComisionML, paymentFee } = getOrderCostAndProfit(order, productsList);
                   const isML = (order.canal || "").toLowerCase().trim() === "mercado libre";
                   const mlNetTotal = isML ? (totalPriceProducts - totalComisionML + (order.shippingCost || 0)) : null;
                   const isMvd = (order.depositoOrigen || "Pinamar") === "Montevideo";
                   
                   const rowFran = isMvd ? ((0.4 * gananciaNeta) + (order.shippingCost || 0)) : 0;
-                  const rowJuem = isMvd ? (totalCost + (0.6 * gananciaNeta)) : (totalPriceProducts + (order.shippingCost || 0));
+                  const rowJuem = isMvd ? (totalCost + (0.6 * gananciaNeta)) : (totalPriceProducts - totalComisionML - paymentFee + (order.shippingCost || 0));
 
                   const itemsCount = order.items?.reduce((acc, it) => acc + (it.quantity || 1), 0) || 0;
 
@@ -1455,6 +1500,27 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
                               <span className="text-[11px] font-black text-amber-300">
                                 $ {mlNetTotal.toLocaleString("es-AR")}
                               </span>
+                            </div>
+                          )}
+                          {/* MERCADO PAGO REAL NET RECEIVED & FEE BADGE */}
+                          {(order.paymentMethod === 'mercadopago' || (order.paymentFee !== undefined && order.paymentFee > 0) || order.paymentNetReceived !== undefined) && (
+                            <div 
+                              className="mt-1.5 flex flex-col items-end gap-0.5"
+                              title={`Liquidación en cuenta Mercado Pago: Pagado $${(order.total || totalPriceProducts).toLocaleString("es-AR")} | Retenciones MP -$${(order.paymentFee || 0).toLocaleString("es-AR", { minimumFractionDigits: 2 })} | Total recibido en cuenta $${(order.paymentNetReceived !== undefined && order.paymentNetReceived !== null ? order.paymentNetReceived : (totalPriceProducts - (order.paymentFee || 0))).toLocaleString("es-AR", { minimumFractionDigits: 2 })}`}
+                            >
+                              <div className="flex items-center justify-end gap-1">
+                                <span className="px-1.5 py-0.5 text-[8px] bg-sky-500/20 text-sky-300 border border-sky-500/40 rounded font-black uppercase">
+                                  Ingresó MP
+                                </span>
+                                <span className="text-[11.5px] font-black text-sky-300 font-mono">
+                                  $ {(order.paymentNetReceived !== undefined && order.paymentNetReceived !== null ? Number(order.paymentNetReceived) : (totalPriceProducts - (order.paymentFee || 0))).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
+                              </div>
+                              {order.paymentFee && order.paymentFee > 0 ? (
+                                <span className="text-[9.5px] font-mono text-zinc-400 font-bold">
+                                  (-$ {Number(order.paymentFee).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} com.)
+                                </span>
+                              ) : null}
                             </div>
                           )}
                         </td>
@@ -1653,6 +1719,159 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
                                         <span className="text-base font-black text-amber-300">$ {mlNetTotal.toLocaleString("es-AR")} UYU</span>
                                       </div>
                                     </div>
+                                  </div>
+                                )}
+
+                                {/* MERCADO PAGO OFFICIAL DETAILED SETTLEMENT BREAKDOWN */}
+                                {(order.paymentMethod === "mercadopago" || (order.paymentFee !== undefined && Number(order.paymentFee) > 0) || order.paymentNetReceived !== undefined || order.paymentDetails || (order.canal && order.canal.toLowerCase().includes("mercado pago")) || (order.canal && order.canal.toLowerCase() === "web") || order.paymentId) && (
+                                  <div className="p-4 bg-gradient-to-br from-sky-950/30 via-zinc-950/90 to-zinc-950 border border-sky-500/30 rounded-2xl space-y-3.5 shadow-lg relative overflow-hidden">
+                                    <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-sky-400 via-blue-500 to-indigo-500" />
+                                    
+                                    {/* Header & Sync */}
+                                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800/80 pb-3">
+                                      <div className="flex items-center gap-2.5">
+                                        <div className="p-2 bg-sky-500/15 text-sky-400 border border-sky-500/30 rounded-xl">
+                                          <ShoppingBag className="h-4 w-4" />
+                                        </div>
+                                        <div>
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-sm font-black text-white">Detalle de Operación Mercado Pago</span>
+                                            <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                              {order.status === "pago_aprobado" ? "Aprobado" : "Verificado"}
+                                            </span>
+                                          </div>
+                                          <p className="text-[10.5px] text-zinc-400 font-medium mt-0.5">
+                                            Desglose oficial de retenciones y acreditación bancaria en tu cuenta
+                                          </p>
+                                        </div>
+                                      </div>
+
+                                      {/* Sync Button */}
+                                      <button
+                                        type="button"
+                                        disabled={syncingOrderId === order.id}
+                                        onClick={() => handleSyncMercadoPago(order.id)}
+                                        className="px-3 py-1.5 bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/40 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                                        title="Consultar la API de Mercado Pago para actualizar comisiones y neto recibido"
+                                      >
+                                        <RefreshCw className={`h-3.5 w-3.5 ${syncingOrderId === order.id ? "animate-spin text-sky-400" : ""}`} />
+                                        <span>{syncingOrderId === order.id ? "Consultando MP..." : "Sincronizar con Mercado Pago"}</span>
+                                      </button>
+                                    </div>
+
+                                    {/* Sync feedback alerts */}
+                                    {syncSuccessMsg && syncSuccessMsg.id === order.id && (
+                                      <div className="p-2.5 bg-emerald-500/15 border border-emerald-500/30 rounded-xl text-xs font-bold text-emerald-300 flex items-center gap-2">
+                                        <Check className="h-4 w-4 text-emerald-400 shrink-0" />
+                                        <span>{syncSuccessMsg.msg}</span>
+                                      </div>
+                                    )}
+                                    {syncErrorMsg && syncErrorMsg.id === order.id && (
+                                      <div className="p-2.5 bg-rose-500/15 border border-rose-500/30 rounded-xl text-xs font-bold text-rose-300 flex items-center gap-2">
+                                        <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0" />
+                                        <span>{syncErrorMsg.msg}</span>
+                                      </div>
+                                    )}
+
+                                    {/* Breakdown Box styled faithful to Mercado Pago */}
+                                    <div className="bg-zinc-950/80 border border-zinc-800/80 rounded-xl p-4 space-y-2.5 text-xs">
+                                      {/* Pago bruto del cliente */}
+                                      <div className="flex justify-between items-center text-zinc-300">
+                                        <span className="font-semibold text-zinc-400">Pago</span>
+                                        <span className="font-mono font-bold text-white text-sm">
+                                          $ {(order.total || totalPriceProducts).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </span>
+                                      </div>
+
+                                      {/* Itemized Fees from Mercado Pago */}
+                                      {order.paymentDetails?.fees && Array.isArray(order.paymentDetails.fees) && order.paymentDetails.fees.length > 0 ? (
+                                        order.paymentDetails.fees.map((fee: any, fIdx: number) => (
+                                          <div key={fIdx} className="flex justify-between items-center text-rose-400 font-mono text-[11.5px]">
+                                            <span className="font-sans font-medium text-zinc-400">{fee.name || "Cargo"}</span>
+                                            <span className="font-bold">
+                                              -$ {Number(fee.amount).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </span>
+                                          </div>
+                                        ))
+                                      ) : (order.paymentFee !== undefined && Number(order.paymentFee) > 0) ? (
+                                        <div className="flex justify-between items-center text-rose-400 font-mono text-[11.5px]">
+                                          <span className="font-sans font-medium text-zinc-400">Cargo de Mercado Pago y financiación</span>
+                                          <span className="font-bold">
+                                            -$ {Number(order.paymentFee).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                          </span>
+                                        </div>
+                                      ) : (
+                                        <div className="text-[11px] text-zinc-500 italic">
+                                          Haz clic en "Sincronizar con Mercado Pago" para descargar el desglose exacto de cargos de la pasarela.
+                                        </div>
+                                      )}
+
+                                      {/* Total Recibido Highlight Banner */}
+                                      <div className="border-t border-zinc-800 pt-3 mt-2 flex flex-wrap justify-between items-center bg-sky-500/10 -mx-4 -mb-4 p-4 rounded-b-xl border-sky-500/25">
+                                        <div>
+                                          <span className="text-xs font-black text-sky-200 uppercase tracking-wider block">
+                                            Total recibido en cuenta
+                                          </span>
+                                          <span className="text-[10px] text-zinc-400 font-medium">
+                                            Monto neto acreditado en tu dinero disponible
+                                          </span>
+                                        </div>
+                                        <div className="text-right">
+                                          <span className="text-lg font-black text-sky-300 font-mono">
+                                            $ {(order.paymentNetReceived !== undefined && order.paymentNetReceived !== null ? Number(order.paymentNetReceived) : ((order.total || totalPriceProducts) - (Number(order.paymentFee) || 0))).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UYU
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Transaction Metadata Footer */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1 text-[11px]">
+                                      {/* Medio de pago */}
+                                      <div className="p-3 bg-zinc-950/50 rounded-xl border border-zinc-800/60">
+                                        <span className="text-[10px] text-zinc-400 uppercase font-bold block mb-1">Medio de pago</span>
+                                        <div className="flex items-center gap-1.5 font-bold text-zinc-200">
+                                          <span>
+                                            {order.paymentDetails?.paymentMethodId ? order.paymentDetails.paymentMethodId.toUpperCase() : "Mercado Pago"}
+                                            {order.paymentDetails?.cardLastFour ? ` **** ${order.paymentDetails.cardLastFour}` : ""}
+                                          </span>
+                                        </div>
+                                        {order.paymentDetails?.installments && (
+                                          <span className="text-[10px] text-zinc-400 block mt-0.5">
+                                            {order.paymentDetails.installments} cuotas
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      {/* N.° de operación */}
+                                      <div className="p-3 bg-zinc-950/50 rounded-xl border border-zinc-800/60">
+                                        <span className="text-[10px] text-zinc-400 uppercase font-bold block mb-1">N.º de operación MP</span>
+                                        <div className="flex items-center justify-between gap-1 font-mono font-bold text-zinc-200">
+                                          <span>{order.paymentId || order.paymentDetails?.operationNumber || "Sin ID asignado"}</span>
+                                          {(order.paymentId || order.paymentDetails?.operationNumber) && (
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                navigator.clipboard.writeText(order.paymentId || order.paymentDetails?.operationNumber || "");
+                                              }}
+                                              title="Copiar N° de operación"
+                                              className="p-1 hover:bg-zinc-800 rounded text-zinc-400 hover:text-white transition-colors cursor-pointer"
+                                            >
+                                              <Copy className="h-3 w-3" />
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      {/* Referencia interna */}
+                                      <div className="p-3 bg-zinc-950/50 rounded-xl border border-zinc-800/60">
+                                        <span className="text-[10px] text-zinc-400 uppercase font-bold block mb-1">Referencia interna (Orden)</span>
+                                        <span className="font-mono text-zinc-300 font-bold truncate block" title={order.id}>
+                                          #{order.id.substring(0, 8)}...
+                                        </span>
+                                      </div>
+                                    </div>
+
                                   </div>
                                 )}
                               </div>

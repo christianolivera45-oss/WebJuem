@@ -1700,7 +1700,57 @@ function reintegrateStockMemory(orderItems: any[], depositoOrigen: string): void
   }
 }
 
-async function approveOrderAndDeductStock(orderId: string, paymentId: string, verifiedPaymentAmount: number): Promise<string> {
+function parseMercadoPagoPayment(mpPaymentData: any) {
+  let totalFee = 0;
+  const feeList: any[] = [];
+  if (Array.isArray(mpPaymentData.fee_details)) {
+    mpPaymentData.fee_details.forEach((f: any) => {
+      const amt = Number(f.amount || 0);
+      totalFee += amt;
+      let friendlyName = "Cargo Mercado Pago";
+      if (f.type === "mercadopago_fee") friendlyName = "Cargo de Mercado Pago";
+      else if (f.type === "financing_fee") friendlyName = `Costo por ofrecer cuotas${mpPaymentData.installments ? ` (x${mpPaymentData.installments})` : ""}`;
+      feeList.push({
+        type: f.type,
+        name: friendlyName,
+        amount: amt
+      });
+    });
+  }
+
+  const transactionAmount = Number(mpPaymentData.transaction_amount || 0);
+  const netReceived = (mpPaymentData.net_received_amount !== undefined && mpPaymentData.net_received_amount !== null)
+    ? Number(mpPaymentData.net_received_amount)
+    : Math.max(0, transactionAmount - totalFee);
+
+  const cardLastFour = mpPaymentData.card?.last_four_digits || undefined;
+
+  return {
+    paymentId: String(mpPaymentData.id || ""),
+    status: mpPaymentData.status,
+    statusDetail: mpPaymentData.status_detail,
+    transactionAmount,
+    netReceivedAmount: Number(netReceived.toFixed(2)),
+    totalFee: Number(totalFee.toFixed(2)),
+    fees: feeList,
+    paymentMethodId: mpPaymentData.payment_method_id,
+    paymentTypeId: mpPaymentData.payment_type_id,
+    installments: mpPaymentData.installments,
+    cardLastFour,
+    operationNumber: String(mpPaymentData.id || "")
+  };
+}
+
+async function approveOrderAndDeductStock(
+  orderId: string, 
+  paymentId: string, 
+  verifiedPaymentAmount: number,
+  extraPaymentData?: {
+    paymentFee?: number;
+    paymentNetReceived?: number;
+    paymentDetails?: any;
+  }
+): Promise<string> {
   const pool = getDbPool();
   if (pool && !dbUnavailable) {
     const client = await pool.connect();
@@ -1720,8 +1770,21 @@ async function approveOrderAndDeductStock(orderId: string, paymentId: string, ve
         return "already_approved";
       }
       
-      // Update order status with verified status
-      await client.query("UPDATE public.orders SET current_status = 'pago_aprobado', updated_at = NOW() WHERE id = $1;", [orderId]);
+      // Update order status with verified status and payment info
+      const feeVal = (extraPaymentData?.paymentFee !== undefined && extraPaymentData?.paymentFee !== null) ? extraPaymentData.paymentFee : null;
+      const netVal = (extraPaymentData?.paymentNetReceived !== undefined && extraPaymentData?.paymentNetReceived !== null) ? extraPaymentData.paymentNetReceived : null;
+      const detailsVal = extraPaymentData?.paymentDetails ? JSON.stringify(extraPaymentData.paymentDetails) : null;
+
+      await client.query(`
+        UPDATE public.orders 
+        SET current_status = 'pago_aprobado', 
+            payment_id = COALESCE($2, payment_id),
+            payment_fee = COALESCE($3, payment_fee),
+            payment_net_received = COALESCE($4, payment_net_received),
+            payment_details = COALESCE($5::jsonb, payment_details),
+            updated_at = NOW() 
+        WHERE id = $1;
+      `, [orderId, paymentId || null, feeVal, netVal, detailsVal]);
       
       // Deduct stock prioritizing Pinamar, then Montevideo
       await deductStockDb(client, orderId);
@@ -1759,6 +1822,10 @@ async function approveOrderAndDeductStock(orderId: string, paymentId: string, ve
           } else {
             o.status = "pago_aprobado";
             o.updatedAt = new Date().toISOString();
+            if (paymentId) o.paymentId = paymentId;
+            if (extraPaymentData?.paymentFee !== undefined) o.paymentFee = extraPaymentData.paymentFee;
+            if (extraPaymentData?.paymentNetReceived !== undefined) o.paymentNetReceived = extraPaymentData.paymentNetReceived;
+            if (extraPaymentData?.paymentDetails) o.paymentDetails = extraPaymentData.paymentDetails;
             
             // Deduct in-memory stock prioritizing Pinamar, then Montevideo
             if (o.items && Array.isArray(o.items)) {
@@ -1957,7 +2024,7 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
       SELECT id, name, price, stock, category, featured, image_url, created_at, description, categoria_id, original_price, subcategoria_id, active, paused, sizes, colors, is_3d, hours_per_unit,
              size_chart_enabled, size_chart_show_superior, size_chart_show_inferior, size_chart_show_calzado, size_chart_show_recommender, size_chart_data, consult_only,
              categorias_adicionales, subcategorias_adicionales, codigo,
-             precio_compra, precio_con_40, comision_ml, precio_venta_ml, precio_web, descuento_porcentaje, stock_pinamar, stock_montevideo, is_combo, combo_components
+             precio_compra, precio_con_40, comision_ml, comision_mp, precio_venta_ml, precio_web, descuento_porcentaje, stock_pinamar, stock_montevideo, is_combo, combo_components
       FROM public.products 
       WHERE active = true 
       ORDER BY id DESC;
@@ -2055,6 +2122,7 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
         precioCompra: row.precio_compra !== null && row.precio_compra !== undefined ? Number(row.precio_compra) : undefined,
         precioCon40: row.precio_con_40 !== null && row.precio_con_40 !== undefined ? Number(row.precio_con_40) : undefined,
         comisionML: row.comision_ml !== null && row.comision_ml !== undefined ? Number(row.comision_ml) : undefined,
+        comisionMP: row.comision_mp !== null && row.comision_mp !== undefined ? Number(row.comision_mp) : (row.precio_web ? Number((Number(row.precio_web) * 0.12).toFixed(2)) : undefined),
         precioVentaML: row.precio_venta_ml !== null && row.precio_venta_ml !== undefined ? Number(row.precio_venta_ml) : undefined,
         precioWeb: row.precio_web !== null && row.precio_web !== undefined ? Number(row.precio_web) : undefined,
         descuentoPorcentaje: row.descuento_porcentaje !== null && row.descuento_porcentaje !== undefined ? Number(row.descuento_porcentaje) : undefined,
@@ -2069,7 +2137,7 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
     // 7. Fetch orders & their items
     let orders: any[] = [];
     try {
-      const ordersRes = await pool.query("SELECT id, customer_email, customer_name, customer_phone, subtotal, discount_amount, shipping_cost, total, applied_coupon_code, current_status, notes, payment_method, deposito_origen, canal, bypass_stock_deduction, created_at, updated_at, surcharge_amount FROM public.orders ORDER BY created_at DESC;");
+      const ordersRes = await pool.query("SELECT id, customer_email, customer_name, customer_phone, subtotal, discount_amount, shipping_cost, total, applied_coupon_code, current_status, notes, payment_method, deposito_origen, canal, bypass_stock_deduction, created_at, updated_at, surcharge_amount, payment_id, payment_fee, payment_net_received, payment_details FROM public.orders ORDER BY created_at DESC;");
       
       const itemsRes = await pool.query("SELECT id, order_id, product_id, variant_id, product_name, sku, size_selected, color_selected, unit_price, quantity, total_price, comision_ml FROM public.order_items;");
       const orderItemsMap: Record<string, any[]> = {};
@@ -2110,6 +2178,10 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
         canal: row.canal || "Web",
         bypassStockDeduction: !!row.bypass_stock_deduction,
         surchargeAmount: row.surcharge_amount ? Number(row.surcharge_amount) : 0,
+        paymentId: row.payment_id || undefined,
+        paymentFee: row.payment_fee !== null && row.payment_fee !== undefined ? Number(row.payment_fee) : 0,
+        paymentNetReceived: row.payment_net_received !== null && row.payment_net_received !== undefined ? Number(row.payment_net_received) : (row.payment_fee ? Math.max(0, Number(row.total) - Number(row.payment_fee)) : undefined),
+        paymentDetails: row.payment_details ? (typeof row.payment_details === "string" ? JSON.parse(row.payment_details) : row.payment_details) : undefined,
         createdAt: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
         updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : undefined,
         items: orderItemsMap[row.id] || []
@@ -2457,6 +2529,9 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
       const precioCompraVal = prod.precioCompra ? Number(prod.precioCompra) : 0;
       const precioCon40Val = prod.precioCon40 ? Number(prod.precioCon40) : 0;
       const comisionMLVal = prod.comisionML ? Number(prod.comisionML) : 0;
+      const comisionMPVal = (prod.comisionMP !== undefined && prod.comisionMP !== null)
+        ? Number(prod.comisionMP)
+        : Number(((Number(prod.precioWeb || prod.price || 0)) * 0.12).toFixed(2));
       const precioVentaMLVal = prod.precioVentaML ? Number(prod.precioVentaML) : 0;
       const precioWebVal = prod.precioWeb ? Number(prod.precioWeb) : 0;
       const descuentoPorcentajeVal = prod.descuentoPorcentaje ? Math.floor(Number(prod.descuentoPorcentaje)) : 0;
@@ -2474,8 +2549,8 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
             name, price, stock, category, featured, image_url, description, categoria_id, original_price, subcategoria_id, active, paused, sizes, colors, is_3d, hours_per_unit,
             size_chart_enabled, size_chart_show_superior, size_chart_show_inferior, size_chart_show_calzado, size_chart_show_recommender, size_chart_data, consult_only,
             categorias_adicionales, subcategorias_adicionales, codigo,
-            precio_compra, precio_con_40, comision_ml, precio_venta_ml, precio_web, descuento_porcentaje, stock_pinamar, stock_montevideo, is_combo, combo_components, calc_web_price_from_ml
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36)
+            precio_compra, precio_con_40, comision_ml, comision_mp, precio_venta_ml, precio_web, descuento_porcentaje, stock_pinamar, stock_montevideo, is_combo, combo_components, calc_web_price_from_ml
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37)
           RETURNING id;
         `, [
           prod.name, priceVal, stockVal, prod.category, featuredVal, prod.imageUrl,
@@ -2486,7 +2561,7 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
           catAdicionales,
           subcatAdicionales,
           prod.codigo || "",
-          precioCompraVal, precioCon40Val, comisionMLVal, precioVentaMLVal, precioWebVal, descuentoPorcentajeVal, stockPinamarVal, stockMontevideoVal,
+          precioCompraVal, precioCon40Val, comisionMLVal, comisionMPVal, precioVentaMLVal, precioWebVal, descuentoPorcentajeVal, stockPinamarVal, stockMontevideoVal,
           isComboVal, comboComponentsVal, calcWebPriceFromMLVal
         ]);
         prodId = insertRes.rows[0].id;
@@ -2506,15 +2581,16 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
             precio_compra = $26,
             precio_con_40 = $27,
             comision_ml = $28,
-            precio_venta_ml = $29,
-            precio_web = $30,
-            descuento_porcentaje = $31,
-            stock_pinamar = $32,
-            stock_montevideo = $33,
-            is_combo = $34,
-            combo_components = $35,
-            calc_web_price_from_ml = $36
-          WHERE id = $37;
+            comision_mp = $29,
+            precio_venta_ml = $30,
+            precio_web = $31,
+            descuento_porcentaje = $32,
+            stock_pinamar = $33,
+            stock_montevideo = $34,
+            is_combo = $35,
+            combo_components = $36,
+            calc_web_price_from_ml = $37
+          WHERE id = $38;
         `, [
           prod.name, priceVal, stockVal, prod.category, featuredVal, prod.imageUrl,
           prod.description || "", prod.categoria_id, originalPriceVal, prod.subcategoria_id,
@@ -2524,7 +2600,7 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
           catAdicionales,
           subcatAdicionales,
           prod.codigo || "",
-          precioCompraVal, precioCon40Val, comisionMLVal, precioVentaMLVal, precioWebVal, descuentoPorcentajeVal, stockPinamarVal, stockMontevideoVal,
+          precioCompraVal, precioCon40Val, comisionMLVal, comisionMPVal, precioVentaMLVal, precioWebVal, descuentoPorcentajeVal, stockPinamarVal, stockMontevideoVal,
           isComboVal, comboComponentsVal,
           calcWebPriceFromMLVal,
           prodId
@@ -2749,6 +2825,7 @@ async function initPostgresStore(): Promise<ShopState | null> {
       ALTER TABLE public.products ADD COLUMN IF NOT EXISTS precio_compra NUMERIC(10, 2) DEFAULT 0.00;
       ALTER TABLE public.products ADD COLUMN IF NOT EXISTS precio_con_40 NUMERIC(10, 2) DEFAULT 0.00;
       ALTER TABLE public.products ADD COLUMN IF NOT EXISTS comision_ml NUMERIC(10, 2) DEFAULT 0.00;
+      ALTER TABLE public.products ADD COLUMN IF NOT EXISTS comision_mp NUMERIC(10, 2) DEFAULT 0.00;
       ALTER TABLE public.products ADD COLUMN IF NOT EXISTS precio_venta_ml NUMERIC(10, 2) DEFAULT 0.00;
       ALTER TABLE public.products ADD COLUMN IF NOT EXISTS precio_web NUMERIC(10, 2) DEFAULT 0.00;
       ALTER TABLE public.products ADD COLUMN IF NOT EXISTS descuento_porcentaje INTEGER DEFAULT 0;
@@ -10873,6 +10950,146 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     }
   });
 
+  // POST sync payment fees and real net income from Mercado Pago API
+  app.post("/api/orders/:id/sync-mercadopago", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!isValidToken(authHeader)) {
+      return res.status(403).json({ success: false, message: "Acceso denegado. Se requiere autenticación de administrador principal." });
+    }
+
+    const { id } = req.params;
+
+    try {
+      const officialState = await getDbState();
+      const order = (officialState.orders || []).find((o: any) => String(o.id) === String(id));
+      if (!order) {
+        return res.status(404).json({ success: false, message: "Pedido no encontrado en el sistema." });
+      }
+
+      const settings = officialState.settings || currentStoreState.settings || {};
+      const accessToken = (settings as any).mercadopagoAccessToken?.trim() || process.env.MERCADOPAGO_ACCESS_TOKEN?.trim();
+
+      if (!accessToken) {
+        return res.status(400).json({ success: false, message: "No hay Access Token de Mercado Pago configurado en los ajustes." });
+      }
+
+      const mpClient = new MercadoPagoConfig({ accessToken });
+      const paymentApi = new Payment(mpClient);
+
+      let mpPaymentData: any = null;
+
+      // 1. Try to fetch directly by paymentId if known
+      if (order.paymentId && order.paymentId !== "null" && String(order.paymentId).trim()) {
+        try {
+          console.log(`[Sync MP] Buscando pago por ID de operación: ${order.paymentId}`);
+          mpPaymentData = await paymentApi.get({ id: String(order.paymentId).trim() });
+        } catch (fetchErr: any) {
+          console.warn(`[Sync MP] Error consultando por ID ${order.paymentId}:`, fetchErr.message);
+        }
+      }
+
+      // 2. If not found by paymentId, search via Mercado Pago search API using external_reference (Order ID)
+      if (!mpPaymentData) {
+        try {
+          console.log(`[Sync MP] Buscando pago por external_reference: ${order.id}`);
+          const searchUrl = `https://api.mercadopago.com/v1/payments/search?external_reference=${encodeURIComponent(order.id)}`;
+          const searchResp = await fetch(searchUrl, {
+            headers: {
+              "Authorization": `Bearer ${accessToken}`,
+              "Content-Type": "application/json"
+            }
+          });
+
+          if (searchResp.ok) {
+            const searchJson = await searchResp.json();
+            if (searchJson.results && searchJson.results.length > 0) {
+              // Prefer approved payment, otherwise the most recent one
+              const approvedPayment = searchJson.results.find((p: any) => p.status === "approved") || searchJson.results[0];
+              mpPaymentData = approvedPayment;
+              console.log(`[Sync MP] Pago encontrado por búsqueda: ${mpPaymentData.id} (Estado: ${mpPaymentData.status})`);
+            }
+          } else {
+            console.warn(`[Sync MP] Error HTTP buscando por external_reference:`, searchResp.status, await searchResp.text());
+          }
+        } catch (searchErr: any) {
+          console.error("[Sync MP] Excepción buscando pagos en Mercado Pago:", searchErr);
+        }
+      }
+
+      if (!mpPaymentData) {
+        return res.status(404).json({
+          success: false,
+          message: `No se encontró ninguna transacción registrada en Mercado Pago para la orden #${order.id.substring(0, 6).toUpperCase()}. Verifique si el pago fue completado o si el comprobante corresponde a otra cuenta.`
+        });
+      }
+
+      const parsedMP = parseMercadoPagoPayment(mpPaymentData);
+      console.log(`[Sync MP] Datos parseados con éxito:`, parsedMP);
+
+      const pool = getDbPool();
+      if (pool && !dbUnavailable) {
+        await pool.query(`
+          UPDATE public.orders 
+          SET payment_id = COALESCE($1, payment_id),
+              payment_fee = $2,
+              payment_net_received = $3,
+              payment_details = $4::jsonb,
+              current_status = CASE WHEN $5 = 'approved' THEN 'pago_aprobado' ELSE current_status END,
+              updated_at = NOW() 
+          WHERE id = $6;
+        `, [
+          parsedMP.paymentId || null,
+          parsedMP.totalFee,
+          parsedMP.netReceivedAmount,
+          JSON.stringify(parsedMP),
+          parsedMP.status,
+          order.id
+        ]);
+
+        invalidateDbCache();
+        const dbState = await getDbState(true);
+        currentStoreState = dbState;
+        const updatedOrder = dbState.orders?.find(o => o.id === order.id);
+
+        return res.json({
+          success: true,
+          message: "Datos financieros de Mercado Pago sincronizados correctamente.",
+          order: updatedOrder,
+          paymentDetails: parsedMP
+        });
+      } else {
+        if (currentStoreState.orders) {
+          currentStoreState.orders = currentStoreState.orders.map(o => {
+            if (o.id === order.id) {
+              return {
+                ...o,
+                paymentId: parsedMP.paymentId || o.paymentId,
+                paymentFee: parsedMP.totalFee,
+                paymentNetReceived: parsedMP.netReceivedAmount,
+                paymentDetails: parsedMP,
+                status: parsedMP.status === "approved" ? "pago_aprobado" : o.status,
+                updatedAt: new Date().toISOString()
+              };
+            }
+            return o;
+          });
+          fs.writeFileSync(STORE_FILE, JSON.stringify(currentStoreState, null, 2), "utf-8");
+        }
+        invalidateDbCache();
+        const updatedOrder = currentStoreState.orders?.find(o => o.id === order.id);
+        return res.json({
+          success: true,
+          message: "Datos financieros de Mercado Pago sincronizados correctamente en archivo local.",
+          order: updatedOrder,
+          paymentDetails: parsedMP
+        });
+      }
+    } catch (syncErr: any) {
+      console.error("[Sync MP] Error sincronizando orden:", syncErr);
+      res.status(500).json({ success: false, message: "Error interno al sincronizar con Mercado Pago.", error: syncErr.message });
+    }
+  });
+
   // Mercado Pago Uruguay Custom Server Integration Endpoints (Fully Secured against price tampering)
   app.post("/api/payments/mercadopago/preference", async (req, res) => {
     try {
@@ -11026,12 +11243,14 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
 
     const accessToken = settings.mercadopagoAccessToken?.trim() || process.env.MERCADOPAGO_ACCESS_TOKEN?.trim();
 
+    let parsedMP: any = null;
     if (paymentId && paymentId !== "null" && accessToken) {
       try {
         console.log(`[Seguridad] Consultando transacción real ${paymentId} en pasarela Mercado Pago con SDK oficial.`);
         const mpClient = new MercadoPagoConfig({ accessToken });
         const payment = new Payment(mpClient);
         const mpPaymentData = await payment.get({ id: paymentId });
+        parsedMP = parseMercadoPagoPayment(mpPaymentData);
 
         const verifiedStatus = mpPaymentData.status; // 'approved', 'pending', 'in_process', 'rejected', 'refunded', 'cancelled'
         verifiedPaymentAmount = mpPaymentData.transaction_amount || 0;
@@ -11057,7 +11276,16 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       try {
         if (isApproved) {
           // Use our transactional, row-locking safe stock deduction routine
-          const result = await approveOrderAndDeductStock(orderId, paymentId, verifiedPaymentAmount);
+          const result = await approveOrderAndDeductStock(
+            orderId, 
+            paymentId, 
+            verifiedPaymentAmount,
+            parsedMP ? {
+              paymentFee: parsedMP.totalFee,
+              paymentNetReceived: parsedMP.netReceivedAmount,
+              paymentDetails: parsedMP
+            } : undefined
+          );
           console.log(`[Feedback Redirect Sinc] Resultado de aprobación de stock para Orden ${orderId}: ${result}`);
         } else {
           const pool = getDbPool();
@@ -11373,6 +11601,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       const mpClient = new MercadoPagoConfig({ accessToken });
       const payment = new Payment(mpClient);
       const mpPaymentData = await payment.get({ id: paymentId });
+      const parsedMP = parseMercadoPagoPayment(mpPaymentData);
 
       const verifiedStatus = mpPaymentData.status;
       const orderId = mpPaymentData.external_reference; // Retrieve our matching Order UUID
@@ -11386,7 +11615,16 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       }
 
       if (verifiedStatus === "approved") {
-        const result = await approveOrderAndDeductStock(orderId, paymentId, verifiedPaymentAmount);
+        const result = await approveOrderAndDeductStock(
+          orderId, 
+          paymentId, 
+          verifiedPaymentAmount,
+          parsedMP ? {
+            paymentFee: parsedMP.totalFee,
+            paymentNetReceived: parsedMP.netReceivedAmount,
+            paymentDetails: parsedMP
+          } : undefined
+        );
         console.log(`[MercadoPago Webhook] Resultado de aprobación de stock para Orden ${orderId}: ${result}`);
       } else if (verifiedStatus === "rejected") {
         // Update order status to rejected securely

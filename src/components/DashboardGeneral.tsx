@@ -552,6 +552,7 @@ export function DashboardGeneral({
             orderCost += calculatedCost * (item.quantity || 1);
             orderComision += (Number(item.comisionML || 0) * (item.quantity || 1));
           });
+          orderComision += Number(o.paymentFee || 0);
           totalCost += orderCost;
           const orderShipping = Number(o.shippingCost || 0);
           profit += Math.max(0, netTotal - orderShipping - orderCost - orderComision);
@@ -1659,7 +1660,9 @@ export function DashboardGeneral({
             const totalBrutoMes = monthRawOrders.reduce((acc, o) => acc + Number(o.total || 0), 0);
             const totalEnviosMes = monthRawOrders.reduce((acc, o) => acc + Number(o.shippingCost || 0), 0);
             const totalComisionesMes = monthRawOrders.reduce((acc, o) => {
-              return acc + (o.items || []).reduce((sum, it) => sum + (Number(it.comisionML || 0) * (it.quantity || 1)), 0);
+              const mlComm = (o.items || []).reduce((sum, it) => sum + (Number(it.comisionML || 0) * (it.quantity || 1)), 0);
+              const mpFee = Number(o.paymentFee || 0);
+              return acc + mlComm + mpFee;
             }, 0);
             const totalNetoCobroMes = Math.max(0, totalBrutoMes - totalEnviosMes - totalComisionesMes);
             const totalCostoProdMes = monthRawOrders.reduce((acc, o) => {
@@ -1889,8 +1892,10 @@ export function DashboardGeneral({
                           const dateFormatted = `${oDate.getDate().toString().padStart(2, '0')}/${(oDate.getMonth() + 1).toString().padStart(2, '0')} ${oDate.getHours().toString().padStart(2, '0')}:${oDate.getMinutes().toString().padStart(2, '0')}`;
                           const oBruto = Number(ord.total || 0);
                           const oEnvio = Number(ord.shippingCost || 0);
-                          const oComision = (ord.items || []).reduce((sum, it) => sum + (Number(it.comisionML || 0) * (it.quantity || 1)), 0);
-                          const oNeto = Math.max(0, oBruto - oEnvio - oComision);
+                          const oComision = (ord.items || []).reduce((sum, it) => sum + (Number(it.comisionML || 0) * (it.quantity || 1)), 0) + Number(ord.paymentFee || 0);
+                          const oNeto = (ord.paymentNetReceived !== undefined && ord.paymentNetReceived !== null)
+                            ? Number(ord.paymentNetReceived)
+                            : Math.max(0, oBruto - oEnvio - oComision);
                           const isExpanded = expandedOrderId === ord.id;
                           
                           // Liberation status calculation
@@ -2006,6 +2011,15 @@ export function DashboardGeneral({
                                           </div>
                                         ))}
                                       </div>
+                                      {Number(ord.paymentFee || 0) > 0 && (
+                                        <div className="mt-2.5 p-2 rounded-lg bg-sky-950/40 border border-sky-500/30 text-xs flex justify-between items-center font-mono">
+                                          <div className="flex items-center gap-1.5">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
+                                            <span className="text-[10px] text-sky-200 font-bold uppercase font-sans">Retención Pasarela Mercado Pago</span>
+                                          </div>
+                                          <span className="text-rose-400 font-bold">-${Number(ord.paymentFee).toLocaleString("es-AR", { minimumFractionDigits: 2 })}</span>
+                                        </div>
+                                      )}
                                     </div>
                                   </td>
                                 </tr>
