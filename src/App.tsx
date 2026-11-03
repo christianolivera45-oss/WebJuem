@@ -704,6 +704,7 @@ export default function App() {
   }, []);
 
   const isInitialCatalogPageRef = useRef(true);
+  const transferBackdropMouseDownRef = useRef(false);
   useEffect(() => {
     if (isInitialCatalogPageRef.current) {
       isInitialCatalogPageRef.current = false;
@@ -18352,8 +18353,11 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                             {selectedTransferGroup && (
                               <div 
                                 className="fixed inset-0 z-[999999] flex items-center justify-center p-2 sm:p-4 md:p-6 bg-black/85 backdrop-blur-md"
+                                onMouseDown={(e) => {
+                                  transferBackdropMouseDownRef.current = (e.target === e.currentTarget);
+                                }}
                                 onClick={(e) => {
-                                  if (e.target === e.currentTarget) {
+                                  if (e.target === e.currentTarget && transferBackdropMouseDownRef.current) {
                                     if (isEditingTransfer && hasUnsavedTransferEdits) {
                                       if (!window.confirm("Tienes artículos o modificaciones sin guardar en esta orden. ¿Deseas descartarlos y cerrar?")) {
                                         return;
@@ -18362,9 +18366,11 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                     if (isEditingTransfer) handleCancelEditTransfer();
                                     setSelectedTransferGroup(null);
                                   }
+                                  transferBackdropMouseDownRef.current = false;
                                 }}
                               >
                                 <motion.div
+                                  onMouseDown={(e) => e.stopPropagation()}
                                   initial={{ opacity: 0, scale: 0.96, y: 15 }}
                                   animate={{ opacity: 1, scale: 1, y: 0 }}
                                   exit={{ opacity: 0, scale: 0.96, y: 15 }}

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import {
   Search,
   X,
@@ -111,6 +111,7 @@ export const ProductSearchProModal: React.FC<ProductSearchProModalProps> = ({
   const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
   const [previewImage, setPreviewImage] = useState<{ url: string; title: string } | null>(null);
   const [addedAnimationIds, setAddedAnimationIds] = useState<Record<string, boolean>>({});
+  const backdropMouseDownRef = useRef(false);
 
   // Sync initialProducts if provided
   useEffect(() => {
@@ -273,12 +274,20 @@ export const ProductSearchProModal: React.FC<ProductSearchProModalProps> = ({
 
   return (
     <div
+      onMouseDown={(e) => {
+        backdropMouseDownRef.current = (e.target === e.currentTarget);
+      }}
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget && backdropMouseDownRef.current) onClose();
+        backdropMouseDownRef.current = false;
       }}
       className="fixed inset-0 z-[100000] flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
     >
-      <div className="bg-[#050B1A] border border-[#D4A55A]/50 rounded-2xl w-full max-w-5xl h-[92vh] max-h-[920px] flex flex-col shadow-[0_25px_60px_rgba(0,0,0,0.9)] overflow-hidden animate-in zoom-in-95 duration-200">
+      <div 
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+        className="bg-[#050B1A] border border-[#D4A55A]/50 rounded-2xl w-full max-w-5xl h-[92vh] max-h-[920px] flex flex-col shadow-[0_25px_60px_rgba(0,0,0,0.9)] overflow-hidden animate-in zoom-in-95 duration-200"
+      >
         
         {/* HEADER */}
         <div className="px-5 py-3.5 bg-gradient-to-r from-[#0B1730] via-[#0D1C3C] to-[#0B1730] border-b border-[#D4A55A]/30 flex items-center justify-between shrink-0">

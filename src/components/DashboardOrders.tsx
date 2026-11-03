@@ -103,6 +103,7 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
   const [isSubmittingNewSale, setIsSubmittingNewSale] = useState(false);
   const [newSaleErrorMessage, setNewSaleErrorMessage] = useState<string | null>(null);
   const modalBodyRef = useRef<HTMLDivElement>(null);
+  const modalBackdropMouseDownRef = useRef(false);
 
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(initialExpandedOrderId || null);
 
@@ -2068,14 +2069,22 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
       {isModalOpen && typeof document !== "undefined" && createPortal(
         <div 
           className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-in fade-in duration-200"
+          onMouseDown={(e) => {
+            modalBackdropMouseDownRef.current = (e.target === e.currentTarget);
+          }}
           onClick={(e) => {
-            if (e.target === e.currentTarget) {
+            if (e.target === e.currentTarget && modalBackdropMouseDownRef.current) {
               setIsModalOpen(false);
               setEditingOrderId(null);
             }
+            modalBackdropMouseDownRef.current = false;
           }}
         >
-          <div className="bg-zinc-900/98 backdrop-blur-2xl w-full max-w-4xl rounded-2xl border border-zinc-700/80 shadow-[0_25px_60px_rgba(0,0,0,0.85)] flex flex-col max-h-[88vh] my-auto overflow-hidden animate-in zoom-in-95 duration-200 ring-1 ring-white/10">
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            className="bg-zinc-900/98 backdrop-blur-2xl w-full max-w-4xl rounded-2xl border border-zinc-700/80 shadow-[0_25px_60px_rgba(0,0,0,0.85)] flex flex-col max-h-[88vh] my-auto overflow-hidden animate-in zoom-in-95 duration-200 ring-1 ring-white/10"
+          >
             
             {/* Modal Header */}
             <div className="p-5 border-b border-zinc-800/85 flex justify-between items-center bg-zinc-950/40">
@@ -2324,20 +2333,36 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
                       <span>Cliente Comprador</span>
                       <span className="text-[9px] text-rose-400 font-bold">* Obligatorio</span>
                     </span>
-                    <input
-                      type="text"
-                      value={newSaleCustomerName}
-                      onChange={(e) => {
-                        setNewSaleCustomerName(e.target.value);
-                        if (newSaleErrorMessage) setNewSaleErrorMessage(null);
-                      }}
-                      placeholder="Nombre del cliente"
-                      className={`w-full px-3.5 py-2.5 bg-zinc-950/60 border rounded-xl text-xs font-bold text-white placeholder-zinc-500 outline-none shadow-inner transition-all ${
-                        newSaleErrorMessage && !newSaleCustomerName.trim()
-                          ? "border-rose-500 ring-2 ring-rose-500/30 bg-rose-950/20"
-                          : "border-zinc-800 focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/30"
-                      }`}
-                    />
+                    <div className="relative flex items-center">
+                      <input
+                        type="text"
+                        value={newSaleCustomerName}
+                        onFocus={(e) => e.currentTarget.select()}
+                        onChange={(e) => {
+                          setNewSaleCustomerName(e.target.value);
+                          if (newSaleErrorMessage) setNewSaleErrorMessage(null);
+                        }}
+                        placeholder="Nombre del cliente"
+                        className={`w-full pl-3.5 pr-8 py-2.5 bg-zinc-950/60 border rounded-xl text-xs font-bold text-white placeholder-zinc-500 outline-none shadow-inner transition-all ${
+                          newSaleErrorMessage && !newSaleCustomerName.trim()
+                            ? "border-rose-500 ring-2 ring-rose-500/30 bg-rose-950/20"
+                            : "border-zinc-800 focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/30"
+                        }`}
+                      />
+                      {newSaleCustomerName && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewSaleCustomerName("");
+                            if (newSaleErrorMessage) setNewSaleErrorMessage(null);
+                          }}
+                          className="absolute right-2.5 p-1 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
+                          title="Borrar nombre"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* Customer email */}

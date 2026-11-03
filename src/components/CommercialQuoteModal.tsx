@@ -78,6 +78,7 @@ export const CommercialQuoteModal: React.FC<CommercialQuoteModalProps> = ({
   const [activeTab, setActiveTab] = useState<"editor" | "preview">("editor");
   const [isSaving, setIsSaving] = useState(false);
   const [nextQuoteNumber, setNextQuoteNumber] = useState<string>("COT-2026-0001");
+  const backdropMouseDownRef = useRef(false);
 
   // Form state
   const [quoteNumber, setQuoteNumber] = useState<string>("");
@@ -507,14 +508,22 @@ export const CommercialQuoteModal: React.FC<CommercialQuoteModalProps> = ({
 
   return (
     <div
+      onMouseDown={(e) => {
+        backdropMouseDownRef.current = (e.target === e.currentTarget);
+      }}
       onClick={(e) => {
-        if (e.target === e.currentTarget) {
+        if (e.target === e.currentTarget && backdropMouseDownRef.current) {
           onClose();
         }
+        backdropMouseDownRef.current = false;
       }}
       className="fixed inset-0 z-[99999] flex items-center justify-center p-2 sm:p-5 bg-black/85 backdrop-blur-md overflow-y-auto"
     >
-      <div className="bg-[#050B1A] border border-[#D4A55A]/40 rounded-3xl w-full max-w-5xl max-h-[94vh] flex flex-col shadow-[0_10px_60px_rgba(0,0,0,0.9)] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+      <div 
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+        className="bg-[#050B1A] border border-[#D4A55A]/40 rounded-3xl w-full max-w-5xl max-h-[94vh] flex flex-col shadow-[0_10px_60px_rgba(0,0,0,0.9)] overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+      >
         
         {/* MODAL HEADER */}
         <div className="px-5 sm:px-6 py-4 bg-[#0B1730] border-b border-[#D4A55A]/25 flex flex-wrap items-center justify-between gap-3 shrink-0">
