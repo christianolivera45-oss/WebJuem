@@ -12167,12 +12167,14 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     const settings: any = state.settings || {};
     let title = settings.siteTitle || "Juem Mvd";
     let description = settings.siteSubtitle || "Indumentaria de temporada, abrigos térmicos y accesorios con envío express a todo Uruguay.";
-    const defaultOgBanner = `${baseUrl}/og-banner.png`;
+    const defaultOgBanner = `${baseUrl}/og-celestial.png?v=3`;
     let imgUrl = settings.ogImageUrl || defaultOgBanner;
     if (imgUrl.startsWith("/")) {
       imgUrl = `${baseUrl}${imgUrl}`;
     }
+    const rawReqUrl = req.originalUrl || req.url || pathUrl;
     let canonicalUrl = pathUrl === "/" ? `${baseUrl}/` : `${baseUrl}${pathUrl}`;
+    let ogUrl = `${baseUrl}${rawReqUrl}`;
     let schemaJson = "";
     let preRenderedBody = "";
 
@@ -12592,7 +12594,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     );
     output = output.replace(
       /<meta[^>]*id="og-url"[^>]*\/?>/gi, 
-      `<meta property="og:url" content="${canonicalUrl}" id="og-url" />`
+      `<meta property="og:url" content="${ogUrl}" id="og-url" />`
     );
 
     // Twitter-spec
