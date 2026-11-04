@@ -907,15 +907,32 @@ function getDbPool(force = false) {
     console.log("Configurando conexión PostgreSQL...");
     dbPool = new Pool({
       connectionString: url,
+      max: 10,
       connectionTimeoutMillis: 5000,
-      idleTimeoutMillis: 30000,
+      idleTimeoutMillis: 10000,
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 10000,
       ssl: {
         rejectUnauthorized: false
       }
     });
     dbPool.on("error", (err: any) => {
-      console.error("⚠️ PostgreSQL pool background error (Supabase cuota/límite de ancho de banda o conexión interrumpida):", err?.message || err);
-      dbUnavailable = true;
+      // In node-postgres, an idle client encountering ECONNRESET, timeout or server-side disconnection
+      // is automatically discarded by the pool. We do NOT disable the entire database for the app.
+      const msg = String(err?.message || err);
+      const isTransient = err?.code === 'ECONNRESET' || 
+                          err?.code === 'EPIPE' || 
+                          err?.code === 'ETIMEDOUT' || 
+                          msg.includes('ECONNRESET') ||
+                          msg.includes('socket hang up') ||
+                          msg.includes('57P01') ||
+                          msg.includes('terminating connection') ||
+                          msg.includes('Connection terminated');
+      if (isTransient) {
+        console.warn("[PostgreSQL] Conexión inactiva reciclada por el pool (reconectará automáticamente):", msg);
+      } else {
+        console.warn("[PostgreSQL] Advertencia en cliente del pool:", msg);
+      }
     });
   }
   return dbPool;
@@ -2311,9 +2328,21 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
 
     return finalDbState;
   } catch (err: any) {
-    console.error("Error reading relational DB tables:", err?.message || err);
-    console.warn("⚠️ Error de lectura de base de datos (Supabase fuera de cuota o inalcanzable). Usando almacenamiento local en memoria.");
-    dbUnavailable = true;
+    const msg = String(err?.message || err);
+    console.warn("⚠️ Advertencia al leer tablas de PostgreSQL:", msg);
+    const isTransient = err?.code === 'ECONNRESET' || 
+                        err?.code === 'EPIPE' || 
+                        err?.code === 'ETIMEDOUT' || 
+                        msg.includes('ECONNRESET') ||
+                        msg.includes('socket hang up') ||
+                        msg.includes('57P01') ||
+                        msg.includes('terminating connection') ||
+                        msg.includes('Connection terminated');
+    if (isTransient) {
+      getDbPool(true);
+    } else {
+      dbUnavailable = true;
+    }
     return currentStoreState;
   }
 }
@@ -2744,9 +2773,21 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
     }
     return true;
   } catch (err: any) {
-    console.error("Error saving relational DB elements:", err?.message || err);
-    console.warn("⚠️ Error al guardar en base de datos (Supabase fuera de cuota o inalcanzable). Guardando en almacenamiento local.");
-    dbUnavailable = true;
+    const msg = String(err?.message || err);
+    console.warn("⚠️ Advertencia al guardar en base de datos PostgreSQL:", msg);
+    const isTransient = err?.code === 'ECONNRESET' || 
+                        err?.code === 'EPIPE' || 
+                        err?.code === 'ETIMEDOUT' || 
+                        msg.includes('ECONNRESET') ||
+                        msg.includes('socket hang up') ||
+                        msg.includes('57P01') ||
+                        msg.includes('terminating connection') ||
+                        msg.includes('Connection terminated');
+    if (isTransient) {
+      getDbPool(true);
+    } else {
+      dbUnavailable = true;
+    }
     return false;
   }
 }
@@ -12124,16 +12165,20 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     }
     
     const settings: any = state.settings || {};
-    let title = settings.siteTitle || "Ventas Juem";
-    let description = settings.siteSubtitle || "Moda, tecnología y accesorios con envío express a todo Uruguay.";
-    let imgUrl = settings.bannerImageUrl || "https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=1200&q=80";
+    let title = settings.siteTitle || "Juem Mvd";
+    let description = settings.siteSubtitle || "Indumentaria de temporada, abrigos térmicos y accesorios con envío express a todo Uruguay.";
+    const defaultOgBanner = `${baseUrl}/og-banner.png`;
+    let imgUrl = settings.ogImageUrl || defaultOgBanner;
+    if (imgUrl.startsWith("/")) {
+      imgUrl = `${baseUrl}${imgUrl}`;
+    }
     let canonicalUrl = pathUrl === "/" ? `${baseUrl}/` : `${baseUrl}${pathUrl}`;
     let schemaJson = "";
     let preRenderedBody = "";
 
     // Local-focused default description improvements
     if (!settings.siteSubtitle) {
-      description = "Ventas Juem - Moda, tecnología, calzado y accesorios estéticos con envío a todo el país. Retiro gratis en Ciudad de la Costa, Salinas, Pinamar o Montevideo.";
+      description = "Juem Mvd - Indumentaria de temporada, abrigos térmicos, calzado y accesorios estéticos con envíos a todo el país. Retiro en Montevideo y Pinamar Canelones.";
     }
 
     // Detales para un producto en específico
@@ -12154,10 +12199,12 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       });
       
       if (product) {
-        title = `${product.name} | ${settings.siteTitle || "Ventas Juem"} Uruguay`;
+        title = `${product.name} | ${settings.siteTitle || "Juem Mvd"} Uruguay`;
         description = product.description ? product.description.substring(0, 160) : description;
         if (product.imageUrl) {
-          imgUrl = product.imageUrl;
+          imgUrl = product.imageUrl.startsWith("http") 
+            ? product.imageUrl 
+            : `${baseUrl}${product.imageUrl.startsWith("/") ? "" : "/"}${product.imageUrl}`;
         }
         canonicalUrl = `${baseUrl}/producto/${generateSlug(product.name)}`;
         
@@ -12538,6 +12585,10 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     output = output.replace(
       /<meta property="og:image" content=".*?" id="og-image" \/>/gi, 
       `<meta property="og:image" content="${imgUrl}" id="og-image" />`
+    );
+    output = output.replace(
+      /<meta property="og:image:secure_url" content=".*?" \/>/gi, 
+      `<meta property="og:image:secure_url" content="${imgUrl}" />`
     );
     output = output.replace(
       /<meta[^>]*id="og-url"[^>]*\/?>/gi, 

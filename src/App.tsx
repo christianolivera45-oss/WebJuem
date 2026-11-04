@@ -3475,8 +3475,10 @@ export default function App() {
     setMetaTag("twitter-title", "name", "twitter:title", currentTitle);
     setMetaTag("twitter-description", "name", "twitter:description", currentDesc);
 
-    const currentImg = selectedProduct?.imageUrl || store.settings.bannerImageUrl || "https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=1200&q=80";
+    const defaultOg = `${window.location.protocol}//${window.location.host}/og-banner.png`;
+    const currentImg = selectedProduct?.imageUrl || ((store.settings as any).ogImageUrl) || defaultOg;
     setMetaTag("og-image", "property", "og:image", currentImg);
+    setMetaTag("og-image:secure_url", "property", "og:image:secure_url", currentImg);
     setMetaTag("twitter-image", "name", "twitter:image", currentImg);
 
     // Sync Canonical
@@ -3678,7 +3680,7 @@ export default function App() {
         "sameAs": [
           "https://www.instagram.com/ventas.juem"
         ],
-        "image": store.settings.bannerImageUrl || "https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=1200&q=80",
+        "image": ((store.settings as any).ogImageUrl) || `${window.location.protocol}//${window.location.host}/og-banner.png`,
         "priceRange": "$$",
         "address": {
           "@type": "PostalAddress",
