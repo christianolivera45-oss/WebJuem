@@ -113,7 +113,7 @@ import {
   Target,
   Sun
 } from "lucide-react";
-import { Product, SiteSettings, ShopState, CartItem, Category, Subcategory, ProductVariant, is3DProduct, isGenericSize, isGenericColor, Shipping, ShippingOrigin, StockTransfer, StockAdjustment, AdminTask, Coupon } from "./types";
+import { Product, SiteSettings, ShopState, CartItem, Category, Subcategory, ProductVariant, is3DProduct, isGenericSize, isGenericColor, getProductAvailableStock, getVariantAvailableStock, isProductInStock, Shipping, ShippingOrigin, StockTransfer, StockAdjustment, AdminTask, Coupon } from "./types";
 import ThemeStyles from "./components/ThemeStyles";
 import ProductCard from "./components/ProductCard";
 import ProductSlider from "./components/ProductSlider";
@@ -477,6 +477,7 @@ export default function App() {
   const [showMpPublicKey, setShowMpPublicKey] = useState(false);
   const [isJuemAccordionOpen, setIsJuemAccordionOpen] = useState(false);
   const [isAureaAccordionOpen, setIsAureaAccordionOpen] = useState(false);
+  const [isNavidadAccordionOpen, setIsNavidadAccordionOpen] = useState(false);
 
   // Search & Navigation
   const [activeTab, setActiveTab] = useState<"storefront" | "admin" | "checkout">("storefront");
@@ -1046,8 +1047,12 @@ export default function App() {
     const pComision = Number(p.comisionML || 0);
     const isAuto = p.calcWebPriceFromML !== false;
     const pWeb = isAuto ? Number((pVentaML - pComision).toFixed(2)) : Number(p.precioWeb || 0);
-    const pComisionMP = (p.comisionMP !== undefined && p.comisionMP !== null) ? Number(p.comisionMP) : Number((pWeb * 0.12).toFixed(2));
     const desc = Number(p.descuentoPorcentaje || 0);
+    const computedPrice = desc > 0 ? Number((pWeb * (1 - desc / 100)).toFixed(2)) : pWeb;
+    const computedOriginalPrice = desc > 0 ? pWeb : undefined;
+    const pComisionMP = (p.comisionMP !== undefined && p.comisionMP !== null && !isNaN(Number(p.comisionMP)) && (p.comisionMP as any) !== "") 
+      ? Number(p.comisionMP) 
+      : Number((computedPrice * 0.12).toFixed(2));
     
     let sPinamar = Number(p.stockPinamar || 0);
     let sMontevideo = Number(p.stockMontevideo || 0);
@@ -1058,9 +1063,6 @@ export default function App() {
     }
     
     const sTotal = sPinamar + sMontevideo;
-
-    const computedPrice = desc > 0 ? Number((pWeb * (1 - desc / 100)).toFixed(2)) : pWeb;
-    const computedOriginalPrice = desc > 0 ? pWeb : undefined;
 
     return {
       ...p,
@@ -1519,16 +1521,25 @@ export default function App() {
           variants: updatedVariants && updatedVariants.length > 0 ? updatedVariants : p.variants
         };
       }
+      if (p.variants && p.variants.length > 0) {
+        const sumVariants = p.variants.reduce((total, v) => total + getVariantAvailableStock(v), 0);
+        const pinStock = p.variants.reduce((sum, v) => sum + Number(v.stockPinamar || 0), 0);
+        const mvdStock = p.variants.reduce((sum, v) => sum + Number(v.stockMontevideo || 0), 0);
+        return {
+          ...p,
+          stock: sumVariants,
+          stockTotalActual: sumVariants,
+          stockPinamar: pinStock > 0 ? pinStock : p.stockPinamar,
+          stockMontevideo: mvdStock > 0 ? mvdStock : p.stockMontevideo
+        };
+      }
       return p;
     });
   }, [store.products]);
 
   const getProductActualStock = (p: any) => {
     if (!p) return 0;
-    if (p.isCombo) {
-      return getComboDynamicStocks(p.comboComponents || [], p.variants || []).stockTotal;
-    }
-    return p.stock ?? 0;
+    return getProductAvailableStock(p);
   };
 
   const filteredAdminProducts = useMemo(() => {
@@ -3725,6 +3736,9 @@ export default function App() {
           data.settings.logoText = "JUEM";
         }
         data.settings = { ...DEFAULT_SETTINGS, ...data.settings };
+        if (!data.settings.activeTheme) {
+          data.settings.activeTheme = "navidad";
+        }
       }
       setStore(data);
       if (!isSilent) {
@@ -5238,8 +5252,11 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
 
   // Business Stock Alerts Logic
   const lowStockThresholdSetting = typeof store.settings?.lowStockThreshold === 'number' ? store.settings.lowStockThreshold : 5;
-  const outOfStockProducts = displayProducts.filter(p => p.active !== false && p.stock <= 0);
-  const lowStockProducts = displayProducts.filter(p => p.active !== false && p.stock > 0 && p.stock <= lowStockThresholdSetting);
+  const outOfStockProducts = displayProducts.filter(p => p.active !== false && getProductAvailableStock(p) <= 0);
+  const lowStockProducts = displayProducts.filter(p => {
+    const st = getProductAvailableStock(p);
+    return p.active !== false && st > 0 && st <= lowStockThresholdSetting;
+  });
   const totalStockAlerts = outOfStockProducts.length + lowStockProducts.length;
 
   // Filtering products for listing
@@ -5293,9 +5310,12 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
       }
     }
 
-    // Stock Filter
-    if (onlyInStock && p.stock <= 0) {
-      return false;
+    // Stock Filter: handles variants, combo components, and branch stock seamlessly
+    if (onlyInStock) {
+      const realStock = getProductAvailableStock(p);
+      if (realStock <= 0) {
+        return false;
+      }
     }
     
     return matchesSearch && matchesCategory;
@@ -5370,8 +5390,33 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
     return !isCloth && !isElec;
   });
 
+  const isChristmasTheme = 
+    (store.settings?.activeTheme === "navidad") ||
+    (editingSettings?.activeTheme === "navidad" && activeTab === "admin") ||
+    (store.settings?.primaryColor?.toLowerCase() === "#e11d48" && store.settings?.accentColor?.toLowerCase() === "#10b981");
+
   return (
-    <div id="app" className="min-h-screen flex flex-col font-sans transition-colors duration-200 bg-[#050B1A] text-[#F4EAD7]">
+    <div id="app" className={`min-h-screen flex flex-col font-sans transition-colors duration-300 ${isChristmasTheme ? "theme-navidad" : ""} bg-[#050B1A] text-[#F4EAD7]`}>
+      {/* Sutil nieve animada elegante para el Tema Navideño */}
+      {isChristmasTheme && (
+        <div className="snow-container" aria-hidden="true">
+          {[...Array(26)].map((_, i) => (
+            <div
+              key={i}
+              className="snowflake"
+              style={{
+                left: `${(i * 3.8 + (i % 3) * 2.3) % 98}%`,
+                animationDuration: `${7 + (i % 6) * 2.2}s`,
+                animationDelay: `${(i * 0.4) % 6}s`,
+                fontSize: `${11 + (i % 4) * 4}px`,
+                opacity: 0.18 + (i % 3) * 0.22,
+              }}
+            >
+              ❄
+            </div>
+          ))}
+        </div>
+      )}
       {/* Cinematic Splash Screen with Fade-out exit animation */}
       <AnimatePresence mode="wait">
         {showSplash && (
@@ -8285,32 +8330,212 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                         </div>
                       </div>
 
+                      {/* SELECTOR RÁPIDO DE TEMAS PRINCIPALES (NAVIDAD, ÁUREA PRO, COLORES JUEM) */}
+                      <div className="p-4.5 rounded-2xl border border-[#D4A55A]/25 bg-gradient-to-r from-[#050B1A] via-[#0B1730] to-[#050B1A] space-y-3.5 relative z-10 text-left shadow-lg">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#D4A55A]/15 pb-2.5">
+                          <div className="flex items-center gap-2">
+                            <Sparkles className="h-4 w-4 text-[#E6BF76]" />
+                            <h4 className="text-xs font-bold text-[#F4EAD7] uppercase tracking-wider">
+                              Temas Principales de la Tienda (Cambio con 1 Clic)
+                            </h4>
+                          </div>
+                          <span className="text-[9px] font-mono text-zinc-400">
+                            Cambia al instante entre Navidad y la identidad clásica
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          {/* 1. Tema Navideño Mágico */}
+                          <div
+                            className={`p-3.5 rounded-2xl border transition-all duration-300 relative overflow-hidden flex flex-col justify-between gap-3 ${
+                              isChristmasTheme
+                                ? "bg-gradient-to-br from-[#0D241A] to-[#1A0B10] border-rose-500/60 shadow-[0_0_20px_rgba(225,29,72,0.2)] ring-1 ring-rose-500/40"
+                                : "bg-[#030611]/70 border-[#D4A55A]/20 hover:border-rose-500/40 hover:bg-[#0B1730]/60"
+                            }`}
+                          >
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-black text-rose-400 flex items-center gap-1.5">
+                                  <span>🎄</span> Navidad Mágica
+                                </span>
+                                {isChristmasTheme && (
+                                  <span className="text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse">
+                                    ACTIVO
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-zinc-300 leading-snug">
+                                Verde pino, rojo rubí festivo y sutil nieve animada para toda la web.
+                              </p>
+                              <div className="flex items-center gap-1.5 pt-1">
+                                <span className="w-3 h-3 rounded-full bg-[#E11D48] border border-black/30 shadow-xs" title="Rojo Rubí" />
+                                <span className="w-3 h-3 rounded-full bg-[#10B981] border border-black/30 shadow-xs" title="Verde Pino" />
+                                <span className="w-3 h-3 rounded-full bg-[#07150F] border border-zinc-700 shadow-xs" title="Fondo Verde Bosque" />
+                                <span className="w-3 h-3 rounded-full bg-[#FFF7ED] border border-black/30 shadow-xs" title="Nieve Cálida" />
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = {
+                                  ...editingSettings,
+                                  primaryColor: "#E11D48",
+                                  accentColor: "#10B981",
+                                  themeMode: "dark" as const,
+                                  activeTheme: "navidad"
+                                };
+                                setEditingSettings(updated);
+                                setStore(prev => ({ ...prev, settings: updated }));
+                                showAdminToast("¡Tema Navideño Mágico aplicado a toda la tienda! 🎄 Recuerda hacer clic en 'Guardar Toda la Personalización'.", "success");
+                              }}
+                              className={`w-full py-2 px-3 rounded-xl text-[10px] font-extrabold uppercase tracking-wider transition-all duration-200 cursor-pointer flex items-center justify-center gap-1.5 ${
+                                isChristmasTheme
+                                  ? "bg-rose-600 text-white shadow-md shadow-rose-900/40"
+                                  : "bg-rose-500/15 text-rose-300 border border-rose-500/30 hover:bg-rose-600 hover:text-white"
+                              }`}
+                            >
+                              <span>🎄 {isChristmasTheme ? "Tema Aplicado" : "Activar Navidad"}</span>
+                            </button>
+                          </div>
+
+                          {/* 2. Áurea Nocturna Pro */}
+                          <div
+                            className={`p-3.5 rounded-2xl border transition-all duration-300 relative overflow-hidden flex flex-col justify-between gap-3 ${
+                              !isChristmasTheme && (editingSettings.activeTheme === "aurea" || (editingSettings.primaryColor?.toLowerCase() === "#d4a55a" && editingSettings.accentColor?.toLowerCase() === "#e6bf76" && editingSettings.activeTheme !== "juem"))
+                                ? "bg-gradient-to-br from-[#0B1730] to-[#1A1208] border-[#D4A55A] shadow-[0_0_20px_rgba(212,165,90,0.2)] ring-1 ring-[#D4A55A]/40"
+                                : "bg-[#030611]/70 border-[#D4A55A]/20 hover:border-[#D4A55A]/50 hover:bg-[#0B1730]/60"
+                            }`}
+                          >
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-black text-[#E6BF76] flex items-center gap-1.5">
+                                  <span>⚜️</span> Áurea Nocturna Pro
+                                </span>
+                                {!isChristmasTheme && (editingSettings.activeTheme === "aurea" || (editingSettings.primaryColor?.toLowerCase() === "#d4a55a" && editingSettings.accentColor?.toLowerCase() === "#e6bf76" && editingSettings.activeTheme !== "juem")) && (
+                                  <span className="text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-[#D4A55A]/20 text-[#E6BF76] border border-[#D4A55A]/40 animate-pulse">
+                                    ACTIVO
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-zinc-300 leading-snug">
+                                Oro imperial, destellos de champaña y azul marino profundo de gala.
+                              </p>
+                              <div className="flex items-center gap-1.5 pt-1">
+                                <span className="w-3 h-3 rounded-full bg-[#D4A55A] border border-black/30 shadow-xs" title="Oro Imperial" />
+                                <span className="w-3 h-3 rounded-full bg-[#E6BF76] border border-black/30 shadow-xs" title="Champaña" />
+                                <span className="w-3 h-3 rounded-full bg-[#050B1A] border border-zinc-700 shadow-xs" title="Azul Marino Profundo" />
+                                <span className="w-3 h-3 rounded-full bg-[#F4EAD7] border border-black/30 shadow-xs" title="Texto Crema" />
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = {
+                                  ...editingSettings,
+                                  primaryColor: "#D4A55A",
+                                  accentColor: "#E6BF76",
+                                  themeMode: "dark" as const,
+                                  activeTheme: "aurea"
+                                };
+                                setEditingSettings(updated);
+                                setStore(prev => ({ ...prev, settings: updated }));
+                                showAdminToast("¡Paleta 'Áurea Nocturna Pro' aplicada a la tienda! ⚜️ Recuerda hacer clic en 'Guardar Toda la Personalización'.", "success");
+                              }}
+                              className={`w-full py-2 px-3 rounded-xl text-[10px] font-extrabold uppercase tracking-wider transition-all duration-200 cursor-pointer flex items-center justify-center gap-1.5 ${
+                                !isChristmasTheme && (editingSettings.activeTheme === "aurea" || (editingSettings.primaryColor?.toLowerCase() === "#d4a55a" && editingSettings.accentColor?.toLowerCase() === "#e6bf76" && editingSettings.activeTheme !== "juem"))
+                                  ? "bg-[#D4A55A] text-[#050B1A] font-black shadow-md shadow-amber-900/40"
+                                  : "bg-[#D4A55A]/15 text-[#E6BF76] border border-[#D4A55A]/30 hover:bg-[#D4A55A] hover:text-[#050B1A]"
+                              }`}
+                            >
+                              <span>⚜️ {!isChristmasTheme && (editingSettings.activeTheme === "aurea" || (editingSettings.primaryColor?.toLowerCase() === "#d4a55a" && editingSettings.accentColor?.toLowerCase() === "#e6bf76" && editingSettings.activeTheme !== "juem")) ? "Tema Aplicado" : "Activar Áurea Pro"}</span>
+                            </button>
+                          </div>
+
+                          {/* 3. Colores Juem Original */}
+                          <div
+                            className={`p-3.5 rounded-2xl border transition-all duration-300 relative overflow-hidden flex flex-col justify-between gap-3 ${
+                              !isChristmasTheme && editingSettings.activeTheme === "juem"
+                                ? "bg-gradient-to-br from-[#0B1730] to-[#050B1A] border-[#E6BF76] shadow-[0_0_20px_rgba(230,191,118,0.2)] ring-1 ring-[#E6BF76]/40"
+                                : "bg-[#030611]/70 border-[#D4A55A]/20 hover:border-[#E6BF76]/50 hover:bg-[#0B1730]/60"
+                            }`}
+                          >
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-black text-amber-300 flex items-center gap-1.5">
+                                  <span>🎨</span> Colores Juem
+                                </span>
+                                {!isChristmasTheme && editingSettings.activeTheme === "juem" && (
+                                  <span className="text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-[#E6BF76]/20 text-[#E6BF76] border border-[#E6BF76]/40 animate-pulse">
+                                    ACTIVO
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-zinc-300 leading-snug">
+                                Identidad editorial original de Juem, sobria, elegante y distinguida.
+                              </p>
+                              <div className="flex items-center gap-1.5 pt-1">
+                                <span className="w-3 h-3 rounded-full bg-[#0B1730] border border-zinc-700 shadow-xs" title="Azul Cobalto" />
+                                <span className="w-3 h-3 rounded-full bg-[#D4A55A] border border-black/30 shadow-xs" title="Oro Juem" />
+                                <span className="w-3 h-3 rounded-full bg-[#E6BF76] border border-black/30 shadow-xs" title="Oro Claro" />
+                                <span className="w-3 h-3 rounded-full bg-[#F4EAD7] border border-black/30 shadow-xs" title="Blanco Crema" />
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = {
+                                  ...editingSettings,
+                                  primaryColor: "#D4A55A",
+                                  accentColor: "#E6BF76",
+                                  themeMode: "dark" as const,
+                                  activeTheme: "juem"
+                                };
+                                setEditingSettings(updated);
+                                setStore(prev => ({ ...prev, settings: updated }));
+                                showAdminToast("¡Tema 'Colores Juem' aplicado a la tienda! 🎨 Recuerda hacer clic en 'Guardar Toda la Personalización'.", "success");
+                              }}
+                              className={`w-full py-2 px-3 rounded-xl text-[10px] font-extrabold uppercase tracking-wider transition-all duration-200 cursor-pointer flex items-center justify-center gap-1.5 ${
+                                !isChristmasTheme && editingSettings.activeTheme === "juem"
+                                  ? "bg-[#E6BF76] text-[#050B1A] font-black shadow-md shadow-amber-900/40"
+                                  : "bg-[#E6BF76]/15 text-[#E6BF76] border border-[#E6BF76]/30 hover:bg-[#E6BF76] hover:text-[#050B1A]"
+                              }`}
+                            >
+                              <span>🎨 {!isChristmasTheme && editingSettings.activeTheme === "juem" ? "Tema Aplicado" : "Activar Juem"}</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
                       {/* Preloaded visual default themes for fast customization */}
                       <div className="border border-[#D4A55A]/15 bg-[#050B1A]/50 p-4 rounded-2xl space-y-3 relative z-10 text-left">
                         <div className="flex items-center gap-1.5 text-[#E6BF76]">
                           <Sparkles className="h-3.5 w-3.5 text-[#E6BF76] animate-pulse" />
-                          <span className="text-[10px] font-extrabold uppercase tracking-widest">Temas Predeterminados (Haz click para aplicar)</span>
+                          <span className="text-[10px] font-extrabold uppercase tracking-widest">Catálogo Completo de Paletas Predeterminadas</span>
                         </div>
                         
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                           {THEME_PRESETS.map((preset) => {
                             const isSelected = 
-                              editingSettings.primaryColor?.toLowerCase() === preset.primaryColor?.toLowerCase() &&
-                              editingSettings.accentColor?.toLowerCase() === preset.accentColor?.toLowerCase() &&
-                              editingSettings.themeMode === preset.themeMode;
+                              ((preset as any).id && editingSettings.activeTheme === (preset as any).id) ||
+                              (editingSettings.primaryColor?.toLowerCase() === preset.primaryColor?.toLowerCase() &&
+                               editingSettings.accentColor?.toLowerCase() === preset.accentColor?.toLowerCase() &&
+                               editingSettings.themeMode === preset.themeMode);
                             
                             return (
                               <button
                                 key={preset.name}
                                 type="button"
                                 onClick={() => {
-                                  setEditingSettings({
+                                  const updated = {
                                     ...editingSettings,
                                     primaryColor: preset.primaryColor,
                                     accentColor: preset.accentColor,
-                                    themeMode: preset.themeMode
-                                  });
-                                  showAdminToast(`Tema "${preset.name}" seleccionado temporalmente.`, "success");
+                                    themeMode: preset.themeMode,
+                                    activeTheme: (preset as any).activeTheme || (preset as any).id || ""
+                                  };
+                                  setEditingSettings(updated);
+                                  setStore(prev => ({ ...prev, settings: updated }));
+                                  showAdminToast(`Tema "${preset.name}" aplicado a la web. Recuerda hacer clic en "Guardar Toda la Personalización".`, "success");
                                 }}
                                 className={`p-2 border rounded-xl text-left transition cursor-pointer flex flex-col gap-1.5 relative overflow-hidden group ${
                                   isSelected 
@@ -8411,13 +8636,16 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setEditingSettings({
+                                    const updated = {
                                       ...editingSettings,
                                       primaryColor: "#D4A55A",
                                       accentColor: "#E6BF76",
-                                      themeMode: "dark"
-                                    });
-                                    showAdminToast("¡Paleta 'Áurea Nocturna Pro' cargada en el editor! Haz clic abajo en 'Guardar Todo' para aplicarla.", "success");
+                                      themeMode: "dark" as const,
+                                      activeTheme: "aurea"
+                                    };
+                                    setEditingSettings(updated);
+                                    setStore(prev => ({ ...prev, settings: updated }));
+                                    showAdminToast("¡Paleta 'Áurea Nocturna Pro' aplicada a la tienda! ⚜️ Haz clic abajo en 'Guardar Toda la Personalización' para mantenerla.", "success");
                                   }}
                                   className="py-2 px-4 rounded-xl border border-[#D4A55A] bg-[#D4A55A]/10 text-[#E6BF76] hover:bg-[#D4A55A] hover:text-[#050B1A] transition text-[11px] font-extrabold uppercase tracking-widest active:scale-95 cursor-pointer flex items-center gap-1.5 shadow-md"
                                 >
@@ -8729,13 +8957,16 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setEditingSettings({
+                                    const updated = {
                                       ...editingSettings,
                                       primaryColor: "#D4A55A",
                                       accentColor: "#E6BF76",
-                                      themeMode: "dark"
-                                    });
-                                    showAdminToast('Tema "Colores Juem 🎨" seleccionado temporalmente. Haz clic abajo en "Guardar Todo" para aplicarlo.', "success");
+                                      themeMode: "dark" as const,
+                                      activeTheme: "juem"
+                                    };
+                                    setEditingSettings(updated);
+                                    setStore(prev => ({ ...prev, settings: updated }));
+                                    showAdminToast('¡Tema "Colores Juem 🎨" aplicado a la tienda! Recuerda hacer clic en "Guardar Toda la Personalización".', "success");
                                   }}
                                   className="py-2 px-4 rounded-xl border border-[#D4A55A] bg-[#D4A55A]/10 text-[#E6BF76] hover:bg-[#D4A55A] hover:text-[#050B1A] transition text-[11px] font-extrabold uppercase tracking-widest active:scale-95 cursor-pointer flex items-center gap-1.5 shadow-md"
                                 >
@@ -8902,6 +9133,314 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                         </li>
                                       </ul>
                                     </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+
+                    {/* ACORDEÓN 3: SISTEMA NAVIDEÑO MÁGICO JUEM 🎄✨ */}
+                    <div className="bg-[#0B1730]/95 backdrop-blur-md rounded-3xl border border-rose-500/30 shadow-lg overflow-hidden text-[#F4EAD7] transition-all duration-300">
+                      {/* Cabecera del Acordeón */}
+                      <button
+                        type="button"
+                        onClick={() => setIsNavidadAccordionOpen(!isNavidadAccordionOpen)}
+                        className="w-full p-6 flex items-center justify-between gap-4 text-left hover:bg-rose-500/5 transition-colors focus:outline-none cursor-pointer relative z-10"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 bg-rose-500/15 text-rose-400 border border-rose-500/30 rounded-2xl shadow-md shrink-0">
+                            <span className="text-xl">🎄</span>
+                          </div>
+                          <div>
+                            <h3 className="font-serif font-bold text-sm tracking-wide flex flex-wrap items-center gap-2">
+                              <span>Sistema Navideño Mágico Juem</span>
+                              <span className="text-[9px] font-mono bg-rose-500/15 border border-rose-500/25 px-2.5 py-0.5 rounded-full text-rose-300 font-bold uppercase tracking-wider">
+                                Edición Festiva 🎅
+                              </span>
+                              {isChristmasTheme && (
+                                <span className="text-[9px] font-mono bg-emerald-500/20 border border-emerald-500/30 px-2.5 py-0.5 rounded-full text-emerald-400 font-bold uppercase tracking-wider animate-pulse flex items-center gap-1 shadow-[0_0_10px_rgba(16,185,129,0.25)]">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span> Activo en Tienda
+                                </span>
+                              )}
+                            </h3>
+                            <p className="text-[11px] text-[#A0AEC0] mt-0.5">Atmósfera festiva integral: Bosque verde profundo, rojo rubí festivo, nieve suave y estrellas doradas.</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="text-[10px] font-mono font-bold text-rose-400/80 uppercase tracking-widest hidden sm:inline">
+                            {isNavidadAccordionOpen ? "Colapsar" : "Expandir"}
+                          </span>
+                          <div className={`p-2 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-xl transition-transform duration-300 ${isNavidadAccordionOpen ? "rotate-180" : ""}`}>
+                            <ChevronDown className="h-4 w-4" />
+                          </div>
+                        </div>
+                      </button>
+
+                      {/* Contenido Desplegable */}
+                      <AnimatePresence initial={false}>
+                        {isNavidadAccordionOpen && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.3, ease: "easeInOut" }}
+                            className="border-t border-rose-500/20 bg-[#050B1A]/30"
+                          >
+                            <div className="p-6 pt-4 space-y-6 relative">
+                              <div className="absolute top-0 right-0 w-48 h-48 bg-rose-500/5 rounded-full blur-3xl pointer-events-none" />
+
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-rose-500/20 pb-4 relative z-10">
+                                <div>
+                                  <span className="text-[9px] font-mono bg-rose-500/15 border border-rose-500/20 px-2.5 py-0.5 rounded-full text-rose-300 font-bold uppercase tracking-wider">
+                                    Transformación Navideña Inmediata
+                                  </span>
+                                  <p className="text-xs text-[#A0AEC0] mt-1">Aplica los colores, ambientación y sutil efecto de nieve en toda la tienda online.</p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updated = {
+                                        ...editingSettings,
+                                        primaryColor: "#E11D48",
+                                        accentColor: "#10B981",
+                                        themeMode: "dark" as const,
+                                        activeTheme: "navidad"
+                                      };
+                                      setEditingSettings(updated);
+                                      setStore(prev => ({ ...prev, settings: updated }));
+                                      showAdminToast('¡Tema "Navideño Mágico 🎄✨" aplicado! Haz clic abajo en "Guardar Toda la Personalización" para conservarlo.', "success");
+                                    }}
+                                    className="py-2.5 px-4 rounded-xl border border-rose-500 bg-rose-600 text-white hover:bg-rose-700 transition text-[11px] font-extrabold uppercase tracking-widest active:scale-95 cursor-pointer flex items-center gap-1.5 shadow-lg shadow-rose-900/30"
+                                  >
+                                    <span>🎄 Aplicar Tema Navideño</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updated = {
+                                        ...editingSettings,
+                                        primaryColor: "#D4A55A",
+                                        accentColor: "#E6BF76",
+                                        themeMode: "dark" as const,
+                                        activeTheme: "aurea"
+                                      };
+                                      setEditingSettings(updated);
+                                      setStore(prev => ({ ...prev, settings: updated }));
+                                      showAdminToast('¡Vuelto a los colores de Áurea Nocturna Pro ⚜️! Recuerda hacer clic en "Guardar Toda la Personalización".', "success");
+                                    }}
+                                    className="py-2.5 px-3 rounded-xl border border-[#D4A55A]/30 bg-[#050B1A] text-[#E6BF76] hover:bg-[#D4A55A]/10 transition text-[10px] font-extrabold uppercase tracking-widest cursor-pointer flex items-center gap-1"
+                                    title="Restaurar a Áurea Nocturna Pro"
+                                  >
+                                    <span>⚜️ Volver a Áurea</span>
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10">
+                                {/* Columna 1: Muestras de Color */}
+                                <div className="space-y-4 bg-[#050B1A]/60 p-4.5 rounded-2xl border border-rose-500/20">
+                                  <h4 className="text-xs font-extrabold uppercase tracking-widest text-rose-400 flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                                    Paleta Navideña Oficial
+                                  </h4>
+                                  <p className="text-[10px] text-zinc-400 leading-relaxed text-left font-sans">
+                                    Combinación festiva de tonos bosque de nochebuena, rojo rubí vibrante, guirnalda esmeralda y nieve cálida.
+                                  </p>
+
+                                  <div className="space-y-2.5 pt-1">
+                                    {/* Muestra 1 */}
+                                    <div className="flex items-center justify-between p-2 bg-[#050B1A] rounded-xl border border-rose-500/15">
+                                      <div className="flex items-center gap-2.5">
+                                        <span className="w-6 h-6 rounded-lg bg-[#07150F] border border-emerald-900/60 shadow-xs shrink-0" />
+                                        <div className="text-left font-sans">
+                                          <p className="text-[10.5px] font-bold text-[#FFF7ED]">#07150F</p>
+                                          <p className="text-[9px] font-medium text-emerald-400">Fondo General (Bosque Nochebuena)</p>
+                                        </div>
+                                      </div>
+                                      <button 
+                                        type="button"
+                                        onClick={() => {
+                                          navigator.clipboard.writeText("#07150F");
+                                          showAdminToast("¡Hex #07150F copiado!", "success");
+                                        }}
+                                        className="p-1 px-2.5 rounded bg-[#0B1730] hover:bg-rose-500/10 border border-rose-500/15 text-zinc-400 hover:text-white text-[9.5px] font-bold cursor-pointer transition-all"
+                                      >
+                                        Copiar
+                                      </button>
+                                    </div>
+
+                                    {/* Muestra 2 */}
+                                    <div className="flex items-center justify-between p-2 bg-[#050B1A] rounded-xl border border-rose-500/15">
+                                      <div className="flex items-center gap-2.5">
+                                        <span className="w-6 h-6 rounded-lg bg-[#0D241A] border border-emerald-800/60 shadow-xs shrink-0" />
+                                        <div className="text-left font-sans">
+                                          <p className="text-[10.5px] font-bold text-[#FFF7ED]">#0D241A</p>
+                                          <p className="text-[9px] font-medium text-emerald-400">Tarjetas & Modales (Pino Acebo)</p>
+                                        </div>
+                                      </div>
+                                      <button 
+                                        type="button"
+                                        onClick={() => {
+                                          navigator.clipboard.writeText("#0D241A");
+                                          showAdminToast("¡Hex #0D241A copiado!", "success");
+                                        }}
+                                        className="p-1 px-2.5 rounded bg-[#0B1730] hover:bg-rose-500/10 border border-rose-500/15 text-zinc-400 hover:text-white text-[9.5px] font-bold cursor-pointer transition-all"
+                                      >
+                                        Copiar
+                                      </button>
+                                    </div>
+
+                                    {/* Muestra 3 */}
+                                    <div className="flex items-center justify-between p-2 bg-[#050B1A] rounded-xl border border-rose-500/15">
+                                      <div className="flex items-center gap-2.5">
+                                        <span className="w-6 h-6 rounded-lg bg-[#E11D48] shadow-xs shrink-0" />
+                                        <div className="text-left font-sans">
+                                          <p className="text-[10.5px] font-bold text-[#FFF7ED]">#E11D48</p>
+                                          <p className="text-[9px] font-medium text-rose-400">Rojo Rubí Festivo (Botones Primarios)</p>
+                                        </div>
+                                      </div>
+                                      <button 
+                                        type="button"
+                                        onClick={() => {
+                                          navigator.clipboard.writeText("#E11D48");
+                                          showAdminToast("¡Hex #E11D48 copiado!", "success");
+                                        }}
+                                        className="p-1 px-2.5 rounded bg-[#0B1730] hover:bg-rose-500/10 border border-rose-500/15 text-zinc-400 hover:text-white text-[9.5px] font-bold cursor-pointer transition-all"
+                                      >
+                                        Copiar
+                                      </button>
+                                    </div>
+
+                                    {/* Muestra 4 */}
+                                    <div className="flex items-center justify-between p-2 bg-[#050B1A] rounded-xl border border-rose-500/15">
+                                      <div className="flex items-center gap-2.5">
+                                        <span className="w-6 h-6 rounded-lg bg-[#10B981] shadow-xs shrink-0" />
+                                        <div className="text-left font-sans">
+                                          <p className="text-[10.5px] font-bold text-[#FFF7ED]">#10B981</p>
+                                          <p className="text-[9px] font-medium text-emerald-400">Verde Corona Esmeralda (Acentos)</p>
+                                        </div>
+                                      </div>
+                                      <button 
+                                        type="button"
+                                        onClick={() => {
+                                          navigator.clipboard.writeText("#10B981");
+                                          showAdminToast("¡Hex #10B981 copiado!", "success");
+                                        }}
+                                        className="p-1 px-2.5 rounded bg-[#0B1730] hover:bg-rose-500/10 border border-rose-500/15 text-zinc-400 hover:text-white text-[9.5px] font-bold cursor-pointer transition-all"
+                                      >
+                                        Copiar
+                                      </button>
+                                    </div>
+
+                                    {/* Muestra 5 */}
+                                    <div className="flex items-center justify-between p-2 bg-[#050B1A] rounded-xl border border-rose-500/15">
+                                      <div className="flex items-center gap-2.5">
+                                        <span className="w-6 h-6 rounded-lg bg-[#FFF7ED] shadow-xs shrink-0" />
+                                        <div className="text-left font-sans">
+                                          <p className="text-[10.5px] font-bold text-[#FFF7ED]">#FFF7ED</p>
+                                          <p className="text-[9px] font-medium text-zinc-300">Blanco Nieve Cálida (Textos)</p>
+                                        </div>
+                                      </div>
+                                      <button 
+                                        type="button"
+                                        onClick={() => {
+                                          navigator.clipboard.writeText("#FFF7ED");
+                                          showAdminToast("¡Hex #FFF7ED copiado!", "success");
+                                        }}
+                                        className="p-1 px-2.5 rounded bg-[#0B1730] hover:bg-rose-500/10 border border-rose-500/15 text-zinc-400 hover:text-white text-[9.5px] font-bold cursor-pointer transition-all"
+                                      >
+                                        Copiar
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Columna 2: Efectos y Elementos Navideños */}
+                                <div className="space-y-4 bg-[#050B1A]/60 p-4.5 rounded-2xl border border-rose-500/20">
+                                  <h4 className="text-xs font-extrabold uppercase tracking-widest text-rose-400 flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                                    Atmósfera & Experiencia Visual
+                                  </h4>
+                                  <p className="text-[10px] text-zinc-400 leading-relaxed text-left font-sans">
+                                    Detalles festivos dinámicos pensados para inspirar el espíritu de compras navideñas sin sobrecargar la tienda.
+                                  </p>
+
+                                  <div className="space-y-3 pt-1 text-left font-sans">
+                                    <div className="p-3 bg-[#050B1A] border border-rose-500/15 rounded-xl">
+                                      <p className="font-bold text-xs text-rose-300 flex items-center gap-1.5">
+                                        <span>❄️</span> Nieve Flotante Cinemática
+                                      </p>
+                                      <p className="text-[9px] text-zinc-400 mt-1">
+                                        Efecto sutil de copos de nieve flotando con aceleración por hardware (GPU), fluido y sin ralentizar clics ni scrolls.
+                                      </p>
+                                    </div>
+
+                                    <div className="p-3 bg-[#050B1A] border border-rose-500/15 rounded-xl">
+                                      <p className="font-bold text-xs text-emerald-300 flex items-center gap-1.5">
+                                        <span>🎁</span> Acentos de Regalo y Ofertas
+                                      </p>
+                                      <p className="text-[9px] text-zinc-400 mt-1">
+                                        Los botones de compra, badges de descuento y carritos adoptan el vibrante rojo rubí navideño y verde pino.
+                                      </p>
+                                    </div>
+
+                                    <div className="p-3 bg-[#050B1A] border border-rose-500/15 rounded-xl">
+                                      <p className="font-bold text-xs text-amber-300 flex items-center gap-1.5">
+                                        <span>🔄</span> 100% Reversible en Cualquier Momento
+                                      </p>
+                                      <p className="text-[9px] text-zinc-400 mt-1">
+                                        Finalizada la temporada navideña, puedes regresar en 1 clic a "Áurea Nocturna Pro" o "Colores Juem" manteniendo todos tus productos y datos intactos.
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Columna 3: Consejos para Campaña Navideña */}
+                                <div className="space-y-4 bg-[#050B1A]/60 p-4.5 rounded-2xl border border-rose-500/20 flex flex-col justify-between">
+                                  <div className="space-y-3 text-left font-sans">
+                                    <h4 className="text-xs font-extrabold uppercase tracking-widest text-rose-400 flex items-center gap-1.5">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                                      Consejos para la Campaña Navideña
+                                    </h4>
+                                    <ul className="text-xs space-y-2.5 text-zinc-300 leading-relaxed">
+                                      <li className="flex items-start gap-1.5">
+                                        <span className="text-rose-400 font-bold shrink-0">1.</span>
+                                        <span><strong>Carrusel de Portada:</strong> Sube imágenes con temática de regalos y ofertas de Nochebuena en la pestaña "Carrusel de Portada".</span>
+                                      </li>
+                                      <li className="flex items-start gap-1.5">
+                                        <span className="text-emerald-400 font-bold shrink-0">2.</span>
+                                        <span><strong>Cupones Festivos:</strong> Crea un cupón especial (ej: <code>NAVIDAD10</code> o <code>REGALOJUEM</code>) desde la sección de Promociones.</span>
+                                      </li>
+                                      <li className="flex items-start gap-1.5">
+                                        <span className="text-amber-400 font-bold shrink-0">3.</span>
+                                        <span><strong>Cinta Superior:</strong> Configura el texto de la marquesina con avisos de "¡Envíos garantizados antes de Navidad!".</span>
+                                      </li>
+                                    </ul>
+                                  </div>
+
+                                  <div className="pt-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const updated = {
+                                          ...editingSettings,
+                                          primaryColor: "#E11D48",
+                                          accentColor: "#10B981",
+                                          themeMode: "dark" as const,
+                                          activeTheme: "navidad"
+                                        };
+                                        setEditingSettings(updated);
+                                        setStore(prev => ({ ...prev, settings: updated }));
+                                        showAdminToast('¡Tema Navideño activado en tiempo real! 🎄🎅', "success");
+                                      }}
+                                      className="w-full py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-extrabold rounded-xl text-xs transition duration-200 flex items-center justify-center gap-2 cursor-pointer uppercase tracking-wider shadow-md"
+                                    >
+                                      <span>🎄 Activar Tema Navideño Ahora</span>
+                                    </button>
                                   </div>
                                 </div>
                               </div>
@@ -11422,8 +11961,19 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                 />
                               </div>
                               <div className="text-[8px] text-zinc-500 font-medium flex items-center justify-between">
-                                <span>12% Web</span>
-                                <span>Neto: <strong className="text-emerald-400 font-mono">${Math.max(0, Number(newProduct.precioWeb || 0) - Number(newProduct.comisionMP !== undefined && newProduct.comisionMP !== "" ? newProduct.comisionMP : (Number(newProduct.precioWeb || 0) * 0.12))).toFixed(2)}</strong></span>
+                                <span>12% Web {Number(newProduct.descuentoPorcentaje || 0) > 0 ? `(${newProduct.descuentoPorcentaje}% OFF)` : ""}</span>
+                                {(() => {
+                                  const pWebBase = Number(newProduct.precioWeb || 0);
+                                  const desc = Number(newProduct.descuentoPorcentaje || 0);
+                                  const pWebEfectivo = desc > 0 ? Number((pWebBase * (1 - desc / 100)).toFixed(2)) : pWebBase;
+                                  const commMP = (newProduct.comisionMP !== undefined && (newProduct.comisionMP as any) !== "")
+                                    ? Number(newProduct.comisionMP)
+                                    : Number((pWebEfectivo * 0.12).toFixed(2));
+                                  const neto = Math.max(0, pWebEfectivo - commMP);
+                                  return (
+                                    <span>Neto: <strong className="text-emerald-400 font-mono">${neto.toFixed(2)}</strong></span>
+                                  );
+                                })()}
                               </div>
                             </div>
                           </div>
@@ -11441,18 +11991,20 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                               {/* Rentabilidad Canal Web */}
                               {(() => {
-                                const pWeb = Number(newProduct.precioWeb || 0);
-                                const commMP = (newProduct.comisionMP !== undefined && newProduct.comisionMP !== null && newProduct.comisionMP !== "")
+                                const pWebBase = Number(newProduct.precioWeb || 0);
+                                const desc = Number(newProduct.descuentoPorcentaje || 0);
+                                const pWebEfectivo = desc > 0 ? Number((pWebBase * (1 - desc / 100)).toFixed(2)) : pWebBase;
+                                const commMP = (newProduct.comisionMP !== undefined && newProduct.comisionMP !== null && (newProduct.comisionMP as any) !== "")
                                   ? Number(newProduct.comisionMP)
-                                  : Number((pWeb * 0.12).toFixed(2));
+                                  : Number((pWebEfectivo * 0.12).toFixed(2));
                                 const { profit, marginPercent, markupPercent } = calculateMargins(
                                   newProduct.isCombo ? getComboPurchaseCost(newProduct.comboComponents || []) : Number(newProduct.precioCompra || 0),
-                                  pWeb,
+                                  pWebEfectivo,
                                   commMP
                                 );
                                 const isOk = marginPercent >= 28;
                                 const isCritical = marginPercent < 15;
-                                const netoRecibido = Math.max(0, pWeb - commMP);
+                                const netoRecibido = Math.max(0, pWebEfectivo - commMP);
                                 return (
                                   <div className="p-4 bg-[#030712]/60 border border-zinc-850 rounded-2xl space-y-2.5 shadow-inner transition-all hover:border-zinc-750 duration-300">
                                     <div className="flex items-center justify-between">
@@ -11468,9 +12020,16 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                         {isCritical ? "Margen Ajustado ⚠️" : isOk ? "Excelente Margen ✨" : "Margen Aceptable 👍"}
                                       </span>
                                     </div>
-                                    <div className="flex items-baseline gap-1">
-                                      <span className="text-xl font-mono font-black text-white">${profit.toLocaleString('es-UY', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
-                                      <span className="text-[9px] font-semibold text-zinc-400 uppercase tracking-wide">ganancia neta</span>
+                                    <div className="flex items-baseline justify-between gap-1 flex-wrap">
+                                      <div className="flex items-baseline gap-1">
+                                        <span className="text-xl font-mono font-black text-white">${profit.toLocaleString('es-UY', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                        <span className="text-[9px] font-semibold text-zinc-400 uppercase tracking-wide">ganancia neta</span>
+                                      </div>
+                                      {desc > 0 && (
+                                        <span className="text-[9px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
+                                          Venta (-{desc}%): ${pWebEfectivo.toLocaleString('es-UY', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                        </span>
+                                      )}
                                     </div>
                                     <div className="space-y-1.5 pt-1">
                                       <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider">
@@ -13268,8 +13827,19 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                 />
                               </div>
                               <div className="text-[8px] text-zinc-500 font-medium flex items-center justify-between">
-                                <span>12% Web</span>
-                                <span>Neto: <strong className="text-emerald-400 font-mono">${Math.max(0, Number(editingProduct.precioWeb || 0) - Number(editingProduct.comisionMP !== undefined && editingProduct.comisionMP !== "" ? editingProduct.comisionMP : (Number(editingProduct.precioWeb || 0) * 0.12))).toFixed(2)}</strong></span>
+                                <span>12% Web {Number(editingProduct.descuentoPorcentaje || 0) > 0 ? `(${editingProduct.descuentoPorcentaje}% OFF)` : ""}</span>
+                                {(() => {
+                                  const pWebBase = Number(editingProduct.precioWeb || 0);
+                                  const desc = Number(editingProduct.descuentoPorcentaje || 0);
+                                  const pWebEfectivo = desc > 0 ? Number((pWebBase * (1 - desc / 100)).toFixed(2)) : pWebBase;
+                                  const commMP = (editingProduct.comisionMP !== undefined && (editingProduct.comisionMP as any) !== "")
+                                    ? Number(editingProduct.comisionMP)
+                                    : Number((pWebEfectivo * 0.12).toFixed(2));
+                                  const neto = Math.max(0, pWebEfectivo - commMP);
+                                  return (
+                                    <span>Neto: <strong className="text-emerald-400 font-mono">${neto.toFixed(2)}</strong></span>
+                                  );
+                                })()}
                               </div>
                             </div>
                           </div>
@@ -13287,18 +13857,21 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                               {/* Rentabilidad Canal Web */}
                               {(() => {
-                                const pWeb = Number(editingProduct.precioWeb || 0);
-                                const commMP = (editingProduct.comisionMP !== undefined && editingProduct.comisionMP !== null && editingProduct.comisionMP !== "")
+                                const pWebBase = Number(editingProduct.precioWeb || 0);
+                                const desc = Number(editingProduct.descuentoPorcentaje || 0);
+                                const pWebEfectivo = desc > 0 ? Number((pWebBase * (1 - desc / 100)).toFixed(2)) : pWebBase;
+                                const commMP = (editingProduct.comisionMP !== undefined && editingProduct.comisionMP !== null && (editingProduct.comisionMP as any) !== "")
                                   ? Number(editingProduct.comisionMP)
-                                  : Number((pWeb * 0.12).toFixed(2));
+                                  : Number((pWebEfectivo * 0.12).toFixed(2));
+                                const costoCompra = editingProduct.isCombo ? getComboPurchaseCost(editingProduct.comboComponents || []) : Number(editingProduct.precioCompra || 0);
                                 const { profit, marginPercent, markupPercent } = calculateMargins(
-                                  editingProduct.isCombo ? getComboPurchaseCost(editingProduct.comboComponents || []) : Number(editingProduct.precioCompra || 0),
-                                  pWeb,
+                                  costoCompra,
+                                  pWebEfectivo,
                                   commMP
                                 );
                                 const isOk = marginPercent >= 28;
                                 const isCritical = marginPercent < 15;
-                                const netoRecibido = Math.max(0, pWeb - commMP);
+                                const netoRecibido = Math.max(0, pWebEfectivo - commMP);
                                 return (
                                   <div className="p-4 bg-[#030712]/60 border border-zinc-850 rounded-2xl space-y-2.5 shadow-inner transition-all hover:border-zinc-750 duration-300">
                                     <div className="flex items-center justify-between">
@@ -13314,9 +13887,16 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                         {isCritical ? "Margen Ajustado ⚠️" : isOk ? "Excelente Margen ✨" : "Margen Aceptable 👍"}
                                       </span>
                                     </div>
-                                    <div className="flex items-baseline gap-1">
-                                      <span className="text-xl font-mono font-black text-white">${profit.toLocaleString('es-UY', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
-                                      <span className="text-[9px] font-semibold text-zinc-400 uppercase tracking-wide">ganancia neta</span>
+                                    <div className="flex items-baseline justify-between gap-1 flex-wrap">
+                                      <div className="flex items-baseline gap-1">
+                                        <span className="text-xl font-mono font-black text-white">${profit.toLocaleString('es-UY', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                        <span className="text-[9px] font-semibold text-zinc-400 uppercase tracking-wide">ganancia neta</span>
+                                      </div>
+                                      {desc > 0 && (
+                                        <span className="text-[9px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
+                                          Venta (-{desc}%): ${pWebEfectivo.toLocaleString('es-UY', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                        </span>
+                                      )}
                                     </div>
                                     <div className="space-y-1.5 pt-1">
                                       <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider">
@@ -13333,7 +13913,7 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                       </div>
                                       <div className="flex items-center justify-between text-[9px] text-zinc-500 font-medium">
                                         <span>Markup (Multiplicador): +{markupPercent}%</span>
-                                        <span>Costo: ${editingProduct.isCombo ? getComboPurchaseCost(editingProduct.comboComponents || []) : (editingProduct.precioCompra || 0)}</span>
+                                        <span>Costo: ${costoCompra}</span>
                                       </div>
                                       <div className="flex items-center justify-between text-[9px] text-zinc-400 font-medium pt-1 border-t border-zinc-800/40">
                                         <span className="text-sky-400">Comisión MP (12%): -${commMP.toLocaleString('es-UY', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>

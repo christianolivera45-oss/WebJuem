@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { Product, SiteSettings } from "../types";
+import { Product, SiteSettings, getProductAvailableStock } from "../types";
 import { ShoppingCart, Eye, Tag, Phone } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import ImageWatermark from "./ImageWatermark";
@@ -21,6 +21,9 @@ export default function ProductCard({
   layoutMode = "grid"
 }: ProductCardProps) {
   const [isHovered, setIsHovered] = useState<boolean>(false);
+  const isNavidad = settings?.activeTheme === "navidad" ||
+    (settings?.primaryColor?.toLowerCase() === "#d4af70" && settings?.accentColor?.toLowerCase() === "#285744") ||
+    (settings?.primaryColor?.toLowerCase() === "#e11d48");
 
   const waUrl = useMemo(() => {
     const cleanPhone = (settings?.whatsappNumber || "").replace(/[^0-9]/g, "");
@@ -38,6 +41,7 @@ Precio: $${Math.round(product.price)}
     : 0;
 
   const lowStockThreshold = typeof settings?.lowStockThreshold === 'number' ? settings.lowStockThreshold : 5;
+  const availableStock = useMemo(() => getProductAvailableStock(product), [product]);
 
   // Find the cheapest option (either a specific variant or the base product price)
   const cheapestOption = useMemo(() => {
@@ -193,7 +197,11 @@ Precio: $${Math.round(product.price)}
         layoutMode === "list" 
           ? "flex-row h-[132px] sm:flex-col sm:h-full" 
           : "flex-col h-full"
-      } rounded-2xl overflow-hidden bg-[#0B1730] border border-[#D4A55A]/15 hover:border-[#D4A55A]/40 hover:shadow-2xl hover:shadow-[#D4A55A]/5 transition-all duration-300`}
+      } rounded-2xl overflow-hidden ${
+        isNavidad
+          ? "bg-[#FFFFFF] border border-[#E9D5A6]/45 hover:border-[#D4AF70] shadow-[0_4px_20px_rgba(40,87,68,0.06),0_1px_3px_rgba(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgba(212,175,112,0.18)]"
+          : "bg-[#0B1730] border border-[#D4A55A]/15 hover:border-[#D4A55A]/40 hover:shadow-2xl hover:shadow-[#D4A55A]/5"
+      } transition-all duration-300`}
     >
       {/* Aspect Ratio container for Portrait Product Image - Larger visual presence */}
       <div 
@@ -202,7 +210,11 @@ Precio: $${Math.round(product.price)}
           layoutMode === "list" 
             ? "w-[110px] shrink-0 border-r border-[#D4A55A]/15 sm:w-auto sm:shrink sm:border-r-0 aspect-[3/4]" 
             : "aspect-[3/4]"
-        } overflow-hidden bg-gradient-to-br from-[#050B1A]/80 via-[#0B1730]/40 to-[#050B1A]/75 cursor-pointer flex items-center justify-center p-1 sm:p-1.5`}
+        } overflow-hidden ${
+          isNavidad
+            ? "bg-gradient-to-b from-[#FAF9F5] via-[#FFFFFF] to-[#FAF9F5]"
+            : "bg-gradient-to-br from-[#050B1A]/80 via-[#0B1730]/40 to-[#050B1A]/75"
+        } cursor-pointer flex items-center justify-center p-1 sm:p-1.5`}
       >
         {/* Subtle ambient image glow to remove empty contrast bars */}
         <div className="absolute inset-0 pointer-events-none select-none overflow-hidden opacity-20">
@@ -240,22 +252,22 @@ Precio: $${Math.round(product.price)}
 
         {/* Promo Badge */}
         {isDiscounted && (
-          <div className="absolute top-1.5 left-1.5 sm:top-3 sm:left-3 bg-red-500 text-white font-sans text-[7.5px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-md z-10 flex items-center gap-0.5 sm:gap-1">
+          <div className={`absolute top-2 left-2 ${isNavidad ? "bg-[#9E4148]" : "bg-red-500"} text-white font-sans text-[7.5px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-md z-10 flex items-center gap-0.5 sm:gap-1`}>
             <Tag className="h-2 w-2 sm:h-3 sm:w-3" />
             <span>-{discountPercent}%</span>
           </div>
         )}
 
         {/* Stock warning */}
-        {product.stock <= lowStockThreshold && product.stock > 0 && (
+        {availableStock <= lowStockThreshold && availableStock > 0 && (
           <div className="absolute top-2 right-2 bg-gradient-to-r from-amber-500 to-yellow-400 text-[#050B1A] font-sans text-[8px] sm:text-[9.5px] font-black px-1.5 py-0.5 rounded-full tracking-wider shadow-lg z-30 uppercase pointer-events-none border border-black/10">
-            {product.stock === 1 ? "¡Última!" : "¡Últimas!"}
+            {availableStock === 1 ? "¡Última!" : "¡Últimas!"}
           </div>
         )}
 
-        {product.stock === 0 && (
+        {availableStock === 0 && (
           <div className="absolute inset-0 bg-[#050B1A]/80 flex items-center justify-center z-10">
-            <span className="bg-[#0B1730] text-[#E6BF76] font-sans font-bold text-[8px] sm:text-xs uppercase tracking-wider sm:tracking-widest px-2 py-1 sm:px-3 sm:py-1.5 rounded-full border border-[#D4A55A]/30">
+            <span className={`${isNavidad ? "bg-[#FFFFFF] text-[#9E4148] border-[#9E4148]/30" : "bg-[#0B1730] text-[#E6BF76] border-[#D4A55A]/30"} font-sans font-bold text-[8px] sm:text-xs uppercase tracking-wider sm:tracking-widest px-2 py-1 sm:px-3 sm:py-1.5 rounded-full border`}>
               Agotado
             </span>
           </div>
@@ -276,7 +288,7 @@ Precio: $${Math.round(product.price)}
       {/* Product Content Details */}
       <div 
         onClick={() => onViewProduct(product)}
-        className={`flex flex-col flex-1 p-3 sm:p-4 bg-[#0B1730] min-w-0 cursor-pointer ${layoutMode === "list" ? "justify-between" : ""}`}
+        className={`flex flex-col flex-1 p-3 sm:p-4 ${isNavidad ? "bg-[#FFFFFF]" : "bg-[#0B1730]"} min-w-0 cursor-pointer ${layoutMode === "list" ? "justify-between" : ""}`}
       >
         <div>
           {/* Product Title */}
@@ -288,7 +300,7 @@ Precio: $${Math.round(product.price)}
                 e.stopPropagation();
                 onViewProduct(product);
               }}
-              className="text-[11px] sm:text-sm font-semibold text-[#F4EAD7] tracking-wide leading-snug group-hover:text-[#E6BF76] transition-colors cursor-pointer select-none block w-full line-clamp-2"
+              className={`text-[11px] sm:text-sm font-semibold tracking-wide leading-snug transition-colors cursor-pointer select-none block w-full line-clamp-2 ${isNavidad ? "text-[#1E1D1B] group-hover:text-[#285744]" : "text-[#F4EAD7] group-hover:text-[#E6BF76]"}`}
               title={product.name}
             >
               {product.name}
@@ -298,11 +310,11 @@ Precio: $${Math.round(product.price)}
           {/* Pricing info directly below - no description block to assure uniform card columns */}
           {layoutMode !== "list" && (
             <div className="flex items-baseline gap-1.5 sm:gap-2 mt-1 sm:mt-2">
-              <span className="text-xs sm:text-base font-bold text-[#E6BF76]">
+              <span className={`text-xs sm:text-base font-bold ${isNavidad ? "text-[#285744]" : "text-[#E6BF76]"}`}>
                 {getPriceDisplay()}
               </span>
               {isDiscounted && (
-                <span className="text-[9px] sm:text-xs text-slate-400 line-through">
+                <span className={`text-[9px] sm:text-xs line-through ${isNavidad ? "text-[#55534F]" : "text-slate-400"}`}>
                   ${Math.round(product.originalPrice!)}
                 </span>
               )}
@@ -312,14 +324,14 @@ Precio: $${Math.round(product.price)}
 
         {/* Highlighted Buy Button / Details Strip at base */}
         {layoutMode === "list" ? (
-          <div className="flex items-center justify-between gap-1.5 mt-auto pt-1.5 border-t border-[#D4A55A]/10">
+          <div className={`flex items-center justify-between gap-1.5 mt-auto pt-1.5 border-t ${isNavidad ? "border-[#E9D5A6]/40" : "border-[#D4A55A]/10"}`}>
             <div className="flex flex-col min-w-0">
               <div className="flex items-baseline gap-1 sm:gap-1.5">
-                <span className="text-xs sm:text-base font-black text-[#E6BF76]">
+                <span className={`text-xs sm:text-base font-black ${isNavidad ? "text-[#285744]" : "text-[#E6BF76]"}`}>
                   {getPriceDisplay()}
                 </span>
                 {isDiscounted && (
-                  <span className="text-[8.5px] sm:text-xs text-slate-400 line-through whitespace-nowrap">
+                  <span className={`text-[8.5px] sm:text-xs line-through whitespace-nowrap ${isNavidad ? "text-[#55534F]" : "text-slate-400"}`}>
                     ${Math.round(product.originalPrice!)}
                   </span>
                 )}
@@ -349,8 +361,12 @@ Precio: $${Math.round(product.price)}
                 }}
                 className={`py-1 px-2.5 sm:py-2 sm:px-4 rounded-full text-[8.5px] sm:text-[10px] font-sans font-extrabold uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-1 cursor-pointer border shrink-0 ${
                   product.stock > 0
-                    ? "bg-[#D4A55A] hover:bg-[#E6BF76] border-transparent text-[#050B1A] hover:scale-105 active:scale-95 shadow-md shadow-[#D4A55A]/10 font-bold"
-                    : "bg-transparent border-slate-700 text-[#D4A55A]/80 cursor-pointer"
+                    ? isNavidad
+                      ? "bg-[#D4AF70] hover:bg-[#E9D5A6] border-transparent text-[#1E1D1B] hover:scale-105 active:scale-95 shadow-md shadow-[#D4AF70]/20 font-bold"
+                      : "bg-[#D4A55A] hover:bg-[#E6BF76] border-transparent text-[#050B1A] hover:scale-105 active:scale-95 shadow-md shadow-[#D4A55A]/10 font-bold"
+                    : isNavidad
+                      ? "bg-transparent border-[#E9D5A6] text-[#55534F] cursor-pointer"
+                      : "bg-transparent border-slate-700 text-[#D4A55A]/80 cursor-pointer"
                 }`}
               >
                 <ShoppingCart className="h-2.5 w-2.5" />
@@ -383,8 +399,12 @@ Precio: $${Math.round(product.price)}
                 }}
                 className={`w-full py-1.5 sm:py-2.5 px-2.5 sm:px-3 rounded-full text-[8.5px] sm:text-[10px] font-sans font-bold uppercase tracking-wider sm:tracking-widest transition-all duration-300 flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer border ${
                   product.stock > 0
-                    ? "bg-[#D4A55A] hover:bg-[#E6BF76] border-transparent text-[#050B1A] hover:scale-[1.02] active:scale-98 shadow-md shadow-[#D4A55A]/10"
-                    : "bg-transparent border-slate-700 text-slate-400 cursor-not-allowed"
+                    ? isNavidad
+                      ? "bg-[#D4AF70] hover:bg-[#E9D5A6] border-transparent text-[#1E1D1B] hover:scale-[1.02] active:scale-98 shadow-md shadow-[#D4AF70]/20 font-bold"
+                      : "bg-[#D4A55A] hover:bg-[#E6BF76] border-transparent text-[#050B1A] hover:scale-[1.02] active:scale-98 shadow-md shadow-[#D4A55A]/10"
+                    : isNavidad
+                      ? "bg-transparent border-[#E9D5A6] text-[#55534F] cursor-not-allowed"
+                      : "bg-transparent border-slate-700 text-slate-400 cursor-not-allowed"
                 }`}
               >
                 <ShoppingCart className="h-2.5 w-2.5 sm:h-3 sm:w-3" />

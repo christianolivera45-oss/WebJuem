@@ -5,13 +5,21 @@ interface ThemeStylesProps {
 }
 
 export default function ThemeStyles({ settings }: ThemeStylesProps) {
+  const isNavidad = settings?.activeTheme === "navidad" || 
+    (settings?.primaryColor?.toLowerCase() === "#e11d48" && settings?.accentColor?.toLowerCase() === "#10b981");
+
+  const primaryCol = isNavidad ? "#D4AF70" : (settings.primaryColor || "#3b82f6");
+  const accentCol = isNavidad ? "#285744" : (settings.accentColor || "#10b981");
+  const promoBg = isNavidad ? "#FAF9F5" : (settings.promotionBannerBgColor || "#4f46e5");
+  const promoText = isNavidad ? "#285744" : (settings.promotionBannerTextColor || "#ffffff");
+
   return (
     <style>{`
       :root {
-        --color-primary: ${settings.primaryColor || "#3b82f6"};
-        --color-accent: ${settings.accentColor || "#10b981"};
-        --color-promo-bg: ${settings.promotionBannerBgColor || "#4f46e5"};
-        --color-promo-text: ${settings.promotionBannerTextColor || "#ffffff"};
+        --color-primary: ${primaryCol};
+        --color-accent: ${accentCol};
+        --color-promo-bg: ${promoBg};
+        --color-promo-text: ${promoText};
       }
       
       .theme-promo-banner {

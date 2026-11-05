@@ -103,6 +103,7 @@ export interface SiteSettings {
   primaryColor: string; // Core branding color
   accentColor: string; // Interactive elements color
   themeMode: 'dark' | 'light';
+  activeTheme?: 'navidad' | 'aurea' | 'juem' | string;
   promotionBannerText: string;
   promotionBannerText2?: string;
   promotionBannerTexts?: string[];
@@ -541,6 +542,49 @@ export function isGenericColor(col?: string): boolean {
     "ninguno", "no aplica", "sin color", "unico color", "estándar", "único",
     "sin colores", "varios", "surtido", "color general"
   ].includes(norm);
+}
+
+/**
+ * Returns the effective available stock of an individual variant across warehouses.
+ */
+export function getVariantAvailableStock(variant?: ProductVariant | null): number {
+  if (!variant) return 0;
+  if (variant.stock !== undefined && variant.stock !== null && !isNaN(Number(variant.stock))) {
+    return Math.max(0, Number(variant.stock));
+  }
+  const sumBranches = Number(variant.stockPinamar || 0) + Number(variant.stockMontevideo || 0);
+  return Math.max(0, sumBranches);
+}
+
+/**
+ * Calculates the real total available stock of a product considering its dynamic variants,
+ * individual warehouse branches (Pinamar & Montevideo), and root properties.
+ */
+export function getProductAvailableStock(product?: Product | null): number {
+  if (!product) return 0;
+
+  // 1. If product has dynamic variants, real stock is the sum of in-stock variants
+  if (product.variants && product.variants.length > 0) {
+    return product.variants.reduce((total, v) => {
+      return total + getVariantAvailableStock(v);
+    }, 0);
+  }
+
+  // 2. If product has branch stock specified at root level
+  const branchSum = Number(product.stockPinamar || 0) + Number(product.stockMontevideo || 0);
+  if (branchSum > 0) {
+    return branchSum;
+  }
+
+  // 3. Fallback to root stock
+  return Math.max(0, Number(product.stock || 0));
+}
+
+/**
+ * Checks if a product has at least one variant or unit available for sale.
+ */
+export function isProductInStock(product?: Product | null): boolean {
+  return getProductAvailableStock(product) > 0;
 }
 
 // ==========================================

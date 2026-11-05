@@ -420,14 +420,15 @@ export const DEFAULT_SETTINGS: SiteSettings = {
   seoKeywords: "Juem, Juem Mvd, tienda Juem, ropa de invierno, abrigos termicos, buzos manta, gorros, guantes neopreno, accesorios 3D Uruguay, envios express, montevideo, canelones, pinamar",
   facebookUrl: "https://facebook.com",
   instagramUrl: "https://instagram.com",
-  whatsappNumber: "5491123456789",
-  primaryColor: "#2563eb",
-  accentColor: "#10b981",
-  themeMode: "dark",
-  promotionBannerText: "🚚 ¡15% de DESCUENTO en toda la tienda! Código: BUELO15",
-  promotionBannerText2: "🎁 ¡Envío GRATIS en compras mayores de $2000 para Pinamar, Salinas, Marindia, Neptunia! Elige tu de agencia favorita y nosotros lo cubrimos.",
-  promotionBannerBgColor: "#4f46e5",
-  promotionBannerTextColor: "#ffffff",
+  whatsappNumber: "59891234567",
+  activeTheme: "navidad",
+  primaryColor: "#D4AF70",
+  accentColor: "#285744",
+  themeMode: "light",
+  promotionBannerText: "✨ La magia de regalar comienza en JUEM · Envíos a todo el país · Cuotas sin recargo",
+  promotionBannerText2: "🎄 Especial Navidad: Packaging de regalo exclusivo y garantía oficial en todos tus pedidos",
+  promotionBannerBgColor: "#FAF9F5",
+  promotionBannerTextColor: "#285744",
   promotionBannerTransition: "slide",
   heroSliderTransition: "slide",
   showPromotionBanner: true,
@@ -763,7 +764,25 @@ export const getCategoryDisplayName = (cat: string) => {
 // Temas y Paletas de Colores Predeterminadas para el eCommerce
 export const THEME_PRESETS = [
   {
+    name: "Navidad Mágica Juem 🎄✨",
+    id: "navidad",
+    activeTheme: "navidad",
+    primaryColor: "#E11D48",
+    accentColor: "#10B981",
+    themeMode: "dark" as "dark" | "light"
+  },
+  {
     name: "Áurea Nocturna Pro ⚜️",
+    id: "aurea",
+    activeTheme: "aurea",
+    primaryColor: "#D4A55A",
+    accentColor: "#E6BF76",
+    themeMode: "dark" as "dark" | "light"
+  },
+  {
+    name: "Colores Juem Original 🎨",
+    id: "juem",
+    activeTheme: "juem",
     primaryColor: "#D4A55A",
     accentColor: "#E6BF76",
     themeMode: "dark" as "dark" | "light"

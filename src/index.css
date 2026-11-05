@@ -184,4 +184,293 @@ img {
   -ms-user-select: none;
 }
 
+/* ==========================================================================
+   TEMA NAVIDEÑO LUMINOSO, ELEGANTE & PREMIUM JUEM 🎄✨
+   Concepto: Navidad Luminosa, Cálida, Blanco Marfil y Champagne Gold
+   Paleta: 
+     - Blanco marfil: #FAF9F5 (color principal de fondos)
+     - Blanco puro: #FFFFFF (tarjetas y superficies)
+     - Dorado champagne: #D4AF70 (botones, detalles, bordes y destacados)
+     - Dorado claro: #E9D5A6 (degradados y detalles decorativos)
+     - Verde pino: #285744 (acentos navideños y elementos secundarios)
+     - Rojo borgoña: #9E4148 (pequeños detalles promocionales)
+     - Gris cálido: #55534F (textos secundarios)
+     - Texto principal: #1E1D1B (alta legibilidad y prestigio)
+   ========================================================================== */
+.theme-navidad {
+  --color-brand-dark: #FAF9F5;
+  --color-brand-secondary: #FFFFFF;
+  --color-primary-gold: #D4AF70;
+  --color-gold-light: #E9D5A6;
+  --color-brand-light: #1E1D1B;
+  background-color: #FAF9F5 !important;
+  color: #1E1D1B !important;
+}
+
+/* 1. FONDOS GENERALES (Blanco Marfil #FAF9F5) */
+.theme-navidad .bg-\[\#050B1A\],
+.theme-navidad.bg-\[\#050B1A\] {
+  background-color: #FAF9F5 !important;
+  color: #1E1D1B !important;
+}
+
+.theme-navidad .bg-\[\#050B1A\]\/95 {
+  background-color: rgba(250, 249, 245, 0.97) !important;
+}
+
+.theme-navidad .bg-\[\#050B1A\]\/90 {
+  background-color: rgba(250, 249, 245, 0.93) !important;
+}
+
+.theme-navidad .bg-\[\#050B1A\]\/60,
+.theme-navidad .bg-\[\#050B1A\]\/50,
+.theme-navidad .bg-\[\#050B1A\]\/30 {
+  background-color: rgba(250, 249, 245, 0.75) !important;
+}
+
+/* 2. TARJETAS, MODALES, MENÚS Y SUPERFICIES (Blanco Puro #FFFFFF) */
+.theme-navidad .bg-\[\#0B1730\],
+.theme-navidad.bg-\[\#0B1730\] {
+  background-color: #FFFFFF !important;
+  color: #1E1D1B !important;
+}
+
+.theme-navidad .bg-\[\#0B1730\]\/95 {
+  background-color: rgba(255, 255, 255, 0.98) !important;
+}
+
+.theme-navidad .bg-\[\#0B1730\]\/90 {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+}
+
+.theme-navidad .bg-\[\#0B1730\]\/85,
+.theme-navidad .bg-\[\#0B1730\]\/65,
+.theme-navidad .bg-\[\#0B1730\]\/50,
+.theme-navidad .bg-\[\#0B1730\]\/40,
+.theme-navidad .bg-\[\#0B1730\]\/30 {
+  background-color: rgba(255, 255, 255, 0.92) !important;
+}
+
+.theme-navidad .bg-\[\#030611\]\/60,
+.theme-navidad .bg-\[\#030611\] {
+  background-color: #FAF9F5 !important;
+}
+
+/* 3. BOTONES Y ELEMENTOS DESTACADOS EN DORADO CHAMPAGNE (#D4AF70) */
+.theme-navidad .bg-\[\#D4A55A\],
+.theme-navidad.bg-\[\#D4A55A\] {
+  background: linear-gradient(135deg, #E9D5A6 0%, #D4AF70 60%, #C49E60 100%) !important;
+  color: #FFFFFF !important;
+  border-color: rgba(212, 175, 112, 0.4) !important;
+}
+
+.theme-navidad .hover\:bg-\[\#D4A55A\]:hover {
+  background: #C29956 !important;
+}
+
+.theme-navidad .bg-\[\#D4A55A\]\/20 {
+  background-color: rgba(212, 175, 112, 0.22) !important;
+}
+
+.theme-navidad .bg-\[\#D4A55A\]\/15 {
+  background-color: rgba(212, 175, 112, 0.16) !important;
+}
+
+.theme-navidad .bg-\[\#D4A55A\]\/10 {
+  background-color: rgba(212, 175, 112, 0.1) !important;
+}
+
+.theme-navidad .bg-\[\#D4A55A\]\/5 {
+  background-color: rgba(212, 175, 112, 0.05) !important;
+}
+
+/* Botones principales de la tienda */
+.theme-navidad .theme-btn-primary {
+  background: linear-gradient(135deg, #E9D5A6 0%, #D4AF70 60%, #C49E60 100%) !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 4px 14px rgba(212, 175, 112, 0.35) !important;
+}
+
+.theme-navidad .theme-btn-primary:hover {
+  background: #C29956 !important;
+  box-shadow: 0 6px 20px rgba(212, 175, 112, 0.45) !important;
+}
+
+/* 4. TEXTOS Y JERARQUÍA TIPOGRÁFICA */
+/* Títulos y textos principales (Lujo editorial #1E1D1B sobre fondos claros) */
+.theme-navidad .text-\[\#F4EAD7\] {
+  color: #1E1D1B !important;
+}
+
+/* Textos secundarios (Gris cálido #55534F) */
+.theme-navidad .text-zinc-400,
+.theme-navidad .text-zinc-500,
+.theme-navidad .text-slate-400,
+.theme-navidad .text-\[\#A0AEC0\] {
+  color: #55534F !important;
+}
+
+/* Precios y elementos destacados (Verde Pino #285744 para contraste navideño) */
+.theme-navidad .text-\[\#E6BF76\] {
+  color: #285744 !important;
+}
+
+.theme-navidad .hover\:text-\[\#E6BF76\]:hover {
+  color: #1E4233 !important;
+}
+
+.theme-navidad .text-\[\#D4A55A\] {
+  color: #D4AF70 !important;
+}
+
+.theme-navidad .text-\[\#E6BF76\]\/70,
+.theme-navidad .text-\[\#E6BF76\]\/60 {
+  color: #55534F !important;
+}
+
+/* 5. BORDES SUAVES Y DELICADOS (Dorado Claro #E9D5A6 y Champagne #D4AF70) */
+.theme-navidad .border-\[\#D4A55A\],
+.theme-navidad.border-\[\#D4A55A\] {
+  border-color: #D4AF70 !important;
+}
+
+.theme-navidad .border-\[\#D4A55A\]\/30,
+.theme-navidad .border-\[\#D4A55A\]\/25,
+.theme-navidad .border-\[\#D4A55A\]\/20,
+.theme-navidad .border-\[\#D4A55A\]\/15,
+.theme-navidad .border-\[\#D4A55A\]\/10 {
+  border-color: rgba(212, 175, 112, 0.3) !important;
+}
+
+.theme-navidad .hover\:border-\[\#D4A55A\]\/60:hover,
+.theme-navidad .hover\:border-\[\#D4A55A\]\/55:hover,
+.theme-navidad .hover\:border-\[\#D4A55A\]\/40:hover,
+.theme-navidad .hover\:border-\[\#D4A55A\]\/30:hover {
+  border-color: #D4AF70 !important;
+}
+
+/* 6. SOMBRAS LIGERAS Y REFINADAS (Calidez Navideña) */
+.theme-navidad .shadow-xl,
+.theme-navidad .shadow-2xl,
+.theme-navidad .shadow-lg {
+  box-shadow: 0 10px 30px -5px rgba(212, 175, 112, 0.1), 0 4px 14px -2px rgba(40, 87, 68, 0.05) !important;
+}
+
+.theme-navidad .shadow-\[\#D4A55A\]\/25,
+.theme-navidad .shadow-\[\#D4A55A\]\/5 {
+  box-shadow: 0 4px 16px rgba(212, 175, 112, 0.2) !important;
+}
+
+/* 7. ENCABEZADO Y NAVEGACIÓN LUMINOSA */
+.theme-navidad header {
+  background-color: rgba(250, 249, 245, 0.97) !important;
+  border-bottom: 1px solid rgba(212, 175, 112, 0.28) !important;
+}
+
+.theme-navidad nav a {
+  color: #1E1D1B !important;
+}
+
+.theme-navidad nav a:hover {
+  color: #285744 !important;
+}
+
+/* Botones de categoría inactivos en header */
+.theme-navidad .category-dropdown-container button {
+  background-color: #FFFFFF !important;
+  color: #1E1D1B !important;
+  border-color: rgba(212, 175, 112, 0.35) !important;
+}
+
+.theme-navidad .category-dropdown-container button:hover {
+  background-color: rgba(233, 213, 166, 0.25) !important;
+  color: #285744 !important;
+  border-color: #D4AF70 !important;
+}
+
+/* 8. DETALLES PROMOCIONALES EN ROJO BORGOÑA (#9E4148) */
+.theme-navidad .bg-red-500 {
+  background-color: #9E4148 !important;
+  color: #FFFFFF !important;
+}
+
+/* 9. INPUTS, FORMULARIOS Y BUSCADOR */
+.theme-navidad input,
+.theme-navidad select,
+.theme-navidad textarea {
+  background-color: #FFFFFF !important;
+  color: #1E1D1B !important;
+  border-color: rgba(212, 175, 112, 0.35) !important;
+}
+
+.theme-navidad input:focus,
+.theme-navidad select:focus,
+.theme-navidad textarea:focus {
+  border-color: #D4AF70 !important;
+  box-shadow: 0 0 0 2px rgba(212, 175, 112, 0.25) !important;
+}
+
+.theme-navidad input::placeholder,
+.theme-navidad textarea::placeholder {
+  color: #8C8983 !important;
+}
+
+/* 10. SCROLLBAR CHAMPAGNE */
+.theme-navidad .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(212, 175, 112, 0.5);
+  border-radius: 9999px;
+}
+
+.theme-navidad .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(212, 175, 112, 0.85);
+}
+
+.theme-navidad .custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(250, 249, 245, 0.9);
+}
+
+/* 11. EFECTO DE COPOS DE NIEVE DORADOS / LUMINOSOS */
+.snow-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 40;
+  overflow: hidden;
+}
+
+@keyframes snowfall {
+  0% {
+    transform: translateY(-20px) translateX(0);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.65;
+  }
+  85% {
+    opacity: 0.65;
+  }
+  100% {
+    transform: translateY(105vh) translateX(25px);
+    opacity: 0.15;
+  }
+}
+
+.snowflake {
+  position: absolute;
+  top: -25px;
+  color: #D4AF70;
+  opacity: 0.35;
+  text-shadow: 0 0 5px rgba(233, 213, 166, 0.7);
+  user-select: none;
+  animation-name: snowfall;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  will-change: transform, opacity;
+}
+
+
+
 

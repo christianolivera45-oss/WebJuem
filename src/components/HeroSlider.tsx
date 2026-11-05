@@ -9,7 +9,35 @@ interface HeroSliderProps {
 }
 
 export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderProps) {
-  const defaultSlides: HeroSlide[] = [
+  const isNavidad = settings.activeTheme === "navidad" ||
+    (settings.primaryColor?.toLowerCase() === "#d4af70" && settings.accentColor?.toLowerCase() === "#285744") ||
+    (settings.primaryColor?.toLowerCase() === "#e11d48");
+
+  const navidadSlides: HeroSlide[] = [
+    {
+      id: "slide-navidad-1",
+      title: "La magia de regalar comienza en JUEM",
+      subtitle: "Encontrá el regalo perfecto para esta Navidad con detalles únicos, calidad premium y envíos a todo el país.",
+      buttonText: "Explorar productos",
+      imageUrl: "https://images.unsplash.com/photo-1543589077-47d81606c1bf?auto=format&fit=crop&w=1600&q=85"
+    },
+    {
+      id: "slide-navidad-2",
+      title: "Especial de Navidad: Estilo & Elegancia",
+      subtitle: "Colecciones cuidadosamente seleccionadas para sorprender con distinción en estas fiestas.",
+      buttonText: "Explorar productos",
+      imageUrl: "https://images.unsplash.com/photo-1513297887119-d46091b24bfa?auto=format&fit=crop&w=1600&q=85"
+    },
+    {
+      id: "slide-navidad-3",
+      title: "Momentos Inolvidables",
+      subtitle: "Detalles que transforman cada celebración en un recuerdo especial.",
+      buttonText: "Explorar productos",
+      imageUrl: "https://images.unsplash.com/photo-1512474932049-78ac69ede12c?auto=format&fit=crop&w=1600&q=85"
+    }
+  ];
+
+  const defaultSlides: HeroSlide[] = isNavidad ? navidadSlides : [
     {
       id: "slide-1",
       title: settings.bannerTitle || "Colección Exclusiva de Primavera",
@@ -30,9 +58,9 @@ export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderPro
     }
   ];
 
-  const slides = settings.heroSlides && settings.heroSlides.length > 0 
+  const slides = (settings.heroSlides && settings.heroSlides.length > 0 && !(isNavidad && settings.heroSlides[0]?.title?.includes("Primavera"))) 
     ? settings.heroSlides 
-    : defaultSlides;
+    : (isNavidad ? navidadSlides : defaultSlides);
 
   const optimizeImageUrl = (url: string | undefined | null): string => {
     if (!url || typeof url !== "string" || !url.trim()) {
@@ -265,7 +293,9 @@ export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderPro
                 <div 
                   className="absolute inset-0 md:block hidden animate-fade-in pointer-events-none transition-all duration-300"
                   style={{
-                    background: `linear-gradient(to right, rgba(5, 11, 26, ${darkLeft.toFixed(3)}) 0%, rgba(5, 11, 26, ${darkCenter.toFixed(3)}) 50%, rgba(5, 11, 26, ${darkRight.toFixed(3)}) 100%)`
+                    background: isNavidad
+                      ? "linear-gradient(to right, rgba(250, 249, 245, 0.95) 0%, rgba(250, 249, 245, 0.85) 45%, rgba(250, 249, 245, 0.2) 100%)"
+                      : `linear-gradient(to right, rgba(5, 11, 26, ${darkLeft.toFixed(3)}) 0%, rgba(5, 11, 26, ${darkCenter.toFixed(3)}) 50%, rgba(5, 11, 26, ${darkRight.toFixed(3)}) 100%)`
                   }}
                 />
 
@@ -273,7 +303,9 @@ export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderPro
                 <div 
                   className="absolute inset-0 md:hidden block animate-fade-in pointer-events-none transition-all duration-300"
                   style={{
-                    background: `linear-gradient(to top, rgba(5, 11, 26, ${darkLeft.toFixed(3)}) 0%, rgba(5, 11, 26, ${darkCenter.toFixed(3)}) 55%, rgba(5, 11, 26, ${darkRight.toFixed(3)}) 100%)`
+                    background: isNavidad
+                      ? "linear-gradient(to top, rgba(250, 249, 245, 0.96) 0%, rgba(250, 249, 245, 0.8) 55%, rgba(250, 249, 245, 0.2) 100%)"
+                      : `linear-gradient(to top, rgba(5, 11, 26, ${darkLeft.toFixed(3)}) 0%, rgba(5, 11, 26, ${darkCenter.toFixed(3)}) 55%, rgba(5, 11, 26, ${darkRight.toFixed(3)}) 100%)`
                   }}
                 />
               </>
@@ -284,12 +316,21 @@ export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderPro
               <div className="absolute inset-0 flex items-center justify-center md:justify-start">
                 <div className="max-w-7xl mx-auto px-6 sm:px-8 md:px-12 w-full text-center md:text-left relative z-10">
                   <div className="max-w-2xl transform-gpu">
+                    {isNavidad && (
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#285744]/10 border border-[#285744]/25 text-[#285744] text-[9.5px] sm:text-[11px] font-bold tracking-wider uppercase mb-2 sm:mb-2.5">
+                        <span>✨</span>
+                        <span>Especial de Navidad JUEM</span>
+                        <span>🎄</span>
+                      </div>
+                    )}
                     {slides[currentIndex].title && slides[currentIndex].title.trim() !== "" && (
                       <motion.h1 
                         initial={{ opacity: 0, y: 15 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.2, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-                        className="text-xl sm:text-3xl md:text-4xl lg:text-5xl font-serif font-extrabold text-[#F4EAD7] tracking-tight leading-[1.1] drop-shadow-[0_2px_14px_rgba(0,0,0,0.85)] mb-2 md:mb-3 transform-gpu"
+                        className={`text-xl sm:text-3xl md:text-4xl lg:text-5xl font-serif font-extrabold tracking-tight leading-[1.1] mb-2 md:mb-3 transform-gpu ${
+                          isNavidad ? "text-[#1E1D1B]" : "text-[#F4EAD7] drop-shadow-[0_2px_14px_rgba(0,0,0,0.85)]"
+                        }`}
                         style={{ willChange: "opacity, transform" }}
                       >
                         {slides[currentIndex].title}
@@ -301,8 +342,10 @@ export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderPro
                         initial={{ opacity: 0, y: 15 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.3, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-                        className="text-[11px] sm:text-xs md:text-sm text-zinc-350 font-sans tracking-wide leading-relaxed max-w-xl font-light line-clamp-2 md:line-clamp-none transform-gpu drop-shadow-[0_1px_8px_rgba(0,0,0,0.9)]"
-                        style={{ color: "#D8D2C4", willChange: "opacity, transform" }}
+                        className={`text-[11px] sm:text-xs md:text-sm font-sans tracking-wide leading-relaxed max-w-xl font-normal line-clamp-2 md:line-clamp-none transform-gpu ${
+                          isNavidad ? "text-[#55534F]" : "text-zinc-350 drop-shadow-[0_1px_8px_rgba(0,0,0,0.9)]"
+                        }`}
+                        style={{ color: isNavidad ? "#55534F" : "#D8D2C4", willChange: "opacity, transform" }}
                       >
                         {slides[currentIndex].subtitle}
                       </motion.p>
@@ -319,17 +362,21 @@ export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderPro
                         {!slides[currentIndex].hideButton && (
                           <button
                             onClick={() => onExploreCatalog(slides[currentIndex].buttonLink)}
-                            className="group/btn relative overflow-hidden py-1.5 px-3.5 sm:py-3 sm:px-7 rounded-xl sm:rounded-2xl font-sans font-black text-[9px] sm:text-[11px] uppercase tracking-wider sm:tracking-widest bg-gradient-to-r from-[#F3D287] via-[#D4A55A] to-[#B88730] text-[#050B1A] ring-1 ring-white/50 ring-inset hover:scale-[1.035] active:scale-[0.98] shadow-[0_4px_16px_-4px_rgba(212,165,90,0.5),0_2px_8px_rgba(0,0,0,0.3)] sm:shadow-[0_8px_25px_-5px_rgba(212,165,90,0.5),0_4px_12px_rgba(0,0,0,0.3)] hover:shadow-[0_8px_25px_-4px_rgba(212,165,90,0.7),0_4px_16px_rgba(0,0,0,0.4)] cursor-pointer transition-all duration-300 flex items-center gap-1.5 sm:gap-2.5"
+                            className={`group/btn relative overflow-hidden py-1.5 px-3.5 sm:py-3 sm:px-7 rounded-xl sm:rounded-2xl font-sans font-black text-[9px] sm:text-[11px] uppercase tracking-wider sm:tracking-widest cursor-pointer transition-all duration-300 flex items-center gap-1.5 sm:gap-2.5 ${
+                              isNavidad
+                                ? "bg-[#D4AF70] hover:bg-[#C29956] text-[#FAF9F5] shadow-[0_4px_16px_rgba(212,175,112,0.35)] hover:shadow-[0_8px_25px_rgba(212,175,112,0.5)] border border-[#E9D5A6]"
+                                : "bg-gradient-to-r from-[#F3D287] via-[#D4A55A] to-[#B88730] text-[#050B1A] ring-1 ring-white/50 ring-inset shadow-[0_4px_16px_-4px_rgba(212,165,90,0.5),0_2px_8px_rgba(0,0,0,0.3)] sm:shadow-[0_8px_25px_-5px_rgba(212,165,90,0.5),0_4px_12px_rgba(0,0,0,0.3)] hover:shadow-[0_8px_25px_-4px_rgba(212,165,90,0.7),0_4px_16px_rgba(0,0,0,0.4)]"
+                            }`}
                           >
                             {/* Shimmer light effect passing on hover */}
                             <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/40 to-transparent -translate-x-full group-hover/btn:translate-x-full transition-transform duration-700 pointer-events-none" />
                             
                             <span className="relative z-10 drop-shadow-sm">
-                              {slides[currentIndex].buttonText || "Explorar Colección"}
+                              {slides[currentIndex].buttonText || (isNavidad ? "Explorar productos" : "Explorar Colección")}
                             </span>
 
                             <span className="relative z-10 w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-black/15 flex items-center justify-center shrink-0 transition-all duration-300 group-hover/btn:bg-black/25 group-hover/btn:translate-x-1 shadow-inner">
-                              <ArrowRight className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-[#050B1A] transition-transform duration-300 group-hover/btn:translate-x-0.5" />
+                              <ArrowRight className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-[#FAF9F5] transition-transform duration-300 group-hover/btn:translate-x-0.5" />
                             </span>
                           </button>
                         )}

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { X, ShoppingCart, MessageSquare, ShieldCheck, Truck, RefreshCw, ChevronLeft, ChevronRight, AlertCircle, Share2, Maximize2, Minimize2, ZoomIn, ZoomOut, Scan, Cpu, Wrench, Clock, Calendar, Home, Ruler, Palette, Sun, MapPin, Package, CheckCircle2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { Product, SiteSettings, is3DProduct, isGenericSize, isGenericColor } from "../types";
+import { Product, SiteSettings, is3DProduct, isGenericSize, isGenericColor, getProductAvailableStock, getVariantAvailableStock, isProductInStock } from "../types";
 import ProductCard from "./ProductCard";
 import ImageWatermark from "./ImageWatermark";
 
@@ -158,10 +158,10 @@ export default function ProductDetails({
     if (selectedColor) {
       // Check if this specific combination has stock > 0
       const v = variants.find(v => v.size === sz && v.color === selectedColor);
-      return v ? v.stock > 0 : false;
+      return v ? getVariantAvailableStock(v) > 0 : false;
     } else {
       // No color selected: check if this size has ANY variant with stock > 0
-      return variants.some(v => v.size === sz && v.stock > 0);
+      return variants.some(v => v.size === sz && getVariantAvailableStock(v) > 0);
     }
   };
 
@@ -173,23 +173,30 @@ export default function ProductDetails({
     if (selectedSize) {
       // Check if this specific combination has stock > 0
       const v = variants.find(v => v.size === selectedSize && v.color === col);
-      return v ? v.stock > 0 : false;
+      return v ? getVariantAvailableStock(v) > 0 : false;
     } else {
       // No size selected: check if this color has ANY variant with stock > 0
-      return variants.some(v => v.color === col && v.stock > 0);
+      return variants.some(v => v.color === col && getVariantAvailableStock(v) > 0);
     }
   };
 
-  // Pre-initialize selectors (only auto-select if there is exactly 1 option or if selector is hidden)
+  // Find first variant in stock to provide smart defaults
+  const firstInStockVariant = hasVariants ? variants.find(v => getVariantAvailableStock(v) > 0) : null;
+
+  // Pre-initialize selectors with priority to in-stock variants
   const [selectedSize, setSelectedSize] = useState(() => {
     if (is3D) return sizes.includes("PLA") ? "PLA" : (sizes[0] || "");
     if (!shouldShowSizes) return sizes[0] || "";
-    return sizes.length === 1 ? sizes[0] : "";
+    if (sizes.length === 1) return sizes[0];
+    if (firstInStockVariant?.size && sizes.includes(firstInStockVariant.size)) return firstInStockVariant.size;
+    return "";
   });
 
   const [selectedColor, setSelectedColor] = useState(() => {
     if (!shouldShowColors) return colors[0] || "";
-    return colors.length === 1 ? colors[0] : "";
+    if (colors.length === 1) return colors[0];
+    if (firstInStockVariant?.color && colors.includes(firstInStockVariant.color)) return firstInStockVariant.color;
+    return "";
   });
 
   const [quantity, setQuantity] = useState(1);
@@ -407,7 +414,7 @@ export default function ProductDetails({
       // Both size and color selected: exact match only
       const exactMatch = variants.find(v => v.size === selectedSize && v.color === selectedColor);
       if (exactMatch) {
-        currentStock = exactMatch.stock;
+        currentStock = getVariantAvailableStock(exactMatch);
         currentStockPinamar = exactMatch.stockPinamar !== undefined ? exactMatch.stockPinamar : exactMatch.stock;
         currentStockMontevideo = exactMatch.stockMontevideo !== undefined ? exactMatch.stockMontevideo : 0;
         dynamicPrice = typeof exactMatch.price === "number" && exactMatch.price > 0
@@ -425,7 +432,7 @@ export default function ProductDetails({
       // Only size selected: sum stock of all colors of this size
       const matchingVars = variants.filter(v => v.size === selectedSize);
       if (matchingVars.length > 0) {
-        currentStock = matchingVars.reduce((sum, v) => sum + v.stock, 0);
+        currentStock = matchingVars.reduce((sum, v) => sum + getVariantAvailableStock(v), 0);
         currentStockPinamar = matchingVars.reduce((sum, v) => sum + (v.stockPinamar !== undefined ? v.stockPinamar : v.stock), 0);
         currentStockMontevideo = matchingVars.reduce((sum, v) => sum + (v.stockMontevideo !== undefined ? v.stockMontevideo : 0), 0);
         // Use price of first matching variant as representative dynamic price
@@ -445,7 +452,7 @@ export default function ProductDetails({
       // Only color selected: sum stock of all sizes of this color
       const matchingVars = variants.filter(v => v.color === selectedColor);
       if (matchingVars.length > 0) {
-        currentStock = matchingVars.reduce((sum, v) => sum + v.stock, 0);
+        currentStock = matchingVars.reduce((sum, v) => sum + getVariantAvailableStock(v), 0);
         currentStockPinamar = matchingVars.reduce((sum, v) => sum + (v.stockPinamar !== undefined ? v.stockPinamar : v.stock), 0);
         currentStockMontevideo = matchingVars.reduce((sum, v) => sum + (v.stockMontevideo !== undefined ? v.stockMontevideo : 0), 0);
         const representative = matchingVars[0];
@@ -462,7 +469,7 @@ export default function ProductDetails({
       }
     } else {
       // Neither size nor color selected yet: sum all variants stock
-      currentStock = variants.reduce((sum, v) => sum + v.stock, 0);
+      currentStock = variants.reduce((sum, v) => sum + getVariantAvailableStock(v), 0);
       currentStockPinamar = variants.reduce((sum, v) => sum + (v.stockPinamar !== undefined ? v.stockPinamar : v.stock), 0);
       currentStockMontevideo = variants.reduce((sum, v) => sum + (v.stockMontevideo !== undefined ? v.stockMontevideo : 0), 0);
       dynamicPrice = product.price;
