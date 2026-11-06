@@ -431,29 +431,35 @@ function recalculateComboStocks(productsList: Product[]): Product[] {
 }
 
 export default function App() {
-  // Store state loaded from api
-  const [store, setStoreRaw] = useState<ShopState>({
-    products: [],
-    categories: ["Ropa", "Artículos electrónicos", "Accesorios", "Hogar"],
-    dbCategories: [
-      { id: "ropa", nombre: "Ropa", icono: "Shirt", orden: 1, active: true },
-      { id: "electronica", nombre: "Artículos electrónicos", icono: "Smartphone", orden: 2, active: true },
-      { id: "accesorios", nombre: "Accesorios", icono: "Sparkles", orden: 3, active: true },
-      { id: "hogar", nombre: "Hogar", icono: "Home", orden: 4, active: true }
-    ],
-    dbSubcategories: [
-      { id: "hombre", nombre: "Hombre", categoria_id: "ropa" },
-      { id: "mujer", nombre: "Mujer", categoria_id: "ropa" },
-      { id: "invierno", nombre: "Invierno", categoria_id: "ropa" },
-      { id: "celulares", nombre: "Celulares", categoria_id: "electronica" },
-      { id: "audio", nombre: "Audio", categoria_id: "electronica" },
-      { id: "pc", nombre: "PC y accesorios", categoria_id: "electronica" },
-      { id: "mochilas", nombre: "Mochilas", categoria_id: "accesorios" },
-      { id: "lentes", nombre: "Gafas de Sol", categoria_id: "accesorios" },
-      { id: "decoracion", nombre: "Decoración", categoria_id: "hogar" },
-      { id: "organizacion", nombre: "Organización", categoria_id: "hogar" }
-    ],
-    settings: DEFAULT_SETTINGS
+  // Store state loaded from api with cached theme support to prevent color flicker on startup
+  const [store, setStoreRaw] = useState<ShopState>(() => {
+    let cachedTheme: string | undefined = undefined;
+    try {
+      cachedTheme = localStorage.getItem("juem_active_theme") || undefined;
+    } catch {}
+    return {
+      products: [],
+      categories: ["Ropa", "Artículos electrónicos", "Accesorios", "Hogar"],
+      dbCategories: [
+        { id: "ropa", nombre: "Ropa", icono: "Shirt", orden: 1, active: true },
+        { id: "electronica", nombre: "Artículos electrónicos", icono: "Smartphone", orden: 2, active: true },
+        { id: "accesorios", nombre: "Accesorios", icono: "Sparkles", orden: 3, active: true },
+        { id: "hogar", nombre: "Hogar", icono: "Home", orden: 4, active: true }
+      ],
+      dbSubcategories: [
+        { id: "hombre", nombre: "Hombre", categoria_id: "ropa" },
+        { id: "mujer", nombre: "Mujer", categoria_id: "ropa" },
+        { id: "invierno", nombre: "Invierno", categoria_id: "ropa" },
+        { id: "celulares", nombre: "Celulares", categoria_id: "electronica" },
+        { id: "audio", nombre: "Audio", categoria_id: "electronica" },
+        { id: "pc", nombre: "PC y accesorios", categoria_id: "electronica" },
+        { id: "mochilas", nombre: "Mochilas", categoria_id: "accesorios" },
+        { id: "lentes", nombre: "Gafas de Sol", categoria_id: "accesorios" },
+        { id: "decoracion", nombre: "Decoración", categoria_id: "hogar" },
+        { id: "organizacion", nombre: "Organización", categoria_id: "hogar" }
+      ],
+      settings: cachedTheme ? { ...DEFAULT_SETTINGS, activeTheme: cachedTheme } : DEFAULT_SETTINGS
+    };
   });
 
   const setStore = (val: ShopState | ((prev: ShopState) => ShopState)) => {
@@ -468,8 +474,8 @@ export default function App() {
 
   // Client statuses
   const [loading, setLoading] = useState(true);
-  const [loadingProgress, setLoadingProgress] = useState(0);
   const [showSplash, setShowSplash] = useState(true);
+  const [splashProgress, setSplashProgress] = useState(15);
   const [saving, setSaving] = useState(false);
   const [syncStatus, setSyncStatus] = useState<"synced" | "syncing" | "error">("synced");
   const [errorMessage, setErrorMessage] = useState("");
@@ -2751,39 +2757,33 @@ export default function App() {
   const [googlePlaceSearchLoading, setGooglePlaceSearchLoading] = useState(false);
   const [googlePlaceSearchError, setGooglePlaceSearchError] = useState("");
 
-  // Loading progress & Splash Screen controls
+  // Cinematic Splash Screen - single smooth progression on entry
   useEffect(() => {
-    let timer: any;
-    if (loading) {
-      setLoadingProgress(0);
-      timer = setInterval(() => {
-        setLoadingProgress(prev => {
-          if (prev >= 96) {
-            clearInterval(timer);
-            return 96;
-          }
-          const diff = 100 - prev;
-          // Progress simulation climbs quickly initially, then slows down naturally
-          const step = Math.max(1, Math.floor(Math.random() * (diff * 0.4)));
-          return prev + step;
-        });
-      }, 50);
-    } else {
-      setLoadingProgress(100);
-    }
-    return () => clearInterval(timer);
-  }, [loading]);
+    if (!showSplash) return;
+    const interval = setInterval(() => {
+      setSplashProgress(prev => {
+        if (prev >= 94) {
+          clearInterval(interval);
+          return 94;
+        }
+        const diff = 100 - prev;
+        const step = Math.max(2, Math.floor(Math.random() * (diff * 0.35)));
+        return prev + step;
+      });
+    }, 60);
+    return () => clearInterval(interval);
+  }, [showSplash]);
 
+  // When initial loading finishes (data is fetched), complete progress and smoothly dismiss splash screen
   useEffect(() => {
-    if (loadingProgress === 100) {
-      const t = setTimeout(() => {
+    if (!loading && showSplash) {
+      setSplashProgress(100);
+      const timer = setTimeout(() => {
         setShowSplash(false);
-      }, 350);
-      return () => clearTimeout(t);
-    } else {
-      setShowSplash(true);
+      }, 450);
+      return () => clearTimeout(timer);
     }
-  }, [loadingProgress]);
+  }, [loading, showSplash]);
 
   // Fetch initial data and setup routing listeners
   useEffect(() => {
@@ -3736,8 +3736,10 @@ export default function App() {
           data.settings.logoText = "JUEM";
         }
         data.settings = { ...DEFAULT_SETTINGS, ...data.settings };
-        if (!data.settings.activeTheme) {
-          data.settings.activeTheme = "navidad";
+        if (data.settings.activeTheme) {
+          try {
+            localStorage.setItem("juem_active_theme", data.settings.activeTheme);
+          } catch {}
         }
       }
       setStore(data);
@@ -5400,16 +5402,16 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
       {/* Sutil nieve animada elegante para el Tema Navideño */}
       {isChristmasTheme && (
         <div className="snow-container" aria-hidden="true">
-          {[...Array(26)].map((_, i) => (
+          {[...Array(14)].map((_, i) => (
             <div
               key={i}
               className="snowflake"
               style={{
-                left: `${(i * 3.8 + (i % 3) * 2.3) % 98}%`,
-                animationDuration: `${7 + (i % 6) * 2.2}s`,
-                animationDelay: `${(i * 0.4) % 6}s`,
-                fontSize: `${11 + (i % 4) * 4}px`,
-                opacity: 0.18 + (i % 3) * 0.22,
+                left: `${(i * 7.1 + 2.5) % 96}%`,
+                animationDuration: `${8 + (i % 5) * 1.8}s`,
+                animationDelay: `${(i * 0.7) % 5}s`,
+                fontSize: `${11 + (i % 3) * 3}px`,
+                opacity: 0.22 + (i % 3) * 0.12,
               }}
             >
               ❄
@@ -5417,25 +5419,27 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
           ))}
         </div>
       )}
+
       {/* Cinematic Splash Screen with Fade-out exit animation */}
       <AnimatePresence mode="wait">
         {showSplash && (
           <motion.div
-            key="splash-screen"
+            key="juem-splash-screen"
             initial={{ opacity: 1 }}
-            exit={{ opacity: 0, scale: 1.05 }}
-            transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
-            className="fixed inset-0 z-[999999] bg-[#050B1A] flex flex-col items-center justify-center overflow-hidden pointer-events-auto"
+            exit={{ opacity: 0, scale: 1.03 }}
+            transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
+            style={{ backgroundColor: "#050B1A", color: "#F4EAD7" }}
+            className="fixed inset-0 z-[999999] flex flex-col items-center justify-center overflow-hidden pointer-events-auto select-none"
           >
             {/* Ambient background glows */}
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] h-[350px] bg-[#D4A55A]/5 rounded-full blur-[120px] pointer-events-none animate-pulse" />
-            <div className="absolute top-1/4 left-1/3 w-[250px] h-[250px] bg-blue-500/5 rounded-full blur-[100px] pointer-events-none" />
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[380px] h-[380px] bg-[#D4A55A]/10 rounded-full blur-[130px] pointer-events-none animate-pulse" />
+            <div className="absolute top-1/4 left-1/3 w-[260px] h-[260px] bg-blue-500/5 rounded-full blur-[110px] pointer-events-none" />
 
             <div className="flex flex-col items-center z-10 max-w-xs w-full px-6 text-center">
               {/* Logo Animation */}
               <div className="relative mb-6 flex justify-center items-center">
                 {/* Outer glowing gold aura */}
-                <div className="absolute inset-0 bg-[#D4A55A]/10 rounded-full blur-xl animate-pulse" />
+                <div className="absolute inset-0 bg-[#D4A55A]/15 rounded-full blur-xl animate-pulse" />
                 
                 {/* Circular rotating progress ring */}
                 <svg className="w-24 h-24 transform -rotate-90">
@@ -5443,69 +5447,71 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                     cx="48"
                     cy="48"
                     r="42"
-                    className="stroke-zinc-900/50 fill-none"
-                    strokeWidth="2"
+                    stroke="#1A2238"
+                    className="fill-none"
+                    strokeWidth="2.5"
                   />
                   <motion.circle
                     cx="48"
                     cy="48"
                     r="42"
-                    className="stroke-[#D4A55A] fill-none"
-                    strokeWidth="3"
+                    stroke="#D4A55A"
+                    className="fill-none"
+                    strokeWidth="3.5"
                     strokeDasharray="263.89"
                     initial={{ strokeDashoffset: 263.89 }}
-                    animate={{ strokeDashoffset: 263.89 - (263.89 * loadingProgress) / 100 }}
-                    transition={{ duration: 0.2, ease: "easeOut" }}
+                    animate={{ strokeDashoffset: 263.89 - (263.89 * splashProgress) / 100 }}
+                    transition={{ duration: 0.25, ease: "easeOut" }}
                     strokeLinecap="round"
-                    style={{ filter: "drop-shadow(0 0 4px rgba(212,165,90,0.4))" }}
+                    style={{ filter: "drop-shadow(0 0 6px rgba(212,165,90,0.55))" }}
                   />
                 </svg>
 
                 {/* Centered Moon Logo */}
                 <div className="absolute inset-0 flex items-center justify-center">
                   <motion.div
-                    animate={{ scale: [0.96, 1.04, 0.96] }}
-                    transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-                    className="w-14 h-14 bg-zinc-950/90 rounded-full border border-[#D4A55A]/30 flex items-center justify-center shadow-2xl shadow-black"
+                    animate={{ scale: [0.97, 1.03, 0.97] }}
+                    transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+                    className="w-14 h-14 bg-[#0B1730] rounded-full border border-[#D4A55A]/35 flex items-center justify-center shadow-2xl shadow-black"
                   >
-                    <Moon className="h-7 w-7 text-[#D4A55A] drop-shadow-[0_0_8px_rgba(212,165,90,0.6)]" />
+                    <Moon className="h-7 w-7 text-[#D4A55A] drop-shadow-[0_0_8px_rgba(212,165,90,0.7)]" />
                   </motion.div>
                 </div>
               </div>
 
-              {/* Site Title / Branding */}
+              {/* Site Title / Official Branding */}
               <motion.div 
-                initial={{ opacity: 0, y: 10 }}
+                initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1 }}
+                transition={{ delay: 0.1, duration: 0.4 }}
               >
-                <h2 className="font-serif text-3xl font-bold tracking-[0.2em] text-[#F4EAD7] uppercase drop-shadow-sm mb-1.5">
+                <h2 className="font-serif text-3xl sm:text-4xl font-bold tracking-[0.22em] text-[#F4EAD7] uppercase drop-shadow-sm mb-1.5">
                   JUEM
                 </h2>
-                <p className="text-[10px] font-mono tracking-widest text-[#D4A55A] uppercase opacity-80">
-                  Diseño 3D & Moda Invierno
+                <p className="text-[10px] font-sans font-medium tracking-[0.2em] text-[#E6BF76]/90 uppercase">
+                  Soluciones que se adaptan a vos
                 </p>
               </motion.div>
 
               {/* Loading status details & mini slider */}
-              <div className="w-full mt-10 space-y-3">
-                <div className="h-[2px] bg-zinc-900 rounded-full overflow-hidden w-full relative">
+              <div className="w-full mt-8 space-y-2.5">
+                <div className="h-[2.5px] bg-[#1A2238] rounded-full overflow-hidden w-full relative">
                   <div 
-                    className="h-full bg-gradient-to-r from-[#D4A55A]/50 to-[#D4A55A] rounded-full transition-all duration-150"
-                    style={{ width: `${loadingProgress}%` }}
+                    className="h-full bg-gradient-to-r from-[#D4A55A]/60 via-[#E6BF76] to-[#D4A55A] rounded-full transition-all duration-200"
+                    style={{ width: `${splashProgress}%` }}
                   />
                 </div>
                 
-                <div className="flex justify-between items-center text-[10px] font-mono text-zinc-500">
-                  <span className="animate-pulse">Cargando base de datos...</span>
-                  <span className="text-[#D4A55A] font-bold">{Math.round(loadingProgress)}%</span>
+                <div className="flex justify-between items-center text-[10px] font-mono text-[#D8D2C4]/70">
+                  <span className="animate-pulse">Iniciando experiencia...</span>
+                  <span className="text-[#E6BF76] font-bold">{Math.round(splashProgress)}%</span>
                 </div>
               </div>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
-      
+
       {/* Dynamic theme style overrides */}
       <ThemeStyles settings={store.settings} />
 
@@ -8365,13 +8371,13 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                 )}
                               </div>
                               <p className="text-[10px] text-zinc-300 leading-snug">
-                                Verde pino, rojo rubí festivo y sutil nieve animada para toda la web.
+                                Blanco marfil, dorado champagne, acentos verde pino y detalles borgoña.
                               </p>
                               <div className="flex items-center gap-1.5 pt-1">
-                                <span className="w-3 h-3 rounded-full bg-[#E11D48] border border-black/30 shadow-xs" title="Rojo Rubí" />
-                                <span className="w-3 h-3 rounded-full bg-[#10B981] border border-black/30 shadow-xs" title="Verde Pino" />
-                                <span className="w-3 h-3 rounded-full bg-[#07150F] border border-zinc-700 shadow-xs" title="Fondo Verde Bosque" />
-                                <span className="w-3 h-3 rounded-full bg-[#FFF7ED] border border-black/30 shadow-xs" title="Nieve Cálida" />
+                                <span className="w-3 h-3 rounded-full bg-[#FAF9F5] border border-black/30 shadow-xs" title="Fondo Blanco Marfil" />
+                                <span className="w-3 h-3 rounded-full bg-[#D4AF70] border border-black/30 shadow-xs" title="Dorado Champagne" />
+                                <span className="w-3 h-3 rounded-full bg-[#285744] border border-zinc-700 shadow-xs" title="Verde Pino" />
+                                <span className="w-3 h-3 rounded-full bg-[#9E4148] border border-black/30 shadow-xs" title="Rojo Borgoña" />
                               </div>
                             </div>
                             <button
@@ -8379,19 +8385,22 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                               onClick={() => {
                                 const updated = {
                                   ...editingSettings,
-                                  primaryColor: "#E11D48",
-                                  accentColor: "#10B981",
-                                  themeMode: "dark" as const,
-                                  activeTheme: "navidad"
+                                  primaryColor: "#D4AF70",
+                                  accentColor: "#285744",
+                                  themeMode: "light" as const,
+                                  activeTheme: "navidad",
+                                  promotionBannerBgColor: "#FAF9F5",
+                                  promotionBannerTextColor: "#285744"
                                 };
+                                try { localStorage.setItem("juem_active_theme", "navidad"); } catch {}
                                 setEditingSettings(updated);
                                 setStore(prev => ({ ...prev, settings: updated }));
-                                showAdminToast("¡Tema Navideño Mágico aplicado a toda la tienda! 🎄 Recuerda hacer clic en 'Guardar Toda la Personalización'.", "success");
+                                showAdminToast("¡Tema Navideño Luminoso aplicado a toda la tienda! 🎄 Recuerda hacer clic en 'Guardar Toda la Personalización'.", "success");
                               }}
                               className={`w-full py-2 px-3 rounded-xl text-[10px] font-extrabold uppercase tracking-wider transition-all duration-200 cursor-pointer flex items-center justify-center gap-1.5 ${
                                 isChristmasTheme
-                                  ? "bg-rose-600 text-white shadow-md shadow-rose-900/40"
-                                  : "bg-rose-500/15 text-rose-300 border border-rose-500/30 hover:bg-rose-600 hover:text-white"
+                                  ? "bg-[#D4AF70] text-[#1E1D1B] font-black shadow-md shadow-amber-900/40"
+                                  : "bg-[#D4AF70]/15 text-[#D4AF70] border border-[#D4AF70]/30 hover:bg-[#D4AF70] hover:text-[#1E1D1B]"
                               }`}
                             >
                               <span>🎄 {isChristmasTheme ? "Tema Aplicado" : "Activar Navidad"}</span>
@@ -8435,8 +8444,11 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                   primaryColor: "#D4A55A",
                                   accentColor: "#E6BF76",
                                   themeMode: "dark" as const,
-                                  activeTheme: "aurea"
+                                  activeTheme: "aurea",
+                                  promotionBannerBgColor: "#060b1a",
+                                  promotionBannerTextColor: "#E6BF76"
                                 };
+                                try { localStorage.setItem("juem_active_theme", "aurea"); } catch {}
                                 setEditingSettings(updated);
                                 setStore(prev => ({ ...prev, settings: updated }));
                                 showAdminToast("¡Paleta 'Áurea Nocturna Pro' aplicada a la tienda! ⚜️ Recuerda hacer clic en 'Guardar Toda la Personalización'.", "success");
@@ -8490,6 +8502,7 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                   themeMode: "dark" as const,
                                   activeTheme: "juem"
                                 };
+                                try { localStorage.setItem("juem_active_theme", "juem"); } catch {}
                                 setEditingSettings(updated);
                                 setStore(prev => ({ ...prev, settings: updated }));
                                 showAdminToast("¡Tema 'Colores Juem' aplicado a la tienda! 🎨 Recuerda hacer clic en 'Guardar Toda la Personalización'.", "success");

@@ -429,46 +429,55 @@ img {
   background: rgba(250, 249, 245, 0.9);
 }
 
-/* 11. EFECTO DE COPOS DE NIEVE DORADOS / LUMINOSOS */
+/* 11. EFECTO DE COPOS DE NIEVE ULTRA-LIVIANO (0% CPU, 100% GPU COMPOSITOR) */
 .snow-container {
   position: fixed;
-  top: 0;
-  left: 0;
+  inset: 0;
   width: 100vw;
   height: 100vh;
   pointer-events: none;
-  z-index: 40;
+  z-index: 35;
   overflow: hidden;
+  contain: strict;
+  transform: translateZ(0);
 }
 
-@keyframes snowfall {
+@keyframes snowfall-gpu {
   0% {
-    transform: translateY(-20px) translateX(0);
-    opacity: 0;
-  }
-  15% {
-    opacity: 0.65;
-  }
-  85% {
-    opacity: 0.65;
+    transform: translate3d(0, -20px, 0);
   }
   100% {
-    transform: translateY(105vh) translateX(25px);
-    opacity: 0.15;
+    transform: translate3d(24px, 106vh, 0);
   }
 }
 
 .snowflake {
   position: absolute;
-  top: -25px;
+  top: -20px;
   color: #D4AF70;
-  opacity: 0.35;
-  text-shadow: 0 0 5px rgba(233, 213, 166, 0.7);
+  opacity: 0.32;
   user-select: none;
-  animation-name: snowfall;
+  animation-name: snowfall-gpu;
   animation-timing-function: linear;
   animation-iteration-count: infinite;
-  will-change: transform, opacity;
+  will-change: transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  /* Eliminamos text-shadow para evitar repintado continuo en GPUs móviles */
+}
+
+/* En celulares (pantallas pequeñas), ocultamos más de la mitad para consumo de batería ínfimo */
+@media (max-width: 768px) {
+  .snowflake:nth-child(n+8) {
+    display: none !important;
+  }
+}
+
+/* Respeto estricto a modo de ahorro de energía / movimiento reducido */
+@media (prefers-reduced-motion: reduce) {
+  .snow-container {
+    display: none !important;
+  }
 }
 
 
