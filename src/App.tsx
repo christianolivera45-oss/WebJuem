@@ -6136,8 +6136,7 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
 
                 if (slideLink.startsWith("category:")) {
                   const catName = slideLink.replace("category:", "");
-                  setSelectedCategory(catName);
-                  setSelectedSubcategory("all");
+                  navigateToProductRoute(catName, "all");
                   setTimeout(() => {
                     const el = document.getElementById("catalog-view");
                     if (el) el.scrollIntoView({ behavior: "smooth" });
@@ -6148,9 +6147,8 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                   if (subcat) {
                     const catObj = (store.dbCategories || []).find(c => c.id === subcat.categoria_id);
                     if (catObj) {
-                      setSelectedCategory(catObj.nombre);
+                      navigateToProductRoute(catObj.id, subId);
                     }
-                    setSelectedSubcategory(subId);
                     setTimeout(() => {
                       const el = document.getElementById("catalog-view");
                       if (el) el.scrollIntoView({ behavior: "smooth" });
