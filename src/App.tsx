@@ -3499,9 +3499,12 @@ export default function App() {
       canonical.setAttribute("rel", "canonical");
       document.getElementsByTagName("head")[0].appendChild(canonical);
     }
+    const canonicalBase = (typeof window !== "undefined" && window.location.host.includes("juem.com.uy"))
+      ? "https://juem.com.uy"
+      : (typeof window !== "undefined" ? `${window.location.protocol}//${window.location.host}` : "https://juem.com.uy");
     let currentUrl = "";
     if (selectedProduct) {
-      currentUrl = `${window.location.protocol}//${window.location.host}/producto/${generateSlug(selectedProduct.name)}`;
+      currentUrl = `${canonicalBase}/producto/${generateSlug(selectedProduct.name)}`;
     } else {
       let path = "/";
       if (selectedCategory && selectedCategory !== "todos") {
@@ -3515,7 +3518,7 @@ export default function App() {
           }
         }
       }
-      currentUrl = `${window.location.protocol}//${window.location.host}${path}`;
+      currentUrl = `${canonicalBase}${path === "/" ? "/" : path}`;
     }
     canonical.setAttribute("href", currentUrl);
 
@@ -4266,9 +4269,23 @@ export default function App() {
     setNewProductErrors({});
 
     const comboStocks = newProduct.isCombo ? getComboDynamicStocks(newProduct.comboComponents || [], newProduct.variants || []) : { stockPinamar: 0, stockMontevideo: 0, stockTotal: 0, updatedVariants: [] };
-    const finalStockPinamar = newProduct.isCombo ? comboStocks.stockPinamar : Number(newProduct.stockPinamar || 0);
-    const finalStockMontevideo = newProduct.isCombo ? comboStocks.stockMontevideo : Number(newProduct.stockMontevideo || 0);
-    const finalStockTotal = newProduct.isCombo ? comboStocks.stockTotal : Math.floor(Number(newProduct.stock ?? 0));
+    const preparedVariants = newProduct.isCombo 
+      ? comboStocks.updatedVariants 
+      : (newProduct.variants && newProduct.variants.length > 0)
+        ? newProduct.variants.map(v => ({
+            ...v,
+            stockPinamar: Number(v.stockPinamar || 0),
+            stockMontevideo: 0,
+            stock: Number(v.stockPinamar || 0)
+          }))
+        : [];
+    const finalStockPinamar = newProduct.isCombo 
+      ? comboStocks.stockPinamar 
+      : (preparedVariants.length > 0 
+          ? preparedVariants.reduce((sum, v) => sum + v.stockPinamar, 0)
+          : Number(newProduct.stockPinamar || 0));
+    const finalStockMontevideo = newProduct.isCombo ? comboStocks.stockMontevideo : 0;
+    const finalStockTotal = newProduct.isCombo ? comboStocks.stockTotal : finalStockPinamar;
 
     const created: Product = {
       id: "prod-" + Date.now(),
@@ -4291,7 +4308,7 @@ export default function App() {
       createdAt: new Date().toISOString(),
       sizes: newProduct.sizes || [],
       colors: newProduct.colors || [],
-      variants: newProduct.isCombo ? comboStocks.updatedVariants : (newProduct.variants || []),
+      variants: preparedVariants,
       imagenes: newProduct.imagenes || [],
       isCombo: !!newProduct.isCombo,
       comboComponents: newProduct.comboComponents || [],
@@ -12134,11 +12151,12 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                             <span>Almacenes y Stock por Sucursal</span>
                           </h4>
 
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                            {/* Stock Pinamar */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                            {/* Stock Pinamar (Depósito Central) */}
                             <div className="space-y-1.5">
-                              <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest">
-                                Stock Pinamar
+                              <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest flex items-center justify-between">
+                                <span>Stock Pinamar (Depósito Central)</span>
+                                <span className="text-[8px] bg-amber-500/10 text-[#E6BF76] px-1.5 py-0.5 rounded font-bold uppercase border border-[#D4A55A]/20">Ingreso Exclusivo</span>
                               </label>
                               {newProduct.isCombo ? (
                                 <div className="w-full px-4 py-3.5 bg-emerald-500/5 border border-emerald-500/20 rounded-xl text-xs font-mono font-bold text-emerald-400 flex flex-col justify-center min-h-[46px]">
@@ -12161,76 +12179,30 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                       const rem = numVal % count;
                                       nextVariants = nextVariants.map((v, idx) => {
                                         const sp = base + (idx < rem ? 1 : 0);
-                                        const sm = v.stockMontevideo !== undefined ? Number(v.stockMontevideo) : 0;
                                         return {
                                           ...v,
                                           stockPinamar: sp,
-                                          stock: sp + sm
+                                          stockMontevideo: 0,
+                                          stock: sp
                                         };
                                       });
                                     }
                                     setNewProduct(updateProductCalculations({ 
                                       ...newProduct, 
                                       stockPinamar: val as any,
+                                      stockMontevideo: 0,
                                       variants: nextVariants 
                                     }));
                                   }}
                                   className="w-full px-4 py-3 bg-[#050B1A] border border-zinc-800 hover:border-zinc-750 focus:border-[#D4A55A] rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#D4A55A]/20 text-[#F4EAD7] font-mono font-bold transition-all duration-300"
                                 />
                               )}
+                              <p className="text-[9.5px] text-zinc-400 leading-relaxed mt-1">
+                                ℹ️ Toda la mercadería nueva ingresa por Pinamar. Montevideo inicia en 0u y se abastece posteriormente mediante transferencias de stock.
+                              </p>
                               {(newProduct.variants && newProduct.variants.length > 0 && !newProduct.isCombo) && (
                                 <p className="text-[9px] text-[#D4A55A] font-bold leading-tight mt-1">
-                                  ⚠️ Modificar esto redistribuirá proporcionalmente entre las {newProduct.variants.length} variantes.
-                                </p>
-                              )}
-                            </div>
-
-                            {/* Stock Montevideo */}
-                            <div className="space-y-1.5">
-                              <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest">
-                                Stock Montevideo
-                              </label>
-                              {newProduct.isCombo ? (
-                                <div className="w-full px-4 py-3.5 bg-emerald-500/5 border border-emerald-500/20 rounded-xl text-xs font-mono font-bold text-emerald-400 flex flex-col justify-center min-h-[46px]">
-                                  <span className="text-sm">{getComboDynamicStocks(newProduct.comboComponents || [], newProduct.variants || []).stockMontevideo}</span>
-                                  <span className="text-[9px] font-semibold text-zinc-500 uppercase tracking-wider mt-0.5 font-sans">Suma auto de componentes</span>
-                                </div>
-                              ) : (
-                                <input
-                                  type="number"
-                                  min="0"
-                                  placeholder="Ej: 5"
-                                  value={newProduct.stockMontevideo ?? ""}
-                                  onChange={(e) => {
-                                    const val = e.target.value === "" ? "" : Math.round(Number(e.target.value));
-                                    const numVal = val === "" ? 0 : Number(val);
-                                    let nextVariants = newProduct.variants || [];
-                                    if (nextVariants.length > 0) {
-                                      const count = nextVariants.length;
-                                      const base = Math.floor(numVal / count);
-                                      const rem = numVal % count;
-                                      nextVariants = nextVariants.map((v, idx) => {
-                                        const sp = v.stockPinamar !== undefined ? Number(v.stockPinamar) : 0;
-                                        const sm = base + (idx < rem ? 1 : 0);
-                                        return {
-                                          ...v,
-                                          stockMontevideo: sm,
-                                          stock: sp + sm
-                                        };
-                                      });
-                                    }
-                                    setNewProduct(updateProductCalculations({ 
-                                      ...newProduct, 
-                                      stockMontevideo: val as any,
-                                      variants: nextVariants 
-                                    }));
-                                  }}
-                                  className="w-full px-4 py-3 bg-[#050B1A] border border-zinc-800 hover:border-zinc-750 focus:border-[#D4A55A] rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#D4A55A]/20 text-[#F4EAD7] font-mono font-bold transition-all duration-300"
-                                />
-                              )}
-                              {(newProduct.variants && newProduct.variants.length > 0 && !newProduct.isCombo) && (
-                                <p className="text-[9px] text-[#D4A55A] font-bold leading-tight mt-1">
-                                  ⚠️ Modificar esto redistribuirá proporcionalmente entre las {newProduct.variants.length} variantes.
+                                  ⚠️ Modificar esto asignará el stock a Pinamar entre las {newProduct.variants.length} variantes.
                                 </p>
                               )}
                             </div>
@@ -12242,8 +12214,11 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                 <span className="text-[8px] bg-emerald-500/10 px-1.5 py-0.5 rounded font-bold uppercase text-emerald-400">auto</span>
                               </label>
                               <div className="w-full px-4 py-3.5 bg-emerald-500/5 border border-emerald-500/15 rounded-xl text-xs text-emerald-400 font-mono font-black select-none cursor-not-allowed flex items-center min-h-[46px]">
-                                {newProduct.isCombo ? getComboDynamicStocks(newProduct.comboComponents || [], newProduct.variants || []).stockTotal : (newProduct.stockTotalActual || 0)}
+                                {newProduct.isCombo ? getComboDynamicStocks(newProduct.comboComponents || [], newProduct.variants || []).stockTotal : (newProduct.stockPinamar || 0)}
                               </div>
+                              <p className="text-[9.5px] text-zinc-500 leading-relaxed mt-1">
+                                El stock total disponible para venta web equivale al stock centralizado en Pinamar.
+                              </p>
                             </div>
                           </div>
                         </div>
@@ -12841,33 +12816,30 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                             
                             const combined = [...(newProduct.variants || []), ...generated];
                             const totalPin = Number(newProduct.stockPinamar !== undefined ? newProduct.stockPinamar : 5);
-                            const totalMvd = Number(newProduct.stockMontevideo !== undefined ? newProduct.stockMontevideo : 0);
                             const count = combined.length;
                             
                             let distributedCombined = combined;
                             if (count > 0) {
                               const basePinPerVar = Math.floor(totalPin / count);
                               const remPin = totalPin % count;
-                              const baseMvdPerVar = Math.floor(totalMvd / count);
-                              const remMvd = totalMvd % count;
                               
                               distributedCombined = combined.map((v, idx) => {
                                 const sp = basePinPerVar + (idx < remPin ? 1 : 0);
-                                const sm = baseMvdPerVar + (idx < remMvd ? 1 : 0);
                                 return {
                                   ...v,
                                   stockPinamar: sp,
-                                  stockMontevideo: sm,
-                                  stock: sp + sm
+                                  stockMontevideo: 0,
+                                  stock: sp
                                 };
                               });
                             }
 
                             setNewProduct(updateProductCalculations({
                               ...newProduct,
+                              stockMontevideo: 0,
                               variants: distributedCombined
                             }));
-                            showAdminToast(`Se autogeneraron ${generated.length} combinaciones y se distribuyó el stock inicial de forma proporcional.`, "success");
+                            showAdminToast(`Se autogeneraron ${generated.length} combinaciones con stock centralizado en Pinamar.`, "success");
                           }}
                           className="text-[9px] px-3 py-1.5 bg-[#D4A55A] hover:bg-[#c39449] text-black font-black rounded-lg transition-all cursor-pointer self-start sm:self-center uppercase tracking-wider"
                         >
@@ -12875,7 +12847,7 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                         </button>
                       </div>
 
-                      <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 bg-[#0c1325] p-3 rounded-xl border border-zinc-800">
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 bg-[#0c1325] p-3 rounded-xl border border-zinc-800">
                         <div>
                           <label className="block text-[9px] text-zinc-400 font-bold uppercase tracking-wider mb-1">Talle</label>
                           <select
@@ -12920,10 +12892,6 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                           <label className="block text-[9px] text-zinc-400 font-bold uppercase tracking-wider mb-1">Stock Pinamar</label>
                           <input id="new-var-stock-pinamar" type="number" defaultValue="5" className="w-full text-xs bg-[#050B1A] border border-zinc-800 p-2 rounded-lg font-mono font-bold text-[#F4EAD7]" />
                         </div>
-                        <div>
-                          <label className="block text-[9px] text-zinc-400 font-bold uppercase tracking-wider mb-1">Stock Montevideo</label>
-                          <input id="new-var-stock-montevideo" type="number" defaultValue="0" className="w-full text-xs bg-[#050B1A] border border-zinc-800 p-2 rounded-lg font-mono font-bold text-[#F4EAD7]" />
-                        </div>
                         <div className="flex items-end">
                           <button
                             type="button"
@@ -12931,15 +12899,13 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                               const szEl = document.getElementById('new-var-size') as HTMLSelectElement;
                               const colEl = document.getElementById('new-var-color') as HTMLSelectElement;
                               const stkPinEl = document.getElementById('new-var-stock-pinamar') as HTMLInputElement;
-                              const stkMonEl = document.getElementById('new-var-stock-montevideo') as HTMLInputElement;
                               
-                              if (szEl && colEl && stkPinEl && stkMonEl) {
+                              if (szEl && colEl && stkPinEl) {
                                 const sz = szEl.value;
                                 const col = colEl.value;
                                 const baseCode = newProduct.codigo || getNextAutoSKU(store.products);
                                 const sku = getSmartVariantSku(baseCode, sz, col);
                                 const stkPin = Math.max(0, Math.floor(Number(stkPinEl.value || 0)));
-                                const stkMon = Math.max(0, Math.floor(Number(stkMonEl.value || 0)));
                                 
                                 const current = newProduct.variants || [];
                                 if (current.some(v => v.size === sz && v.color === col)) {
@@ -12953,13 +12919,14 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                   colorCode: col === "Negro" ? "#000000" : col === "Blanco" ? "#ffffff" : col === "Rojo" ? "#ef4444" : col === "Azul" ? "#3b82f6" : col === "Verde" ? "#22c55e" : col === "Gris" ? "#6b7280" : col === "Beige" ? "#f5f5dc" : col === "Rosa" ? "#f472b6" : "#9ca3af",
                                   sku: sku,
                                   stockPinamar: stkPin,
-                                  stockMontevideo: stkMon,
-                                  stock: stkPin + stkMon,
+                                  stockMontevideo: 0,
+                                  stock: stkPin,
                                   priceDelta: 0
                                 };
                                 const updated = [...current, newV];
                                 setNewProduct(updateProductCalculations({
                                   ...newProduct,
+                                  stockMontevideo: 0,
                                   variants: updated
                                 }));
                                 showAdminToast("Combinación añadida", "success");
@@ -12981,7 +12948,6 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                 <th className="p-2">Color / Tono</th>
                                 <th className="p-2">Código / SKU Variant</th>
                                 <th className="p-2">Stock Pinamar</th>
-                                <th className="p-2">Stock Montevideo</th>
                                 <th className="p-2">Total</th>
                                 <th className="p-2">Precio Diferente (Opcional)</th>
                                 <th className="p-2">Foto URL (Opcional)</th>
@@ -13013,38 +12979,20 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                         const nextArr = JSON.parse(JSON.stringify(newProduct.variants || []));
                                         const val = e.target.value;
                                         const sp = val === "" ? "" : Math.max(0, Math.floor(Number(val)));
-                                        const sm = nextArr[i].stockMontevideo !== undefined ? nextArr[i].stockMontevideo : 0;
                                         nextArr[i].stockPinamar = sp;
-                                        nextArr[i].stock = (sp === "" ? 0 : sp) + (sm === "" ? 0 : sm);
+                                        nextArr[i].stockMontevideo = 0;
+                                        nextArr[i].stock = (sp === "" ? 0 : sp);
                                         setNewProduct(updateProductCalculations({
                                           ...newProduct,
+                                          stockMontevideo: 0,
                                           variants: nextArr
                                         }));
                                       }}
                                       className="w-16 px-1.5 py-0.5 bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded font-mono font-bold text-xs outline-none text-slate-950 dark:text-zinc-50"
                                     />
                                   </td>
-                                  <td className="p-2">
-                                    <input
-                                      type="number"
-                                      value={v.stockMontevideo !== undefined ? v.stockMontevideo : 0}
-                                      onChange={(e) => {
-                                        const nextArr = JSON.parse(JSON.stringify(newProduct.variants || []));
-                                        const val = e.target.value;
-                                        const sp = nextArr[i].stockPinamar !== undefined ? nextArr[i].stockPinamar : nextArr[i].stock;
-                                        const sm = val === "" ? "" : Math.max(0, Math.floor(Number(val)));
-                                        nextArr[i].stockMontevideo = sm;
-                                        nextArr[i].stock = (sp === "" ? 0 : sp) + (sm === "" ? 0 : sm);
-                                        setNewProduct(updateProductCalculations({
-                                          ...newProduct,
-                                          variants: nextArr
-                                        }));
-                                      }}
-                                      className="w-16 px-1.5 py-0.5 bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded font-mono font-bold text-xs outline-none text-slate-950 dark:text-zinc-50"
-                                    />
-                                  </td>
-                                  <td className="p-2 font-mono font-bold text-zinc-500">
-                                    {v.stock}
+                                  <td className="p-2 font-mono font-bold text-zinc-400">
+                                    {v.stockPinamar !== undefined ? v.stockPinamar : v.stock}
                                   </td>
                                   <td className="p-2">
                                     <div className="flex items-center gap-1">

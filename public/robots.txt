@@ -1,4 +1,60 @@
-User-agent: *
-Allow: /
+# Robots.txt for Juem Mvd (https://juem.com.uy)
+# Optimizacion de presupuesto de rastreo (Crawl Budget) y prevencion de URLs duplicadas en Google Search Console
 
+User-agent: *
+
+# Permitir el rastreo de paginas principales canonicas y recursos estaticos
+Allow: /
+Allow: /producto/
+Allow: /assets/
+Allow: /favicon*
+Allow: /*.css$
+Allow: /*.js$
+Allow: /*.png$
+Allow: /*.jpg$
+Allow: /*.jpeg$
+Allow: /*.webp$
+Allow: /*.svg$
+
+# Bloquear rutas administrativas, privadas y transaccionales
+Disallow: /admin
+Disallow: /admin/
+Disallow: /api/
+Disallow: /checkout
+Disallow: /carrito
+Disallow: /pedido/
+Disallow: /login
+Disallow: /perfil
+
+# Evitar que los bots pierdan presupuesto de rastreo en variantes canonizadas, filtros y ordenamientos
+Disallow: /*?*sort=
+Disallow: /*?*orden=
+Disallow: /*?*order=
+Disallow: /*?*sort_by=
+Disallow: /*?*filter=
+Disallow: /*?*filtro=
+Disallow: /*?*precio=
+Disallow: /*?*price=
+Disallow: /*?*min=
+Disallow: /*?*max=
+Disallow: /*?*talle=
+Disallow: /*?*size=
+Disallow: /*?*color=
+Disallow: /*?*q=
+Disallow: /*?*search=
+Disallow: /*?*busqueda=
+Disallow: /*?*page=
+Disallow: /*?*pag=
+Disallow: /*?*limit=
+Disallow: /*?*offset=
+Disallow: /*?*v=
+Disallow: /*?*preview=
+Disallow: /*?*token=
+Disallow: /*?*utm_
+Disallow: /*?*fbclid=
+Disallow: /*?*gclid=
+Disallow: /*?*msclkid=
+
+# Sitemaps XML oficiales con URLs canonicas unicas
 Sitemap: https://juem.com.uy/sitemap.xml
+Sitemap: https://juem.com.uy/sitemap-image.xml

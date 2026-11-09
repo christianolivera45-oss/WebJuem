@@ -12173,7 +12173,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       imgUrl = `${baseUrl}${imgUrl}`;
     }
     const rawReqUrl = req.originalUrl || req.url || pathUrl;
-    let canonicalUrl = pathUrl === "/" ? `${baseUrl}/` : `${baseUrl}${pathUrl}`;
+    const canonicalBase = "https://juem.com.uy";
+    let canonicalUrl = pathUrl === "/" ? `${canonicalBase}/` : `${canonicalBase}${pathUrl}`;
     let ogUrl = `${baseUrl}${rawReqUrl}`;
     let schemaJson = "";
     let preRenderedBody = "";
@@ -12208,7 +12209,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
             ? product.imageUrl 
             : `${baseUrl}${product.imageUrl.startsWith("/") ? "" : "/"}${product.imageUrl}`;
         }
-        canonicalUrl = `${baseUrl}/producto/${generateSlug(product.name)}`;
+        canonicalUrl = `${canonicalBase}/producto/${generateSlug(product.name)}`;
         
         // Generate deterministic, realistic values based on the product's name for structured rich snippets
         const charSum = product.name.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
@@ -12378,7 +12379,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       if (matchedCat) {
         title = `${matchedCat.nombre} | ${settings.siteTitle || "Ventas Juem"} Uruguay`;
         description = `Explorá las mejores opciones de ${matchedCat.nombre.toLowerCase()} en Ventas Juem. Comprá online con envíos rápidos a todo Uruguay.`;
-        canonicalUrl = `${baseUrl}/${matchedCat.id}`;
+        canonicalUrl = `${canonicalBase}/${matchedCat.id.toLowerCase()}`;
         
         let matchedSub: any = null;
         if (segments[1]) {
@@ -12387,7 +12388,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
           if (matchedSub) {
             title = `${matchedSub.nombre} (${matchedCat.nombre}) | ${settings.siteTitle || "Ventas Juem"}`;
             description = `Comprá ${matchedSub.nombre.toLowerCase()} en la categoría ${matchedCat.nombre.toLowerCase()} de Ventas Juem. Calidad y envíos a todo Uruguay.`;
-            canonicalUrl = `${baseUrl}/${matchedCat.id}/${matchedSub.id}`;
+            canonicalUrl = `${canonicalBase}/${matchedCat.id.toLowerCase()}/${matchedSub.id.toLowerCase()}`;
           }
         }
 
@@ -12548,11 +12549,26 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
 
     let output = htmlContent;
 
-    // Inject robots meta tag according to Google guidelines (noindex for admin, index with max-image-preview:large for public)
+    // Check for secondary filter, sorting or search parameters
+    const queryKeys = Object.keys(req.query || {}).map(k => k.toLowerCase());
+    const hasFilterOrSortParams = queryKeys.some(k => [
+      "sort", "orden", "order", "sort_by",
+      "filter", "filtro", "precio", "price", "min", "max",
+      "talle", "size", "color", "q", "search", "busqueda",
+      "page", "pag", "limit", "offset", "preview", "v", "fbclid", "gclid", "utm_source"
+    ].includes(k));
+
+    // Inject robots meta tag according to Google Search Central guidelines
     if (isAdminRoute) {
       output = output.replace(
         /<meta[^>]*id="seo-robots"[^>]*\/?>/gi,
         `<meta name="robots" content="noindex, nofollow" id="seo-robots" />`
+      );
+    } else if (hasFilterOrSortParams) {
+      // Secondary filter or sorting URLs should not be indexed, preventing crawl budget loss and duplicate indexing in Google Search Console
+      output = output.replace(
+        /<meta[^>]*id="seo-robots"[^>]*\/?>/gi,
+        `<meta name="robots" content="noindex, follow" id="seo-robots" />`
       );
     } else {
       output = output.replace(
@@ -12622,89 +12638,212 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
 
   // Dynamic robots.txt
   app.get("/robots.txt", (req, res) => {
-    res.type("text/plain");
-    res.send(`User-agent: *
-Allow: /
-Disallow: /admin
-Disallow: /api/
-
-Sitemap: https://juem.com.uy/sitemap.xml
-Sitemap: https://juem.com.uy/sitemap-image.xml`);
+    res.type("text/plain; charset=utf-8");
+    const robotsTxt = [
+      "# Robots.txt for Juem Mvd (https://juem.com.uy)",
+      "# Optimizacion de presupuesto de rastreo (Crawl Budget) y prevencion de URLs duplicadas en Google Search Console",
+      "",
+      "User-agent: *",
+      "",
+      "# Permitir el rastreo de paginas principales canonicas y recursos estaticos",
+      "Allow: /",
+      "Allow: /producto/",
+      "Allow: /assets/",
+      "Allow: /favicon*",
+      "Allow: /*.css$",
+      "Allow: /*.js$",
+      "Allow: /*.png$",
+      "Allow: /*.jpg$",
+      "Allow: /*.jpeg$",
+      "Allow: /*.webp$",
+      "Allow: /*.svg$",
+      "",
+      "# Bloquear rutas administrativas, privadas y transaccionales",
+      "Disallow: /admin",
+      "Disallow: /admin/",
+      "Disallow: /api/",
+      "Disallow: /checkout",
+      "Disallow: /carrito",
+      "Disallow: /pedido/",
+      "Disallow: /login",
+      "Disallow: /perfil",
+      "",
+      "# Evitar que los bots pierdan presupuesto de rastreo en variantes canonizadas, filtros y ordenamientos",
+      "Disallow: /*?*sort=",
+      "Disallow: /*?*orden=",
+      "Disallow: /*?*order=",
+      "Disallow: /*?*sort_by=",
+      "Disallow: /*?*filter=",
+      "Disallow: /*?*filtro=",
+      "Disallow: /*?*precio=",
+      "Disallow: /*?*price=",
+      "Disallow: /*?*min=",
+      "Disallow: /*?*max=",
+      "Disallow: /*?*talle=",
+      "Disallow: /*?*size=",
+      "Disallow: /*?*color=",
+      "Disallow: /*?*q=",
+      "Disallow: /*?*search=",
+      "Disallow: /*?*busqueda=",
+      "Disallow: /*?*page=",
+      "Disallow: /*?*pag=",
+      "Disallow: /*?*limit=",
+      "Disallow: /*?*offset=",
+      "Disallow: /*?*v=",
+      "Disallow: /*?*preview=",
+      "Disallow: /*?*token=",
+      "Disallow: /*?*utm_",
+      "Disallow: /*?*fbclid=",
+      "Disallow: /*?*gclid=",
+      "Disallow: /*?*msclkid=",
+      "",
+      "# Sitemaps XML oficiales con URLs canonicas unicas",
+      "Sitemap: https://juem.com.uy/sitemap.xml",
+      "Sitemap: https://juem.com.uy/sitemap-image.xml",
+      ""
+    ].join("\n");
+    res.send(robotsTxt);
   });
 
   // Dynamic sitemap.xml compiling current categories and products with slugs for Google Index
+  // Enforces SEO Standards: Strict Canonical Filtering (Self-referential URLs only), Filter/Parameter Exclusion, HTTP 200 OK
   app.get("/sitemap.xml", async (req, res) => {
     try {
-      const baseUrl = "https://juem.com.uy";
+      const canonicalBase = "https://juem.com.uy";
       let state = currentStoreState;
       if (process.env.DATABASE_URL && !dbUnavailable) {
         try {
           state = await getDbState();
         } catch (e) {
-          // Fallback to memory
+          // Safe fallback in memory
         }
       }
       
       const lastModDate = new Date().toISOString().split("T")[0];
       
+      // Strict URL Validator for Google Search Console compliance:
+      // 1. Must use canonicalBase (https://juem.com.uy)
+      // 2. Strict rejection of query parameters, filters, pagination, and internal search artifacts
+      // 3. No trailing slashes except root "/" to guarantee HTTP 200 OK without 301/302 redirects
+      // 4. Must be lowercase
+      // 5. Must NOT contain admin, api, checkout, or cart endpoints
+      const isValidCanonicalSitemapUrl = (url: string): boolean => {
+        if (!url || !url.startsWith(`${canonicalBase}/`)) return false;
+        // Strictly exclude query parameters, sorting, filters, pagination, and fragments
+        if (url.includes("?") || url.includes("&") || url.includes("=") || url.includes("#")) return false;
+        // Eliminate trailing slashes on sub-paths to avoid 301 redirection
+        if (url !== `${canonicalBase}/` && url.endsWith("/")) return false;
+        // URLs must be lowercase to avoid 301 lowercase redirection
+        if (url !== url.toLowerCase()) return false;
+        // Exclude internal or transactional endpoints
+        if (url.includes("/admin") || url.includes("/api/") || url.includes("/checkout") || url.includes("/carrito") || url.includes("/pedido/")) return false;
+        return true;
+      };
+
       let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
       xml += `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`;
       
-      // 1. Home
-      xml += `  <url>\n`;
-      xml += `    <loc>${baseUrl}/</loc>\n`;
-      xml += `    <lastmod>${lastModDate}</lastmod>\n`;
-      xml += `    <changefreq>daily</changefreq>\n`;
-      xml += `    <priority>1.0</priority>\n`;
-      xml += `  </url>\n`;
-      
-      // 2. Categories & Subcategories mapping (Clean URLs without query parameters)
+      const registeredUrls = new Set<string>();
+
+      const addUrlToSitemap = (url: string, canonicalTarget: string, lastMod: string, changeFreq: string, priority: string) => {
+        // 1. Strict Canonical Filter: Only include self-referential URLs (where page URL === its canonical tag URL)
+        // If a page points to another URL as canonical, it MUST be excluded automatically
+        if (url.trim().toLowerCase() !== canonicalTarget.trim().toLowerCase()) {
+          console.warn(`[Sitemap Skipped] Non-self-referential URL excluded: ${url} (points to canonical: ${canonicalTarget})`);
+          return;
+        }
+
+        // 2. Exclusion of parameters, filters, and invalid formats
+        if (!isValidCanonicalSitemapUrl(url)) {
+          console.warn(`[Sitemap Skipped] Invalid sitemap URL format: ${url}`);
+          return;
+        }
+
+        // 3. Prevent duplicate URLs in sitemap
+        if (registeredUrls.has(url)) {
+          return;
+        }
+        registeredUrls.add(url);
+
+        xml += `  <url>\n`;
+        xml += `    <loc>${url}</loc>\n`;
+        xml += `    <lastmod>${lastMod}</lastmod>\n`;
+        xml += `    <changefreq>${changeFreq}</changefreq>\n`;
+        xml += `    <priority>${priority}</priority>\n`;
+        xml += `  </url>\n`;
+      };
+
+      // 1. Home (Always HTTP 200 OK, self-referential canonical)
+      addUrlToSitemap(`${canonicalBase}/`, `${canonicalBase}/`, lastModDate, "daily", "1.0");
+
+      // 2. Categories & Subcategories mapping (Only active, non-redirecting, self-referential canonicals)
       const categories = state.dbCategories || [];
       const subcategories = state.dbSubcategories || [];
-      categories.forEach(cat => {
-        if (cat.active !== false && cat.id) {
-          xml += `  <url>\n`;
-          xml += `    <loc>${baseUrl}/${encodeURIComponent(cat.id.toLowerCase())}</loc>\n`;
-          xml += `    <lastmod>${lastModDate}</lastmod>\n`;
-          xml += `    <changefreq>weekly</changefreq>\n`;
-          xml += `    <priority>0.8</priority>\n`;
-          xml += `  </url>\n`;
-
-          // Related subcategories
-          const relSubs = subcategories.filter(s => s.categoria_id === cat.id);
-          relSubs.forEach(sub => {
-            if (sub.id && sub.id !== "all") {
-              xml += `  <url>\n`;
-              xml += `    <loc>${baseUrl}/${encodeURIComponent(cat.id.toLowerCase())}/${encodeURIComponent(sub.id.toLowerCase())}</loc>\n`;
-              xml += `    <lastmod>${lastModDate}</lastmod>\n`;
-              xml += `    <changefreq>weekly</changefreq>\n`;
-              xml += `    <priority>0.7</priority>\n`;
-              xml += `  </url>\n`;
-            }
-          });
-        }
-      });
       
-      // 3. Active products mapping
-      const products = state.products || [];
-      products.forEach(p => {
-        const isWithStock = p.stock !== undefined ? p.stock > 0 : true;
-        if (isWithStock && p.paused !== true && p.active !== false && p.name) {
-          const prodSlug = generateSlug(p.name);
-          if (prodSlug) {
-            xml += `  <url>\n`;
-            xml += `    <loc>${baseUrl}/producto/${prodSlug}</loc>\n`;
-            xml += `    <lastmod>${p.createdAt ? p.createdAt.split("T")[0] : lastModDate}</lastmod>\n`;
-            xml += `    <changefreq>weekly</changefreq>\n`;
-            xml += `    <priority>0.9</priority>\n`;
-            xml += `  </url>\n`;
+      categories.forEach(cat => {
+        if (cat.active !== false && cat.id && typeof cat.id === "string") {
+          const cleanCatId = cat.id.trim().toLowerCase();
+          if (cleanCatId && cleanCatId !== "todos" && cleanCatId !== "all") {
+            const catUrl = `${canonicalBase}/${encodeURIComponent(cleanCatId)}`;
+            const catCanonical = `${canonicalBase}/${cleanCatId}`;
+            // If category has a custom canonical pointing elsewhere, verify self-reference
+            const customCatCanonical = (cat as any).canonicalUrl || (cat as any).canonical_url;
+            addUrlToSitemap(catUrl, customCatCanonical || catCanonical, lastModDate, "weekly", "0.8");
+
+            // Subcategories belonging to this active category
+            const relSubs = subcategories.filter(s => s.categoria_id === cat.id);
+            relSubs.forEach(sub => {
+              if (sub.id && typeof sub.id === "string") {
+                const cleanSubId = sub.id.trim().toLowerCase();
+                if (cleanSubId && cleanSubId !== "all" && cleanSubId !== "todos") {
+                  const subUrl = `${canonicalBase}/${encodeURIComponent(cleanCatId)}/${encodeURIComponent(cleanSubId)}`;
+                  const subCanonical = `${canonicalBase}/${cleanCatId}/${cleanSubId}`;
+                  const customSubCanonical = (sub as any).canonicalUrl || (sub as any).canonical_url;
+                  addUrlToSitemap(subUrl, customSubCanonical || subCanonical, lastModDate, "weekly", "0.7");
+                }
+              }
+            });
           }
         }
       });
-      
+
+      // 3. Products mapping (Only active, in-stock, published, non-variant self-referential products)
+      const products = state.products || [];
+      products.forEach(p => {
+        // HTTP 200 OK & Status requirements:
+        // Must be active, not paused, not hidden, and have stock available
+        const isWithStock = p.stock !== undefined ? p.stock > 0 : true;
+        const isPublished = p.active !== false && p.paused !== true && (p as any).hidden !== true;
+        
+        // Secondary variants pointing to a parent product must be excluded from sitemap
+        const isSecondaryVariant = (p as any).isVariant === true || Boolean((p as any).parentProductId);
+        
+        if (isWithStock && isPublished && !isSecondaryVariant && p.name) {
+          const prodSlug = generateSlug(p.name);
+          if (prodSlug) {
+            const prodUrl = `${canonicalBase}/producto/${prodSlug}`;
+            // If product specifies custom canonical pointing elsewhere, check if self-referential
+            const customCanonical = (p as any).canonicalUrl || (p as any).canonical_url;
+            const expectedCanonical = customCanonical ? customCanonical.trim() : prodUrl;
+            
+            // Format product lastmod date from updatedAt or createdAt
+            let prodLastMod = lastModDate;
+            const pAny = p as any;
+            if (pAny.updatedAt && typeof pAny.updatedAt === "string" && pAny.updatedAt.includes("T")) {
+              prodLastMod = pAny.updatedAt.split("T")[0];
+            } else if (p.createdAt && typeof p.createdAt === "string" && p.createdAt.includes("T")) {
+              prodLastMod = p.createdAt.split("T")[0];
+            }
+
+            addUrlToSitemap(prodUrl, expectedCanonical, prodLastMod, "weekly", "0.9");
+          }
+        }
+      });
+
       xml += `</urlset>`;
-      
-      res.header("Content-Type", "application/xml");
+
+      res.header("Content-Type", "application/xml; charset=utf-8");
+      res.header("X-Robots-Tag", "noindex");
       res.send(xml);
     } catch (err: any) {
       console.error("Error generating sitemap:", err);
@@ -12715,7 +12854,7 @@ Sitemap: https://juem.com.uy/sitemap-image.xml`);
   // Dynamic /sitemap-image.xml dedicated sitemap file mapping all high-quality product images for Google Rich Search Results
   app.get("/sitemap-image.xml", async (req, res) => {
     try {
-      const baseUrl = "https://juem.com.uy";
+      const canonicalBase = "https://juem.com.uy";
       let state = currentStoreState;
       if (process.env.DATABASE_URL && !dbUnavailable) {
         try {
@@ -12730,25 +12869,40 @@ Sitemap: https://juem.com.uy/sitemap-image.xml`);
       xml += `        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">\n`;
 
       const products = state.products || [];
+      const addedImageUrls = new Set<string>();
       products.forEach(p => {
         const isWithStock = p.stock !== undefined ? p.stock > 0 : true;
-        if (isWithStock && p.paused !== true && p.active !== false && p.imageUrl && p.name) {
+        const isPublished = p.active !== false && p.paused !== true && (p as any).hidden !== true;
+        const isSecondaryVariant = (p as any).isVariant === true || Boolean((p as any).parentProductId);
+        
+        if (isWithStock && isPublished && !isSecondaryVariant && p.imageUrl && p.name) {
           const prodSlug = generateSlug(p.name);
           if (prodSlug) {
-            xml += `  <url>\n`;
-            xml += `    <loc>${baseUrl}/producto/${prodSlug}</loc>\n`;
-            xml += `    <image:image>\n`;
-            xml += `      <image:loc>${p.imageUrl.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</image:loc>\n`;
-            xml += `      <image:title>${p.name.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</image:title>\n`;
-            xml += `    </image:image>\n`;
-            xml += `  </url>\n`;
+            const prodUrl = `${canonicalBase}/producto/${prodSlug}`;
+            // Self-referential check
+            const customCanonical = (p as any).canonicalUrl || (p as any).canonical_url;
+            if (customCanonical && customCanonical.trim().toLowerCase() !== prodUrl.toLowerCase()) {
+              return; // Exclude non-self-referential products
+            }
+
+            if (!addedImageUrls.has(prodUrl)) {
+              addedImageUrls.add(prodUrl);
+              xml += `  <url>\n`;
+              xml += `    <loc>${prodUrl}</loc>\n`;
+              xml += `    <image:image>\n`;
+              xml += `      <image:loc>${p.imageUrl.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</image:loc>\n`;
+              xml += `      <image:title>${p.name.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</image:title>\n`;
+              xml += `    </image:image>\n`;
+              xml += `  </url>\n`;
+            }
           }
         }
       });
 
       xml += `</urlset>`;
 
-      res.header("Content-Type", "application/xml");
+      res.header("Content-Type", "application/xml; charset=utf-8");
+      res.header("X-Robots-Tag", "noindex");
       res.send(xml);
     } catch (err: any) {
       console.error("Error generating sitemap-image:", err);
@@ -12776,9 +12930,10 @@ Sitemap: https://juem.com.uy/sitemap-image.xml`);
       return res.redirect(301, req.path.toLowerCase() + queryString);
     }
 
-    // Redirect category query parameters to clean, indexable URL paths (Solves duplicate/alternative page indexing issues in Google Search Console)
-    if (req.query.category !== undefined) {
-      const catQuery = String(req.query.category || "").trim();
+    // Redirect category query parameters (category, categoria, cat) to clean, indexable URL paths
+    const rawCatQuery = req.query.category ?? req.query.categoria ?? req.query.cat;
+    if (rawCatQuery !== undefined) {
+      const catQuery = String(rawCatQuery || "").trim();
       if (!catQuery) {
         return res.redirect(301, "/");
       }
@@ -12802,8 +12957,9 @@ Sitemap: https://juem.com.uy/sitemap-image.xml`);
 
       if (matchedCat) {
         let targetPath = `/${matchedCat.id}`;
-        if (req.query.subcategory) {
-          const subQuery = normalize(String(req.query.subcategory));
+        const rawSubQuery = req.query.subcategory ?? req.query.subcategoria ?? req.query.subcat;
+        if (rawSubQuery !== undefined) {
+          const subQuery = normalize(String(rawSubQuery));
           const subcategories = state.dbSubcategories || [];
           const matchedSub = subcategories.find(s => s.categoria_id === matchedCat.id && (normalize(s.id) === subQuery || normalize(s.nombre) === subQuery));
           if (matchedSub) {
@@ -12813,15 +12969,16 @@ Sitemap: https://juem.com.uy/sitemap-image.xml`);
         console.log(`[SEO Redirect 301] Query parameter category redirecting from ${req.url} to ${targetPath}`);
         return res.redirect(301, targetPath);
       } else {
-        // If the category is obsolete or not found (e.g. legacy / seasonal categories like "Juguetes" or "Día del Niño"), 301 permanent redirect to clean homepage
+        // If the category is obsolete or not found, 301 permanent redirect to clean homepage
         console.log(`[SEO Redirect 301] Legacy/unknown category parameter redirecting from ${req.url} to /`);
         return res.redirect(301, "/");
       }
     }
 
-    // Redirect product query parameters to clean canonical product slug URLs
-    if (req.query.product !== undefined) {
-      const prodQuery = String(req.query.product || "").trim();
+    // Redirect product query parameters (product, producto, p) to clean canonical product slug URLs
+    const rawProdQuery = req.query.product ?? req.query.producto ?? req.query.p;
+    if (rawProdQuery !== undefined) {
+      const prodQuery = String(rawProdQuery || "").trim();
       if (!prodQuery) {
         return res.redirect(301, "/");
       }

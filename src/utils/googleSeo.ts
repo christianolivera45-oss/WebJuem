@@ -65,7 +65,11 @@ export function formatCanonicalUrl(path?: string, base = BASE_DOMAIN): string {
   if (!path || path === "/" || path === "") {
     return `${base}/`;
   }
-  const cleanPath = path.trim().replace(/\/+$/, "").replace(/^\/?/, "/").toLowerCase();
+  const pathWithoutQuery = path.split("?")[0].split("#")[0];
+  if (!pathWithoutQuery || pathWithoutQuery === "/" || pathWithoutQuery === "") {
+    return `${base}/`;
+  }
+  const cleanPath = pathWithoutQuery.trim().replace(/\/+$/, "").replace(/^\/?/, "/").toLowerCase();
   return `${base}${cleanPath}`;
 }
 
