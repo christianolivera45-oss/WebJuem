@@ -794,6 +794,19 @@ function initDataStore(): ShopState {
       }
 
       if (parsed.products) {
+        parsed.products = parsed.products.map(p => {
+          if (p.variants && p.variants.length > 0) {
+            const sanitizedVars = p.variants.map(v => {
+              if (v.imageUrl && (v.imageUrl.includes("slticil8iylzbx8imcah") || v.imageUrl.includes("cm0vw6biwrvlqphuxr0i"))) {
+                changed = true;
+                return { ...v, imageUrl: "" };
+              }
+              return v;
+            });
+            p.variants = sanitizedVars;
+          }
+          return p;
+        });
         parsed.products = recalculateComboStocks(parsed.products);
         changed = true;
       }
@@ -1919,11 +1932,17 @@ function checkAndClearExpiredBannerText(state: ShopState): { state: ShopState, u
 
 let cachedDbState: ShopState | null = null;
 let cachedDbStateTime = 0;
-const DB_CACHE_TTL_MS = 15 * 1000; // 15 segundos de caché en memoria para lecturas; mutaciones invalidan inmediatamente
+const DB_CACHE_TTL_MS = 60 * 1000; // 60 segundos de caché en memoria para lecturas ultra-rápidas (<10ms)
+
+let cachedHomeHtml: string | null = null;
+let cachedHomeHtmlTime = 0;
+const HOME_HTML_CACHE_TTL_MS = 60 * 1000; // 60 segundos de caché HTML para TTFB sub-50ms
 
 function invalidateDbCache() {
   cachedDbState = null;
   cachedDbStateTime = 0;
+  cachedHomeHtml = null;
+  cachedHomeHtmlTime = 0;
 }
 
 async function getDbState(forceRefresh = false): Promise<ShopState> {
@@ -2072,6 +2091,10 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
         if (!productVariantsMap[pid]) {
           productVariantsMap[pid] = [];
         }
+        let vImg = (vRow.image_url || "").trim();
+        if (vImg.includes("slticil8iylzbx8imcah") || vImg.includes("cm0vw6biwrvlqphuxr0i")) {
+          vImg = "";
+        }
         productVariantsMap[pid].push({
           id: String(vRow.id),
           sku: vRow.sku || "",
@@ -2080,7 +2103,7 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
           colorCode: vRow.color_code || "",
           priceDelta: vRow.additional_price ? Number(vRow.additional_price) : 0,
           stock: vRow.stock ? Number(vRow.stock) : 0,
-          imageUrl: vRow.image_url || "",
+          imageUrl: vImg,
           price: vRow.price !== null && vRow.price !== undefined ? Number(vRow.price) : undefined,
           stockPinamar: vRow.stock_pinamar ? Number(vRow.stock_pinamar) : 0,
           stockMontevideo: vRow.stock_montevideo ? Number(vRow.stock_montevideo) : 0
@@ -2127,7 +2150,14 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
         imagenes: Array.from(new Set(productImagesMap[pid] || []))
           .map(u => String(u || "").trim())
           .filter(u => u && u !== String(row.image_url || "").trim()),
-        variants: variants,
+        variants: variants.map(v => {
+          const isGeneric = (!v.color || ["general", "unico", "único", "generico", "genérico", "estandar", "estándar", "-"].includes(v.color.toLowerCase().trim())) &&
+                            (!v.size || ["unico", "único", "estandar", "estándar", "-"].includes(v.size.toLowerCase().trim()));
+          if (isGeneric && v.imageUrl && v.imageUrl !== row.image_url && !(productImagesMap[pid] || []).includes(v.imageUrl)) {
+            return { ...v, imageUrl: "" };
+          }
+          return v;
+        }),
         is3D: row.is_3d === true,
         hoursPerUnit: row.hours_per_unit !== null && row.hours_per_unit !== undefined ? Number(row.hours_per_unit) : undefined,
         sizeChartEnabled: row.size_chart_enabled !== false,
@@ -3163,6 +3193,24 @@ async function initPostgresStore(): Promise<ShopState | null> {
           batch_id = 'batch-0001' 
       WHERE transfer_code IS NULL OR transfer_code LIKE 'TRF-TRANS-%' OR transfer_code = 'TRF-20260912-0001' OR batch_id = 'batch-20260912-0001';
     `);
+
+    // Clean up phantom/broken variant images that were never added to the product gallery and cause 404 errors
+    try {
+      await pool.query(`
+        UPDATE public.product_variants 
+        SET image_url = NULL 
+        WHERE image_url LIKE '%slticil8iylzbx8imcah%' 
+           OR image_url LIKE '%cm0vw6biwrvlqphuxr0i%'
+           OR (
+             (LOWER(TRIM(color_name)) IN ('general', 'unico', 'único', 'generico', 'genérico', 'estandar', 'estándar', '-') OR color_name IS NULL)
+             AND image_url IS NOT NULL
+             AND image_url NOT IN (SELECT image_url FROM public.products WHERE image_url IS NOT NULL)
+             AND image_url NOT IN (SELECT image_url FROM public.product_images WHERE image_url IS NOT NULL)
+           );
+      `);
+    } catch (cleanErr) {
+      console.warn("Variant image cleanup query warning:", cleanErr);
+    }
 
     // Ensure inventory movements audit table is initialized
     await initInventoryMovementsTable(pool);
@@ -12157,8 +12205,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     const pathUrl = req.path;
     const segments = pathUrl.split("/").filter(Boolean);
     
-    let state = currentStoreState;
-    if (process.env.DATABASE_URL && !dbUnavailable) {
+    let state = cachedDbState || currentStoreState;
+    if (!cachedDbState && process.env.DATABASE_URL && !dbUnavailable) {
       try {
         state = await getDbState();
       } catch (e) {
@@ -12643,6 +12691,19 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       `<script type="application/ld+json" id="seo-schema">\n${schemaJson}\n</script>`
     );
 
+    // Initial dehydrated state for instant client hydration and eliminating CLS
+    if (!isAdminRoute) {
+      const initialStorePayload = {
+        settings: state.settings,
+        categories: state.categories,
+        dbCategories: state.dbCategories,
+        dbSubcategories: state.dbSubcategories,
+        products: (state.products || []).filter(p => p.active !== false && p.paused !== true).slice(0, 24)
+      };
+      const initialScript = `<script id="initial-store-data">window.__INITIAL_STORE__ = ${JSON.stringify(initialStorePayload)};</script>`;
+      output = output.replace("</head>", `${initialScript}\n</head>`);
+    }
+
     return output;
   }
 
@@ -13027,12 +13088,30 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       if (req.path.includes(".") || req.path.startsWith("/api/")) {
         return next();
       }
+
+      const isRoot = req.path === "/" || req.path === "";
+      const now = Date.now();
+      if (isRoot && cachedHomeHtml && (now - cachedHomeHtmlTime < HOME_HTML_CACHE_TTL_MS)) {
+        res.status(200).set({
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "public, max-age=60, s-maxage=300, stale-while-revalidate=86400"
+        }).end(cachedHomeHtml);
+        return;
+      }
+
       try {
         const url = req.originalUrl;
         let template = fs.readFileSync(path.resolve("index.html"), "utf-8");
         template = await vite.transformIndexHtml(url, template);
         const seoHtml = await injectSEO(template, req);
-        res.status(200).set({ "Content-Type": "text/html; charset=utf-8" }).end(seoHtml);
+        if (isRoot) {
+          cachedHomeHtml = seoHtml;
+          cachedHomeHtmlTime = Date.now();
+        }
+        res.status(200).set({
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": isRoot ? "public, max-age=60, s-maxage=300, stale-while-revalidate=86400" : "public, max-age=30, s-maxage=120, stale-while-revalidate=86400"
+        }).end(seoHtml);
       } catch (e) {
         next(e);
       }
@@ -13071,11 +13150,27 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       }
       
       try {
+        const isRoot = req.path === "/" || req.path === "";
+        const now = Date.now();
+        if (isRoot && cachedHomeHtml && (now - cachedHomeHtmlTime < HOME_HTML_CACHE_TTL_MS)) {
+          return res.status(200).set({
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": "public, max-age=60, s-maxage=300, stale-while-revalidate=86400"
+          }).end(cachedHomeHtml);
+        }
+
         const indexHtmlPath = path.join(distPath, "index.html");
         if (fs.existsSync(indexHtmlPath)) {
           const rawHtml = fs.readFileSync(indexHtmlPath, "utf-8");
           const seoHtml = await injectSEO(rawHtml, req);
-          res.send(seoHtml);
+          if (isRoot) {
+            cachedHomeHtml = seoHtml;
+            cachedHomeHtmlTime = Date.now();
+          }
+          res.status(200).set({
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": isRoot ? "public, max-age=60, s-maxage=300, stale-while-revalidate=86400" : "public, max-age=30, s-maxage=120, stale-while-revalidate=86400"
+          }).end(seoHtml);
         } else {
           next();
         }
@@ -13091,6 +13186,15 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         return res.status(404).json({ error: "Endpoint de API no encontrado" });
       }
       res.sendFile(path.join(distPath, "index.html"));
+    });
+  }
+
+  // Pre-warm DB cache in background without blocking server startup
+  if (process.env.DATABASE_URL && !dbUnavailable) {
+    getDbState().then((st) => {
+      console.log(`[Cache Warmup] In-memory store loaded with ${(st.products || []).length} products.`);
+    }).catch(err => {
+      console.warn("[Cache Warmup] Background warmup note:", err?.message || err);
     });
   }
 

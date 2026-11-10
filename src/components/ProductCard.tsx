@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { Product, SiteSettings, getProductAvailableStock } from "../types";
+import { Product, SiteSettings, getProductAvailableStock, isGenericSize, isGenericColor } from "../types";
 import { ShoppingCart, Eye, Tag, Phone } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import ImageWatermark from "./ImageWatermark";
@@ -56,11 +56,12 @@ Precio: $${Math.round(product.price)}
         return {
           price: vPrice,
           imageUrl: v.imageUrl || product.imageUrl,
+          isGeneric: isGenericColor(v.color) && isGenericSize(v.size)
         };
       });
 
       const allOptions = [
-        { price: product.price, imageUrl: product.imageUrl },
+        { price: product.price, imageUrl: product.imageUrl, isGeneric: false },
         ...resolvedVariants,
       ];
 
@@ -68,13 +69,15 @@ Precio: $${Math.round(product.price)}
       for (let i = 1; i < allOptions.length; i++) {
         if (allOptions[i].price < minOption.price) {
           minOption = allOptions[i];
-        } else if (allOptions[i].price === minOption.price && (!minOption.imageUrl || minOption.imageUrl === product.imageUrl) && allOptions[i].imageUrl) {
-          // If prices are equal but one has a specific variant image, use that image
-          minOption = allOptions[i];
         }
       }
       price = minOption.price;
-      imageUrl = minOption.imageUrl;
+      // Only use variant image if variant is cheaper AND has a genuine image; otherwise preserve primary product.imageUrl
+      if (minOption.price < product.price && minOption.imageUrl && !minOption.isGeneric) {
+        imageUrl = minOption.imageUrl;
+      } else {
+        imageUrl = product.imageUrl;
+      }
     }
 
     return { price, imageUrl };
@@ -88,34 +91,43 @@ Precio: $${Math.round(product.price)}
     return (product.imagenes || []).join("|");
   }, [product.imagenes]);
 
-  // List of all unique image URLs for rotation
+  // List of all unique image URLs for rotation:
+  // Shows product.imageUrl and any added gallery photos in product.imagenes.
+  // Distinct color variant photos are only included if the product has genuine multiple variants.
   const allImages = useMemo(() => {
     const list: string[] = [];
     
-    // Check if there are multiple variants with custom images
-    const variantImages = (product.variants || [])
-      .map(v => v.imageUrl)
-      .filter((img): img is string => typeof img === "string" && img !== "");
-    
-    const hasVariantImages = variantImages.length > 0;
-    const hasMultipleVariants = product.variants && product.variants.length > 1;
+    // Always start with primary image
+    if (product.imageUrl && typeof product.imageUrl === "string" && product.imageUrl.trim()) {
+      list.push(product.imageUrl.trim());
+    }
 
-    if (hasMultipleVariants && hasVariantImages) {
-      // Rotate ONLY between the photos selected for each variant
-      variantImages.forEach(img => {
+    // Include explicitly added additional photos from the gallery
+    if (Array.isArray(product.imagenes)) {
+      product.imagenes.forEach(img => {
+        if (img && typeof img === "string" && img.trim() && !list.includes(img.trim())) {
+          list.push(img.trim());
+        }
+      });
+    }
+
+    // Only include variant images if the product has multiple genuine variants with distinct colors
+    const hasMultipleVariants = (product.variants || []).length > 1;
+    if (hasMultipleVariants) {
+      const distinctVariantImages = (product.variants || [])
+        .filter(v => v.imageUrl && !isGenericColor(v.color) && !isGenericSize(v.size))
+        .map(v => (v.imageUrl || "").trim())
+        .filter(Boolean);
+
+      distinctVariantImages.forEach(img => {
         if (!list.includes(img)) {
           list.push(img);
         }
       });
-    } else {
-      // If there are no multiple variant images, only show the main product image
-      if (product.imageUrl && typeof product.imageUrl === "string") {
-        list.push(product.imageUrl);
-      }
     }
     
     return list;
-  }, [product.imageUrl, variantsStr]);
+  }, [product.imageUrl, imagenesStr, variantsStr]);
 
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
   const [imageIndex, setImageIndex] = useState<number>(0);

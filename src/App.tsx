@@ -431,22 +431,38 @@ function recalculateComboStocks(productsList: Product[]): Product[] {
 }
 
 export default function App() {
-  // Store state loaded from api with cached theme support to prevent color flicker on startup
+  // Store state loaded from api with cached theme & dehydrated SSR support to eliminate CLS and delay
   const [store, setStoreRaw] = useState<ShopState>(() => {
     let cachedTheme: string | undefined = undefined;
-    try {
-      cachedTheme = localStorage.getItem("juem_active_theme") || undefined;
-    } catch {}
+    let initialFromWindow: any = null;
+    let initialFromStorage: any = null;
+
+    if (typeof window !== "undefined") {
+      try {
+        if ((window as any).__INITIAL_STORE__) {
+          initialFromWindow = (window as any).__INITIAL_STORE__;
+        }
+      } catch {}
+      try {
+        cachedTheme = localStorage.getItem("juem_active_theme") || undefined;
+        const stored = localStorage.getItem("juem_store_cache_v1");
+        if (stored) {
+          initialFromStorage = JSON.parse(stored);
+        }
+      } catch {}
+    }
+
+    const baseState = initialFromWindow || initialFromStorage || {};
     return {
-      products: [],
-      categories: ["Ropa", "Artículos electrónicos", "Accesorios", "Hogar"],
-      dbCategories: [
+      products: baseState.products || [],
+      categories: baseState.categories || ["Ropa", "Artículos electrónicos", "Accesorios", "Hogar"],
+      dbCategories: baseState.dbCategories || [
         { id: "ropa", nombre: "Ropa", icono: "Shirt", orden: 1, active: true },
         { id: "electronica", nombre: "Artículos electrónicos", icono: "Smartphone", orden: 2, active: true },
         { id: "accesorios", nombre: "Accesorios", icono: "Sparkles", orden: 3, active: true },
         { id: "hogar", nombre: "Hogar", icono: "Home", orden: 4, active: true }
       ],
-      dbSubcategories: [
+      dbSubcategories: baseState.dbSubcategories || [
         { id: "hombre", nombre: "Hombre", categoria_id: "ropa" },
         { id: "mujer", nombre: "Mujer", categoria_id: "ropa" },
         { id: "invierno", nombre: "Invierno", categoria_id: "ropa" },
@@ -458,7 +474,9 @@ export default function App() {
         { id: "decoracion", nombre: "Decoración", categoria_id: "hogar" },
         { id: "organizacion", nombre: "Organización", categoria_id: "hogar" }
       ],
-      settings: cachedTheme ? { ...DEFAULT_SETTINGS, activeTheme: cachedTheme } : DEFAULT_SETTINGS
+      settings: baseState.settings 
+        ? { ...DEFAULT_SETTINGS, ...baseState.settings, ...(cachedTheme ? { activeTheme: cachedTheme } : {}) } 
+        : (cachedTheme ? { ...DEFAULT_SETTINGS, activeTheme: cachedTheme } : DEFAULT_SETTINGS)
     };
   });
 
@@ -474,7 +492,14 @@ export default function App() {
 
   // Audit bot detection (Lighthouse, PageSpeed Insights, HeadlessChrome) to prevent synthetic NO_LCP blocking
   const isAuditBot = typeof navigator !== "undefined" && /Chrome-Lighthouse|PageSpeed|HeadlessChrome|Googlebot/i.test(navigator.userAgent || "");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+    if (typeof window !== "undefined") {
+      if ((window as any).__INITIAL_STORE__ || localStorage.getItem("juem_store_cache_v1")) {
+        return false;
+      }
+    }
+    return true;
+  });
   const [showSplash, setShowSplash] = useState(() => !isAuditBot);
   const [splashProgress, setSplashProgress] = useState(15);
   const [saving, setSaving] = useState(false);
@@ -3750,6 +3775,9 @@ export default function App() {
           } catch {}
         }
       }
+      try {
+        localStorage.setItem("juem_store_cache_v1", JSON.stringify(data));
+      } catch {}
       setStore(data);
       if (!isSilent) {
         setEditingSettings(data.settings);
@@ -6657,28 +6685,49 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                 </div>
 
                 {sortedProducts.length === 0 ? (
-                  <div className={`p-16 text-center rounded-2xl border border-dashed ${
-                    store.settings.themeMode === "dark" ? "border-zinc-800 text-zinc-500" : "border-slate-200 text-slate-400"
-                  }`}>
-                    <ShoppingBag className="h-10 w-10 mx-auto mb-3 opacity-60" />
-                    <p className="text-base font-semibold">No se encontraron productos coincidentes</p>
-                    <p className="text-xs mt-1">Prueba a restablecer filtros o cambiar tu término de búsqueda e intenta nuevamente.</p>
-                    <button
-                      onClick={() => {
-                        navigateToProductRoute("todos", "all", true);
-                        setSearchQuery("");
-                        setOnlyInStock(false);
-                        setSortBy("featured");
-                      }}
-                      className="mt-4 px-4 py-2 rounded-xl text-xs theme-btn-primary inline-block font-semibold pointer-events-auto cursor-pointer"
-                    >
-                      Ver todo el catálogo
-                    </button>
-                  </div>
+                  loading ? (
+                    <div className="grid gap-3 sm:gap-6 grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 min-h-[500px]">
+                      {Array.from({ length: 8 }).map((_, idx) => (
+                        <div
+                          key={idx}
+                          className={`rounded-2xl overflow-hidden animate-pulse border ${
+                            store.settings.themeMode === "dark"
+                              ? "bg-[#0B1730]/60 border-[#D4A55A]/10"
+                              : "bg-slate-100 border-slate-200"
+                          }`}
+                        >
+                          <div className="aspect-[3/4] w-full bg-slate-200/20 dark:bg-zinc-800/40" />
+                          <div className="p-3 space-y-2">
+                            <div className="h-4 bg-slate-200/30 dark:bg-zinc-800/60 rounded w-3/4" />
+                            <div className="h-4 bg-slate-200/20 dark:bg-zinc-800/40 rounded w-1/2" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className={`p-16 text-center rounded-2xl border border-dashed ${
+                      store.settings.themeMode === "dark" ? "border-zinc-800 text-zinc-500" : "border-slate-200 text-slate-400"
+                    }`}>
+                      <ShoppingBag className="h-10 w-10 mx-auto mb-3 opacity-60" />
+                      <p className="text-base font-semibold">No se encontraron productos coincidentes</p>
+                      <p className="text-xs mt-1">Prueba a restablecer filtros o cambiar tu término de búsqueda e intenta nuevamente.</p>
+                      <button
+                        onClick={() => {
+                          navigateToProductRoute("todos", "all", true);
+                          setSearchQuery("");
+                          setOnlyInStock(false);
+                          setSortBy("featured");
+                        }}
+                        className="mt-4 px-4 py-2 rounded-xl text-xs theme-btn-primary inline-block font-semibold pointer-events-auto cursor-pointer"
+                      >
+                        Ver todo el catálogo
+                      </button>
+                    </div>
+                  )
                 ) : (
                   <>
                     <div id="catalog-grid-top" className="scroll-mt-24" />
-                    <div className={`grid gap-3 sm:gap-6 ${
+                    <div className={`grid gap-3 sm:gap-6 min-h-[500px] ${
                       mobileLayoutMode === "list"
                         ? "grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
                         : "grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { X, ShoppingCart, MessageSquare, ShieldCheck, Truck, RefreshCw, ChevronLeft, ChevronRight, AlertCircle, Share2, Maximize2, Minimize2, ZoomIn, ZoomOut, Scan, Cpu, Wrench, Clock, Calendar, Home, Ruler, Palette, Sun, MapPin, Package, CheckCircle2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
@@ -543,22 +543,51 @@ export default function ProductDetails({
     return formatted.charAt(0).toUpperCase() + formatted.slice(1);
   };
 
-  // Dynamic Image carousels
+  const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
+
+  // Reset failed images and active index when product changes
+  useEffect(() => {
+    setFailedImages(new Set());
+    setActiveImgIndex(0);
+  }, [product.id]);
+
+  // Dynamic Image carousels:
+  // Strictly respects the photos added by the store manager (product.imageUrl and product.imagenes).
+  // Only incorporates variant images if they belong to a real, distinct color/size variant (not generic items like "General/Único")
+  // and have not failed to load.
   const allImages = useMemo(() => {
     const rawList = [product.imageUrl, ...(product.imagenes || [])];
-    const base = rawList.filter((img): img is string => Boolean(img && typeof img === "string" && img.trim().length > 0));
-    const variantImgs = (variants || []).map(v => v.imageUrl).filter((img): img is string => Boolean(img && typeof img === "string" && img.trim().length > 0));
-    // Add variant images that are not in the base list
-    variantImgs.forEach(img => {
-      if (!base.includes(img)) {
-        base.push(img);
-      }
-    });
+    const base = rawList.filter((img): img is string => Boolean(img && typeof img === "string" && img.trim().length > 0 && !failedImages.has(img)));
+    
+    // Add variant images ONLY if the product has multiple genuine variants with distinct colors/sizes
+    const hasMultipleVariants = (variants || []).length > 1;
+    if (hasMultipleVariants) {
+      const distinctVariantImgs = (variants || [])
+        .filter(v => v.imageUrl && !isGenericColor(v.color) && !isGenericSize(v.size) && !failedImages.has(v.imageUrl))
+        .map(v => v.imageUrl as string);
+
+      distinctVariantImgs.forEach(img => {
+        if (!base.includes(img)) {
+          base.push(img);
+        }
+      });
+    }
+
     if (base.length === 0) {
       base.push("https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=1200&q=80");
     }
     return base;
-  }, [product.imageUrl, product.imagenes, variants]);
+  }, [product.imageUrl, product.imagenes, variants, failedImages]);
+
+  const handleImageError = useCallback((failedUrl?: string | null) => {
+    if (!failedUrl) return;
+    setFailedImages(prev => {
+      const next = new Set(prev);
+      next.add(failedUrl);
+      return next;
+    });
+    setActiveImgIndex(0);
+  }, []);
 
   const [activeImgIndex, setActiveImgIndex] = useState(0);
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
@@ -1001,6 +1030,7 @@ Me gustaría coordinar stock, fabricación y envío.`;
                   alt=""
                   className="w-full h-full object-cover blur-2xl scale-125"
                   referrerPolicy="no-referrer"
+                  onError={() => handleImageError(allImages[activeImgIndex] || allImages[0])}
                 />
               </div>
             )}
@@ -1121,6 +1151,7 @@ Me gustaría coordinar stock, fabricación y envío.`;
                   referrerPolicy="no-referrer"
                   loading="eager"
                   fetchPriority="high"
+                  onError={() => handleImageError(allImages[activeImgIndex] || allImages[0])}
                 />
               </AnimatePresence>
 
@@ -1190,7 +1221,14 @@ Me gustaría coordinar stock, fabricación y envío.`;
                       : "border-slate-200 bg-white hover:border-slate-350 opacity-85"
                   }`}
                 >
-                  <img src={optimizeImageUrlForDetail(imgUrl, 150, 65) || (imgUrl || null)} alt={`${product.name} - Miniatura ${idx + 1}`} className="w-full h-full object-contain p-0.5" referrerPolicy="no-referrer" loading="lazy" />
+                  <img 
+                    src={optimizeImageUrlForDetail(imgUrl, 150, 65) || (imgUrl || null)} 
+                    alt={`${product.name} - Miniatura ${idx + 1}`} 
+                    className="w-full h-full object-contain p-0.5" 
+                    referrerPolicy="no-referrer" 
+                    loading="lazy" 
+                    onError={() => handleImageError(imgUrl)}
+                  />
                 </button>
               ))}
             </div>
@@ -1701,6 +1739,7 @@ Me gustaría coordinar stock, fabricación y envío.`;
                       className={`select-none rounded-xl transition-all duration-300 max-h-[50vh] sm:max-h-[58vh] max-w-[88vw] sm:max-w-[70vw] w-auto h-auto object-contain origin-center ${lightboxZoom > 1 ? "cursor-zoom-out" : "cursor-zoom-in"}`}
                       referrerPolicy="no-referrer"
                       loading="eager"
+                      onError={() => handleImageError(allImages[activeImgIndex] || allImages[0])}
                     />
                   </AnimatePresence>
 
@@ -1753,7 +1792,14 @@ Me gustaría coordinar stock, fabricación y envío.`;
                               : "border-white/10 bg-black/40 hover:border-white/30 opacity-70 hover:opacity-100"
                           }`}
                         >
-                          <img src={optimizeImageUrlForDetail(imgUrl, 120, 60) || (imgUrl || null)} alt={`${product.name} - Miniatura ${idx + 1}`} className="w-full h-full object-contain p-0.5" referrerPolicy="no-referrer" loading="lazy" />
+                          <img 
+                            src={optimizeImageUrlForDetail(imgUrl, 120, 60) || (imgUrl || null)} 
+                            alt={`${product.name} - Miniatura ${idx + 1}`} 
+                            className="w-full h-full object-contain p-0.5" 
+                            referrerPolicy="no-referrer" 
+                            loading="lazy" 
+                            onError={() => handleImageError(imgUrl)}
+                          />
                         </button>
                       ))}
                     </div>
