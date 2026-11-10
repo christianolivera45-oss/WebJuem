@@ -14,6 +14,7 @@ if (dns && typeof dns.setDefaultResultOrder === "function") {
   dns.setDefaultResultOrder("ipv4first");
 }
 import express from "express";
+import compression from "compression";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
@@ -3634,6 +3635,7 @@ async function initPostgresStore(): Promise<ShopState | null> {
 
 async function startServer() {
   const app = express();
+  app.use(compression());
   const portArgIndex = process.argv.indexOf("--port");
   const cliPort = portArgIndex !== -1 && process.argv[portArgIndex + 1] ? parseInt(process.argv[portArgIndex + 1], 10) : null;
   const PORT = cliPort || (process.env.NODE_ENV === "production" && process.env.PORT ? parseInt(process.env.PORT, 10) : 3000);
@@ -12537,14 +12539,22 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         </div>`;
     }
 
-    // Pre-rendered semantic HTML inside root for Googlebot crawler and instant FCP
-    let preRenderedHtml = preRenderedBody ? `<div id="root">${preRenderedBody}</div>` : `<div id="root"></div>`;
     const isAdminRoute = segments[0] === "admin";
+    const userAgent = String(req.headers["user-agent"] || "").toLowerCase();
+    const isBot = /googlebot|bingbot|baiduspider|yandex|duckduckbot|slurp|crawler|spider|facebookexternalhit/i.test(userAgent);
 
+    // Pre-rendered semantic HTML inside root for Googlebot crawler and noscript for browsers to prevent CLS
+    let preRenderedHtml = `<div id="root"></div>`;
     if (isAdminRoute) {
       title = `Acceso Administrativo | ${settings.siteTitle || "Ventas Juem"}`;
       description = "Acceso seguro y protegido al panel de administración de Ventas Juem.";
       preRenderedHtml = `<div id="root"></div>`;
+    } else if (preRenderedBody) {
+      if (isBot) {
+        preRenderedHtml = `<div id="root">${preRenderedBody}</div>`;
+      } else {
+        preRenderedHtml = `<div id="root"></div><noscript>${preRenderedBody}</noscript>`;
+      }
     }
 
     let output = htmlContent;

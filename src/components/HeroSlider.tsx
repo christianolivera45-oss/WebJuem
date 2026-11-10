@@ -275,10 +275,12 @@ export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderPro
             className="absolute inset-0 w-full h-full transform-gpu"
             style={{ willChange: "transform, opacity" }}
           >
-            {/* Background Image - Centered and scaled cleanly to eliminate vertical voids */}
             <img
               src={optimizeImageUrl(slides[currentIndex].imageUrl)}
               alt={slides[currentIndex].title || "Banner"}
+              width="1600"
+              height="500"
+              decoding="async"
               className="w-full h-full object-cover object-center transition-opacity duration-500 filter brightness-105 contrast-[1.03] saturate-[1.05]"
               style={{ opacity: imageOpacity }}
               referrerPolicy="no-referrer"
