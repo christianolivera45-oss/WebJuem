@@ -218,12 +218,12 @@ Precio: $${Math.round(product.price)}
         <AnimatePresence>
           <motion.img
             key={currentImage || "default"}
-            src={optimizeImageUrl(currentImage, 400, "auto")}
-            srcSet={buildImageSrcSet(currentImage, [200, 300, 400, 600])}
+            src={optimizeImageUrl(currentImage, 320, "auto")}
+            srcSet={buildImageSrcSet(currentImage, [180, 320, 480, 640])}
             sizes={layoutMode === "list" ? IMAGE_SIZES.list : IMAGE_SIZES.catalog}
             alt={product.name}
-            width="300"
-            height="400"
+            width="305"
+            height="305"
             decoding="async"
             initial={{ opacity: 0.8 }}
             animate={{ opacity: 1 }}

@@ -270,11 +270,11 @@ export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderPro
           >
             <img
               src={getOptimizedBannerUrl(slides[currentIndex].imageUrl)}
-              srcSet={buildImageSrcSet(slides[currentIndex].imageUrl, [600, 900, 1200, 1600])}
+              srcSet={buildImageSrcSet(slides[currentIndex].imageUrl, [420, 760, 1080, 1400])}
               sizes={IMAGE_SIZES.hero}
               alt={slides[currentIndex].title || "Banner"}
-              width="1600"
-              height="500"
+              width="1280"
+              height="450"
               decoding="async"
               className="w-full h-full object-cover object-center transition-opacity duration-500 filter brightness-105 contrast-[1.03] saturate-[1.05]"
               style={{ opacity: imageOpacity }}

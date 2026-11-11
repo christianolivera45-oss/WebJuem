@@ -44,8 +44,9 @@ export function optimizeImageUrl(
     const transformSegments = [
       `w_${width}`,
       `c_${crop}`,
-      `q_${quality === "auto" ? "auto" : quality}`,
-      "f_auto"
+      `q_${quality === "auto" ? "auto:good" : quality}`,
+      "f_auto",
+      "fl_lossy" // Forces lossy modern encoding (AVIF/WebP) even on PNG sources for maximum byte savings
     ].join(",");
 
     // Check if the first segment is already a transformation string
@@ -83,7 +84,7 @@ export function optimizeImageUrl(
  */
 export function buildImageSrcSet(
   url: string | undefined | null,
-  widths: number[] = [200, 300, 400, 600]
+  widths: number[] = [180, 320, 480, 640]
 ): string {
   if (!url || typeof url !== "string" || !url.trim()) return "";
   
@@ -97,16 +98,17 @@ export function buildImageSrcSet(
 
 /**
  * Preset sizes attribute strings for responsive layouts
+ * Eliminates PageSpeed Insights "Properly size images" warnings
  */
 export const IMAGE_SIZES = {
-  // Catalog Card: ~160px on mobile (2 cols), up to ~305px on desktop (4 cols)
-  catalog: "(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 305px",
+  // Catalog Card: 2 cols on mobile with container padding (calc(50vw - 20px)), 3 cols on tablet, max ~305px on desktop
+  catalog: "(max-width: 640px) calc(50vw - 20px), (max-width: 1024px) 33vw, 305px",
   // Catalog List Mode: fixed small thumbnail on mobile
-  list: "(max-width: 640px) 110px, (max-width: 1024px) 33vw, 305px",
+  list: "(max-width: 640px) 110px, (max-width: 1024px) 25vw, 250px",
   // Detail Modal Main Image: ~90vw on mobile, ~600px on desktop
   detail: "(max-width: 768px) 92vw, (max-width: 1200px) 50vw, 650px",
   // Small Thumbnails (cart, gallery thumbs, quotes): fixed 60-120px
-  thumbnail: "120px",
-  // Hero Banner: Full viewport width
-  hero: "100vw"
+  thumbnail: "100px",
+  // Hero Banner: container max 1280px with padding
+  hero: "(max-width: 768px) 100vw, (max-width: 1280px) 96vw, 1240px"
 };
