@@ -116,6 +116,7 @@ import {
 import { Product, SiteSettings, ShopState, CartItem, Category, Subcategory, ProductVariant, is3DProduct, isGenericSize, isGenericColor, getProductAvailableStock, getVariantAvailableStock, isProductInStock, Shipping, ShippingOrigin, StockTransfer, StockAdjustment, AdminTask, Coupon } from "./types";
 import ThemeStyles from "./components/ThemeStyles";
 import ProductCard from "./components/ProductCard";
+import { optimizeImageUrl } from "./utils/imageOptimizer";
 import ProductSlider from "./components/ProductSlider";
 import ProductDetails from "./components/ProductDetails";
 import CartDrawer from "./components/CartDrawer";
@@ -5644,8 +5645,11 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
             {/* Elegant Circular Logo inspired by Juem logo from design HTML */}
             {store.settings.logoType === "image" && Boolean(store.settings.logoImageUrl?.trim()) ? (
               <img
-                src={store.settings.logoImageUrl || null}
+                src={optimizeImageUrl(store.settings.logoImageUrl, 64, "auto")}
                 alt={store.settings.siteTitle}
+                width="32"
+                height="32"
+                decoding="async"
                 className={`${activeTab === "admin" ? "w-6 h-6 md:w-7 md:h-7" : "w-8 h-8"} rounded-xl object-cover shadow-sm`}
                 referrerPolicy="no-referrer"
               />
@@ -5981,7 +5985,11 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
                                       >
                                         <div className="w-8 h-8 rounded overflow-hidden bg-[#050B1A] shrink-0 border border-[#D4A55A]/25">
                                           <img
-                                            src={p.imageUrl || "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=100&q=80"}
+                                            src={optimizeImageUrl(p.imageUrl, 64, "auto")}
+                                            width="32"
+                                            height="32"
+                                            loading="lazy"
+                                            decoding="async"
                                             alt={p.name}
                                             referrerPolicy="no-referrer"
                                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"

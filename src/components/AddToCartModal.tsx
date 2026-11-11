@@ -2,6 +2,7 @@ import React from "react";
 import { Check } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Product } from "../types";
+import { optimizeImageUrl } from "../utils/imageOptimizer";
 
 interface AddToCartModalProps {
   isOpen: boolean;
@@ -139,8 +140,12 @@ export default function AddToCartModal({
                 : "bg-slate-50 border-slate-100"
             }`}>
               <img
-                src={product.imageUrl || "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=600&q=80"}
+                src={optimizeImageUrl(product.imageUrl, 120, "auto")}
                 alt={product.name}
+                width="56"
+                height="56"
+                decoding="async"
+                loading="lazy"
                 className="w-14 h-14 rounded-lg object-contain bg-[#050B1A]/40 shrink-0 border border-[#D4A55A]/10 p-0.5"
                 referrerPolicy="no-referrer"
               />
@@ -185,8 +190,12 @@ export default function AddToCartModal({
                         }`}
                       >
                         <img
-                          src={item.imageUrl || "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=600&q=80"}
+                          src={optimizeImageUrl(item.imageUrl, 80, "auto")}
                           alt={item.name}
+                          width="40"
+                          height="40"
+                          decoding="async"
+                          loading="lazy"
                           className="w-10 h-10 rounded-md object-contain bg-[#050B1A]/40 shrink-0 border border-[#D4A55A]/10 p-0.5"
                           referrerPolicy="no-referrer"
                         />

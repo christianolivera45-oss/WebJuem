@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, FormEvent } from "react";
 import { X, ShoppingBag, Trash2, Plus, Minus, ArrowRight } from "lucide-react";
 import { CartItem, SiteSettings, Coupon, is3DProduct, isGenericSize, isGenericColor } from "../types";
 import { motion, AnimatePresence } from "motion/react";
+import { optimizeImageUrl } from "../utils/imageOptimizer";
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -239,8 +240,12 @@ export default function CartDrawer({
                             className="relative z-10 flex gap-3 p-3 rounded-xl border bg-[#0B1730] border-[#D4A55A]/15 hover:border-[#D4A55A]/35 transition-transform duration-300 touch-pan-y cursor-grab active:cursor-grabbing select-none"
                           >
                             <img
-                              src={item.product.imageUrl || "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=600&q=80"}
+                              src={optimizeImageUrl(item.product.imageUrl, 150, "auto")}
                               alt={item.product.name}
+                              width="64"
+                              height="80"
+                              decoding="async"
+                              loading="lazy"
                               className="h-20 w-16 rounded-lg object-cover bg-zinc-800 flex-shrink-0"
                               draggable="false"
                             />

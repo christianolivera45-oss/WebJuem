@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { Product, SiteSettings, is3DProduct, isGenericSize, isGenericColor, getProductAvailableStock, getVariantAvailableStock, isProductInStock } from "../types";
 import ProductCard from "./ProductCard";
 import ImageWatermark from "./ImageWatermark";
+import { optimizeImageUrl, buildImageSrcSet, IMAGE_SIZES } from "../utils/imageOptimizer";
 
 export const PRINT_MATERIALS = [
   { id: "PLA", name: "PLA", priceMultiplier: 1.0, description: "Biodegradable, excelente acabado estético y variedad de colores." },
@@ -36,16 +37,9 @@ export default function ProductDetails({
 }: ProductDetailsProps) {
   const isThemeDark = settings.themeMode === "dark";
 
-  const optimizeImageUrlForDetail = (url: string | undefined | null, width: number = 800, customQual?: number): string | null => {
+  const optimizeImageUrlForDetail = (url: string | undefined | null, width: number = 800, customQual?: number | string): string | null => {
     if (!url || typeof url !== "string" || !url.trim()) return null;
-    if (url.includes("unsplash.com")) {
-      let optimized = url.replace("auto=format", "fm=webp");
-      // Remove any existing width or quality params to prevent duplication
-      optimized = optimized.replace(/[&?]w=\d+/g, "").replace(/[&?]q=\d+/g, "");
-      const quality = customQual !== undefined ? customQual : 70;
-      return optimized + (optimized.includes("?") ? "&" : "?") + `w=${width}&q=${quality}`;
-    }
-    return url;
+    return optimizeImageUrl(url, width, (customQual as any) || "auto");
   };
 
   const is3D = is3DProduct(product);
@@ -1124,7 +1118,12 @@ Me gustaría coordinar stock, fabricación y envío.`;
               <AnimatePresence mode="wait">
                 <motion.img
                   key={activeImgIndex}
-                  src={optimizeImageUrlForDetail(allImages[activeImgIndex] || allImages[0], 1200, 85) || (allImages[0] || null)}
+                  src={optimizeImageUrlForDetail(allImages[activeImgIndex] || allImages[0], 800, "auto") || (allImages[0] || null)}
+                  srcSet={buildImageSrcSet(allImages[activeImgIndex] || allImages[0], [400, 600, 800, 1200])}
+                  sizes={IMAGE_SIZES.detail}
+                  width="600"
+                  height="600"
+                  decoding="async"
                   alt={product.name}
                   onLoad={(e) => {
                     const img = e.currentTarget;
@@ -1222,8 +1221,10 @@ Me gustaría coordinar stock, fabricación y envío.`;
                   }`}
                 >
                   <img 
-                    src={optimizeImageUrlForDetail(imgUrl, 150, 65) || (imgUrl || null)} 
+                    src={optimizeImageUrlForDetail(imgUrl, 150, "auto") || (imgUrl || null)} 
                     alt={`${product.name} - Miniatura ${idx + 1}`} 
+                    width="74"
+                    height="74"
                     className="w-full h-full object-contain p-0.5" 
                     referrerPolicy="no-referrer" 
                     loading="lazy" 

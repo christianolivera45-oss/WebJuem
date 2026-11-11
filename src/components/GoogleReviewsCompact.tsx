@@ -267,6 +267,10 @@ export default function GoogleReviewsCompact({ themeMode, googlePlaceId }: Googl
                           <img
                             src={rev.profile_photo_url}
                             alt={rev.author_name}
+                            width="32"
+                            height="32"
+                            loading="lazy"
+                            decoding="async"
                             referrerPolicy="no-referrer"
                             className="w-8 h-8 rounded-full object-cover border border-indigo-500/10"
                           />

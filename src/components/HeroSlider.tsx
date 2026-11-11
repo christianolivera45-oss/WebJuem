@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { ChevronLeft, ChevronRight, MessageCircle, ArrowRight } from "lucide-react";
 import { SiteSettings, HeroSlide } from "../types";
 import { motion, AnimatePresence } from "motion/react";
+import { optimizeImageUrl, buildImageSrcSet, IMAGE_SIZES } from "../utils/imageOptimizer";
 
 interface HeroSliderProps {
   settings: SiteSettings;
@@ -62,21 +63,13 @@ export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderPro
     ? settings.heroSlides 
     : (isNavidad ? navidadSlides : defaultSlides);
 
-  const optimizeImageUrl = (url: string | undefined | null): string => {
+  const getOptimizedBannerUrl = (url: string | undefined | null): string => {
     if (!url || typeof url !== "string" || !url.trim()) {
       return "https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=1600&q=80";
     }
-    if (url.includes("unsplash.com")) {
-      let optimized = url.replace("auto=format", "fm=webp");
-      // On mobile devices we load a much smaller/lighter banner image
-      const isMobile = window.innerWidth < 768;
-      const targetSizeAndQuality = isMobile ? "&w=750&q=70" : "&w=1400&q=75";
-      
-      // strip existing width and quality parameters
-      optimized = optimized.replace(/[&?]w=\d+/g, "").replace(/[&?]q=\d+/g, "");
-      return optimized + (optimized.includes("?") ? "&" : "?") + targetSizeAndQuality;
-    }
-    return url;
+    const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
+    const targetWidth = isMobile ? 750 : 1400;
+    return optimizeImageUrl(url, targetWidth, "auto");
   };
 
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -276,7 +269,9 @@ export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderPro
             style={{ willChange: "transform, opacity" }}
           >
             <img
-              src={optimizeImageUrl(slides[currentIndex].imageUrl)}
+              src={getOptimizedBannerUrl(slides[currentIndex].imageUrl)}
+              srcSet={buildImageSrcSet(slides[currentIndex].imageUrl, [600, 900, 1200, 1600])}
+              sizes={IMAGE_SIZES.hero}
               alt={slides[currentIndex].title || "Banner"}
               width="1600"
               height="500"

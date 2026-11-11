@@ -3,6 +3,7 @@ import { Product, SiteSettings, getProductAvailableStock, isGenericSize, isGener
 import { ShoppingCart, Eye, Tag, Phone } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import ImageWatermark from "./ImageWatermark";
+import { optimizeImageUrl, buildImageSrcSet, IMAGE_SIZES } from "../utils/imageOptimizer";
 
 interface ProductCardProps {
   key?: string;
@@ -179,20 +180,6 @@ Precio: $${Math.round(product.price)}
     return `$${Math.round(cheapestOption.price)}`;
   };
 
-  const optimizeImageUrl = (url: string | undefined | null): string => {
-    if (!url || typeof url !== "string" || !url.trim()) {
-      return "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=600&q=80";
-    }
-    if (url.includes("unsplash.com")) {
-      let optimized = url.replace("auto=format", "fm=webp");
-      // Remove any existing width or quality params to prevent duplication
-      optimized = optimized.replace(/[&?]w=\d+/g, "").replace(/[&?]q=\d+/g, "");
-      // Add optimized width and lower quality (q=70) for super fast mobile and desktop loading
-      return optimized + (optimized.includes("?") ? "&" : "?") + "w=400&q=70";
-    }
-    return url;
-  };
-
   const hasVariants = Boolean(
     (product.variants && product.variants.length > 0) ||
     (product.sizes && product.sizes.length > 0) ||
@@ -231,7 +218,9 @@ Precio: $${Math.round(product.price)}
         <AnimatePresence>
           <motion.img
             key={currentImage || "default"}
-            src={optimizeImageUrl(currentImage || "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=600&q=80")}
+            src={optimizeImageUrl(currentImage, 400, "auto")}
+            srcSet={buildImageSrcSet(currentImage, [200, 300, 400, 600])}
+            sizes={layoutMode === "list" ? IMAGE_SIZES.list : IMAGE_SIZES.catalog}
             alt={product.name}
             width="300"
             height="400"

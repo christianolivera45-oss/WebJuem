@@ -31,6 +31,7 @@ import {
 import { CartItem, SiteSettings, Coupon, is3DProduct, isGenericSize, isGenericColor } from "../types";
 import { motion, AnimatePresence } from "motion/react";
 import { InteractiveMap } from "./InteractiveMap";
+import { optimizeImageUrl } from "../utils/imageOptimizer";
 
 interface AddressItem {
   id: string;
@@ -3558,8 +3559,12 @@ export default function Checkout({
                   return (
                     <div key={`${item.product.id}-${item.selectedSize}-${item.selectedColor}`} className="flex items-start gap-3 text-xs">
                       <img
-                        src={item.product.imageUrl || "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=600&q=80"}
+                        src={optimizeImageUrl(item.product.imageUrl, 120, "auto")}
                         alt={item.product.name}
+                        width="44"
+                        height="56"
+                        decoding="async"
+                        loading="lazy"
                         className="h-14 w-11 object-cover rounded bg-zinc-800 border border-zinc-800/60 flex-shrink-0"
                       />
                       <div className="flex-1 min-w-0">

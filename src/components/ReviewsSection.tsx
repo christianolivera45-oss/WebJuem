@@ -559,6 +559,10 @@ export default function ReviewsSection({ themeMode }: ReviewsSectionProps) {
                         <img
                           src={rev.profile_photo_url}
                           alt={rev.author_name}
+                          width="40"
+                          height="40"
+                          loading="lazy"
+                          decoding="async"
                           referrerPolicy="no-referrer"
                           className="w-10 h-10 rounded-full object-cover ring-2 ring-indigo-500/10"
                         />
