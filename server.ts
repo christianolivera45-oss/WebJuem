@@ -12239,8 +12239,12 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     }
     
     const settings: any = state.settings || {};
-    let title = settings.siteTitle || "Juem Mvd";
-    let description = settings.siteSubtitle || "Indumentaria de temporada, abrigos térmicos y accesorios con envío express a todo Uruguay.";
+    const rawSiteTitle = (settings.siteTitle || "").trim();
+    let title = "JUEM | Soportes, Juguetes de Navidad y Tecnología en Uruguay";
+    if (rawSiteTitle && !["Juem Mvd", "Ventas Juem", "Juem", "JUEM"].includes(rawSiteTitle)) {
+      title = `${rawSiteTitle} | Soportes, Juguetes de Navidad y Tecnología en Uruguay`;
+    }
+    let description = settings.seoDescription || settings.siteSubtitle || "Tienda online multirrubro en Uruguay. Encontrá soportes para pared y escritorio, juguetes de Navidad, tecnología y más con envíos rápidos a todo el país.";
     const defaultOgBanner = `${baseUrl}/og-celestial.png?v=3`;
     let imgUrl = settings.ogImageUrl || defaultOgBanner;
     if (imgUrl.startsWith("/")) {
@@ -12253,9 +12257,9 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     let schemaJson = "";
     let preRenderedBody = "";
 
-    // Local-focused default description improvements
-    if (!settings.siteSubtitle) {
-      description = "Juem Mvd - Indumentaria de temporada, abrigos térmicos, calzado y accesorios estéticos con envíos a todo el país. Retiro en Montevideo y Pinamar Canelones.";
+    // Multirrubro default description (Uruguay, Soportes, Juguetes, Tecnología)
+    if (!settings.seoDescription || settings.seoDescription.includes("indumentaria de temporada")) {
+      description = "Tienda online multirrubro en Uruguay. Encontrá soportes para pared y escritorio, juguetes de Navidad, tecnología y más con envíos rápidos a todo el país.";
     }
 
     // Detales para un producto en específico
@@ -12448,28 +12452,48 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       }
     } else if (segments.length > 0 && segments[0] !== "admin") {
       // Category and subcategory routes
+      const catSlug = segments[0].toLowerCase();
       const categories = state.dbCategories || [];
-      const matchedCat = categories.find(c => c.id.toLowerCase() === segments[0].toLowerCase() || generateSlug(c.nombre) === segments[0].toLowerCase());
-      if (matchedCat) {
-        title = `${matchedCat.nombre} | ${settings.siteTitle || "Ventas Juem"} Uruguay`;
-        description = `Explorá las mejores opciones de ${matchedCat.nombre.toLowerCase()} en Ventas Juem. Comprá online con envíos rápidos a todo Uruguay.`;
+      const matchedCat = categories.find(c => c.id.toLowerCase() === catSlug || generateSlug(c.nombre) === catSlug);
+
+      if (catSlug === "soportes" || (matchedCat && (matchedCat.id === "soportes" || generateSlug(matchedCat.nombre) === "soportes"))) {
+        title = "Soportes de Pared, Celular y Tablets en Uruguay | JUEM";
+        description = "Comprá soportes resistentes para celulares, tablets, controles y monitores en JUEM. Diseños para pared y escritorio con envío express a todo Uruguay.";
+        canonicalUrl = `${canonicalBase}/soportes`;
+      } else if (catSlug === "juguetes" || (matchedCat && (matchedCat.id === "juguetes" || generateSlug(matchedCat.nombre) === "juguetes"))) {
+        title = "Juguetes de Navidad y Juegos Infantiles en Uruguay | JUEM";
+        description = "Descubrí los mejores juguetes de Navidad, juegos didácticos y regalos para niños en JUEM. Calidad, precios accesibles y envíos a todo Uruguay.";
+        canonicalUrl = `${canonicalBase}/juguetes`;
+      } else if (catSlug === "ropa" || (matchedCat && (matchedCat.id === "ropa" || generateSlug(matchedCat.nombre) === "ropa"))) {
+        title = "Ropa e Indumentaria de Temporada en Uruguay | JUEM";
+        description = "Catálogo de ropa en JUEM: buzos manta, abrigos térmicos y prendas de temporada para mujer, hombre y niños. Envíos express a todo el país.";
+        canonicalUrl = `${canonicalBase}/ropa`;
+      } else if (matchedCat) {
+        title = `${matchedCat.nombre} en Uruguay | JUEM`;
+        description = `Explorá las mejores opciones de ${matchedCat.nombre.toLowerCase()} en JUEM. Comprá online con envíos rápidos a todo Uruguay.`;
         canonicalUrl = `${canonicalBase}/${matchedCat.id.toLowerCase()}`;
+      }
+
+      if (matchedCat || catSlug === "soportes" || catSlug === "juguetes" || catSlug === "ropa") {
+        const catName = matchedCat ? matchedCat.nombre : (catSlug.charAt(0).toUpperCase() + catSlug.slice(1));
+        const catId = matchedCat ? matchedCat.id.toLowerCase() : catSlug;
         
         let matchedSub: any = null;
-        if (segments[1]) {
+        if (segments[1] && matchedCat) {
           const subcategories = state.dbSubcategories || [];
           matchedSub = subcategories.find(s => s.categoria_id === matchedCat.id && (s.id.toLowerCase() === segments[1].toLowerCase() || generateSlug(s.nombre) === segments[1].toLowerCase()));
           if (matchedSub) {
-            title = `${matchedSub.nombre} (${matchedCat.nombre}) | ${settings.siteTitle || "Ventas Juem"}`;
-            description = `Comprá ${matchedSub.nombre.toLowerCase()} en la categoría ${matchedCat.nombre.toLowerCase()} de Ventas Juem. Calidad y envíos a todo Uruguay.`;
-            canonicalUrl = `${canonicalBase}/${matchedCat.id.toLowerCase()}/${matchedSub.id.toLowerCase()}`;
+            title = `${matchedSub.nombre} (${catName}) | JUEM Uruguay`;
+            description = `Comprá ${matchedSub.nombre.toLowerCase()} en la categoría ${catName.toLowerCase()} de JUEM. Calidad y envíos a todo Uruguay.`;
+            canonicalUrl = `${canonicalBase}/${catId}/${matchedSub.id.toLowerCase()}`;
           }
         }
 
         // Get matching active products for this category/subcategory
         const matchingProducts = (state.products || []).filter(p => {
           if (p.active === false || p.paused === true) return false;
-          const inCat = p.categoria_id === matchedCat.id || (p.category && p.category.toLowerCase() === matchedCat.nombre.toLowerCase());
+          const inCat = (matchedCat && p.categoria_id === matchedCat.id) || 
+                        (p.category && (p.category.toLowerCase() === catName.toLowerCase() || generateSlug(p.category) === catSlug));
           if (!matchedSub) return inCat;
           return inCat && (p.subcategoria_id === matchedSub.id || ((p as any).subcategoria && (p as any).subcategoria.toLowerCase() === matchedSub.nombre.toLowerCase()));
         });
@@ -12478,14 +12502,14 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         schemaJson = JSON.stringify({
           "@context": "https://schema.org",
           "@type": "CollectionPage",
-          "name": `${matchedSub ? matchedSub.nombre : matchedCat.nombre} | Ventas Juem`,
+          "name": `${matchedSub ? matchedSub.nombre : catName} | JUEM Uruguay`,
           "description": description,
           "url": canonicalUrl,
           "breadcrumb": {
             "@type": "BreadcrumbList",
             "itemListElement": [
               { "@type": "ListItem", "position": 1, "name": "Inicio", "item": `${baseUrl}/` },
-              { "@type": "ListItem", "position": 2, "name": matchedCat.nombre, "item": `${baseUrl}/${matchedCat.id}` },
+              { "@type": "ListItem", "position": 2, "name": catName, "item": `${baseUrl}/${catId}` },
               ...(matchedSub ? [{ "@type": "ListItem", "position": 3, "name": matchedSub.nombre, "item": canonicalUrl }] : [])
             ]
           },
@@ -12507,18 +12531,18 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
           <div class="ssr-pre-render" style="max-width:1200px;margin:0 auto;padding:24px 16px;font-family:system-ui,-apple-system,sans-serif;color:#1e293b;">
             <nav aria-label="Ruta de exploración" style="font-size:12px;margin-bottom:16px;">
               <a href="/" style="color:#0284c7;text-decoration:none;">Inicio</a> &gt; 
-              <a href="/${matchedCat.id}" style="color:#0284c7;text-decoration:none;">${matchedCat.nombre}</a>
+              <a href="/${catId}" style="color:#0284c7;text-decoration:none;">${catName}</a>
               ${matchedSub ? ` &gt; <span style="color:#64748b;">${matchedSub.nombre}</span>` : ""}
             </nav>
             <header style="margin-bottom:24px;">
-              <h1 style="font-size:26px;font-weight:800;margin:0 0 8px;color:#0f172a;">${matchedSub ? matchedSub.nombre : matchedCat.nombre} en Uruguay | Catálogo Juem</h1>
+              <h1 style="font-size:26px;font-weight:800;margin:0 0 8px;color:#0f172a;">${matchedSub ? matchedSub.nombre : catName} en Uruguay | Catálogo JUEM</h1>
               <p style="font-size:14px;color:#64748b;margin:0;">Explora ${matchingProducts.length} artículos disponibles con entrega rápida en todo el país.</p>
             </header>
             <main style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:20px;">
               ${matchingProducts.slice(0, 40).map(p => `
                 <article style="border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;background:#fff;">
                   <a href="/producto/${generateSlug(p.name)}" style="text-decoration:none;color:inherit;display:block;">
-                    <img src="${optimizeServerImageUrl(p.imageUrl || imgUrl, 400)}" alt="${p.name} - ${matchedCat.nombre} Juem" width="200" height="200" loading="lazy" decoding="async" style="width:100%;height:200px;object-fit:cover;" />
+                    <img src="${optimizeServerImageUrl(p.imageUrl || imgUrl, 400)}" alt="${p.name} - ${catName} JUEM" width="200" height="200" loading="lazy" decoding="async" style="width:100%;height:200px;object-fit:cover;" />
                     <div style="padding:12px;">
                       <h3 style="font-size:13px;font-weight:700;margin:0 0 6px;color:#0f172a;line-height:1.3;">${p.name}</h3>
                       <p style="font-size:14px;font-weight:800;color:#15803d;margin:0;">$${Number(p.price || 0).toLocaleString('es-UY')} UYU</p>
@@ -12532,16 +12556,19 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     }
 
     if (!schemaJson) {
-      // LocalBusiness / Store hybrid markup tailored for Local SEO targeting Ciudad de la Costa, Salinas, Pinamar, and Montevideo
+      // Store Schema.org structured data defining JUEM as a multi-category store
       schemaJson = JSON.stringify({
         "@context": "https://schema.org",
-        "@type": "LocalBusiness",
-        "additionalType": "https://schema.org/Store",
-        "name": settings.siteTitle || "Ventas Juem",
-        "description": `${description} Ventas y envíos express coordinados para Montevideo, Ciudad de la Costa, Salinas, Pinamar y Maldonado.`,
+        "@type": "Store",
+        "name": "JUEM",
+        "alternateName": "Ventas Juem Uruguay",
         "url": baseUrl,
-        "telephone": settings.whatsappNumber || "",
+        "logo": `${baseUrl}/og-celestial.png?v=3`,
+        "description": "Tienda online multirrubro en Uruguay especializada en soportes para celulares, tablets, controles y monitores, juguetes de Navidad y catálogo de tecnología y hogar.",
+        "telephone": settings.whatsappNumber || "+59891234567",
         "priceRange": "$$",
+        "currenciesAccepted": "UYU",
+        "paymentAccepted": "Efectivo, Tarjeta de Crédito, Transferencia Bancaria, Mercado Pago",
         "image": imgUrl,
         "address": {
           "@type": "PostalAddress",
@@ -12556,6 +12583,11 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
           "latitude": -34.8258,
           "longitude": -55.9525
         },
+        "areaServed": [
+          { "@type": "AdministrativeArea", "name": "Montevideo" },
+          { "@type": "AdministrativeArea", "name": "Canelones" },
+          { "@type": "Country", "name": "Uruguay" }
+        ],
         "openingHoursSpecification": {
           "@type": "OpeningHoursSpecification",
           "dayOfWeek": [
@@ -12569,6 +12601,43 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
           ],
           "opens": "09:00",
           "closes": "20:00"
+        },
+        "hasOfferCatalog": {
+          "@type": "OfferCatalog",
+          "name": "Catálogo de Productos JUEM",
+          "itemListElement": [
+            {
+              "@type": "OfferCatalog",
+              "name": "Soportes y Accesorios",
+              "itemListElement": [
+                { "@type": "Offer", "itemOffered": { "@type": "Product", "name": "Soportes de Pared y Escritorio para Celulares y Tablets" } },
+                { "@type": "Offer", "itemOffered": { "@type": "Product", "name": "Soportes para Mandos, Auriculares y Monitores" } }
+              ]
+            },
+            {
+              "@type": "OfferCatalog",
+              "name": "Juguetes de Navidad y Juegos",
+              "itemListElement": [
+                { "@type": "Offer", "itemOffered": { "@type": "Product", "name": "Juguetes Infantiles y Regalos Navideños" } },
+                { "@type": "Offer", "itemOffered": { "@type": "Product", "name": "Juegos Didácticos y Entretenimiento" } }
+              ]
+            },
+            {
+              "@type": "OfferCatalog",
+              "name": "Tecnología y Artículos Varios",
+              "itemListElement": [
+                { "@type": "Offer", "itemOffered": { "@type": "Product", "name": "Accesorios de Computación y Audio" } },
+                { "@type": "Offer", "itemOffered": { "@type": "Product", "name": "Gadgets y Accesorios Electrónicos" } }
+              ]
+            },
+            {
+              "@type": "OfferCatalog",
+              "name": "Ropa e Indumentaria de Temporada",
+              "itemListElement": [
+                { "@type": "Offer", "itemOffered": { "@type": "Product", "name": "Buzos Manta Térmicos y Prendas de Temporada" } }
+              ]
+            }
+          ]
         },
         "hasMerchantReturnPolicy": {
           "@type": "MerchantReturnPolicy",
@@ -12589,7 +12658,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       preRenderedBody = `
         <div class="ssr-pre-render" style="max-width:1200px;margin:0 auto;padding:24px 16px;font-family:system-ui,-apple-system,sans-serif;color:#1e293b;">
           <header style="text-align:center;margin-bottom:32px;">
-            <h1 style="font-size:28px;font-weight:900;color:#0f172a;margin:0 0 8px;">Ventas Juem | Ropa de Temporada, Abrigos Premium y Accesorios</h1>
+            <h1 style="font-size:28px;font-weight:900;color:#0f172a;margin:0 0 8px;">JUEM | Soportes, Juguetes de Navidad y Tecnología en Uruguay</h1>
             <p style="font-size:14px;color:#64748b;max-width:650px;margin:0 auto;">${description}</p>
           </header>
           <section>

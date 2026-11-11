@@ -402,10 +402,10 @@ export const calculateRelevance = (
 };
 
 export const DEFAULT_SETTINGS: SiteSettings = {
-  siteTitle: "Juem Mvd",
-  siteSubtitle: "Ropa de Temporada, Abrigos Premium y Accesorios",
-  bannerTitle: "La primavera llegó a Juem",
-  bannerSubtitle: "Nuevos productos, nuevas oportunidades",
+  siteTitle: "JUEM",
+  siteSubtitle: "Soportes, Juguetes de Navidad y Tecnología en Uruguay",
+  bannerTitle: "Novedades y Ofertas en JUEM",
+  bannerSubtitle: "Soportes, juguetes de Navidad, tecnología y más con envíos a todo Uruguay",
   bannerImageUrl: "https://res.cloudinary.com/dwqzjqjwz/image/upload/v1790958982/ventas_juem_cloudinary/vk1hhf4ukjakjowpeta5.webp",
   bannerOpacity: 95,
   bannerHeight: "compact",
@@ -416,8 +416,8 @@ export const DEFAULT_SETTINGS: SiteSettings = {
   googleAnalyticsId: "",
   googleTagManagerId: "",
   metaPixelId: "",
-  seoDescription: "Descubrí en Juem Mvd la mejor indumentaria de temporada, abrigos térmicos, accesorios de invierno y proyectos 3D con envíos a todo el país.",
-  seoKeywords: "Juem, Juem Mvd, tienda Juem, ropa de invierno, abrigos termicos, buzos manta, gorros, guantes neopreno, accesorios 3D Uruguay, envios express, montevideo, canelones, pinamar",
+  seoDescription: "Tienda online multirrubro en Uruguay. Encontrá soportes para pared y escritorio, juguetes de Navidad, tecnología y más con envíos rápidos a todo el país.",
+  seoKeywords: "JUEM, tienda multirrubro Uruguay, soportes celulares pared escritorio, juguetes navidad montevideo, tecnologia accesorios uruguay, buzos manta, envios express",
   facebookUrl: "https://facebook.com",
   instagramUrl: "https://instagram.com",
   whatsappNumber: "59891234567",
