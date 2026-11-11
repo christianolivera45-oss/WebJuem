@@ -13165,6 +13165,12 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     next();
   });
 
+  // Cache-Control agresivo para archivos estáticos con hash único (/assets/*)
+  app.use("/assets", (req, res, next) => {
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    next();
+  });
+
   // Serve static assets from public directory (favicons, manifests, robots.txt)
   app.use(express.static(path.resolve("public"), { maxAge: "1d" }));
 
@@ -13273,7 +13279,22 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       }
     });
 
-    app.use(express.static(distPath));
+    // Aggressive long-term caching for hashed production assets (/assets/*)
+    app.use("/assets", express.static(path.join(distPath, "assets"), {
+      maxAge: "1y",
+      immutable: true,
+      setHeaders: (res) => {
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      }
+    }));
+
+    app.use(express.static(distPath, {
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith(".html")) {
+          res.setHeader("Cache-Control", "public, max-age=0, must-revalidate");
+        }
+      }
+    }));
     app.get("*", (req, res) => {
       if (req.path.startsWith("/api/")) {
         return res.status(404).json({ error: "Endpoint de API no encontrado" });
