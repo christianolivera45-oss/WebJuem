@@ -700,9 +700,18 @@ export default function App() {
   const [userItemsPerPage, setUserItemsPerPage] = useState<number | 'auto'>('auto');
 
   useEffect(() => {
-    const handleResize = () => setWindowWidth(window.innerWidth);
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    let resizeTimer: any = null;
+    const handleResize = () => {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        setWindowWidth(window.innerWidth);
+      }, 150);
+    };
+    window.addEventListener("resize", handleResize, { passive: true });
+    return () => {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      window.removeEventListener("resize", handleResize);
+    };
   }, []);
 
   // Lock body scroll and close on Escape key when transfer detail modal is open
@@ -723,18 +732,12 @@ export default function App() {
   }, [selectedTransferGroup]);
 
   const scrollToCatalogTop = useCallback(() => {
-    setTimeout(() => {
+    requestAnimationFrame(() => {
       const el = document.getElementById("catalog-grid-top") || document.getElementById("catalog-view");
       if (el) {
-        const headerOffset = 90;
-        const elementPosition = el.getBoundingClientRect().top + window.pageYOffset;
-        const offsetPosition = Math.max(0, elementPosition - headerOffset);
-        window.scrollTo({
-          top: offsetPosition,
-          behavior: "smooth"
-        });
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
       }
-    }, 80);
+    });
   }, []);
 
   const isInitialCatalogPageRef = useRef(true);

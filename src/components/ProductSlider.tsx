@@ -32,24 +32,30 @@ export default function ProductSlider({
   // Render all products provided
   const displayedProducts = products;
 
+  const rafIdRef = useRef<number | null>(null);
+
   const checkScrollState = () => {
-    const el = containerRef.current;
-    if (el) {
-      setCanScrollLeft(el.scrollLeft > 2);
-      setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 2);
-    }
+    if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
+    rafIdRef.current = requestAnimationFrame(() => {
+      const el = containerRef.current;
+      if (!el) return;
+      const scrollLeft = el.scrollLeft;
+      const clientWidth = el.clientWidth;
+      const scrollWidth = el.scrollWidth;
+      setCanScrollLeft(scrollLeft > 2);
+      setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 4);
+    });
   };
 
   useEffect(() => {
     const el = containerRef.current;
     if (el) {
       checkScrollState();
-      el.addEventListener("scroll", checkScrollState);
-      
-      // Also listen to window resize to update state
-      window.addEventListener("resize", checkScrollState);
+      el.addEventListener("scroll", checkScrollState, { passive: true });
+      window.addEventListener("resize", checkScrollState, { passive: true });
     }
     return () => {
+      if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
       if (el) {
         el.removeEventListener("scroll", checkScrollState);
       }
@@ -57,38 +63,39 @@ export default function ProductSlider({
     };
   }, [displayedProducts]);
 
-  // Autoplay auto-scrolling effect
+  // Autoplay auto-scrolling effect using requestAnimationFrame and constant card step
   useEffect(() => {
     if (displayedProducts.length <= 1 || isPaused || autoplaySpeed <= 0) return;
 
     const interval = setInterval(() => {
-      const el = containerRef.current;
-      if (el) {
+      requestAnimationFrame(() => {
+        const el = containerRef.current;
+        if (!el) return;
         const maxScroll = el.scrollWidth - el.clientWidth;
         if (el.scrollLeft >= maxScroll - 5) {
-          // Wrap around to start smoothly
           el.scrollTo({ left: 0, behavior: "smooth" });
         } else {
-          // Scroll by one card width + gap
-          const firstCard = el.querySelector(".flex-shrink-0");
-          const scrollAmount = firstCard ? firstCard.clientWidth + 24 : 324;
+          // Standard catalog card width (305px) + gap (16px) = 321px
+          const scrollAmount = 321;
           el.scrollBy({ left: scrollAmount, behavior: "smooth" });
         }
-      }
-    }, autoplaySpeed); // Transitions every autoplaySpeed ms
+      });
+    }, autoplaySpeed);
 
     return () => clearInterval(interval);
   }, [displayedProducts, isPaused, autoplaySpeed]);
 
   const scroll = (direction: "left" | "right") => {
-    const el = containerRef.current;
-    if (el) {
-      const scrollAmount = el.clientWidth * 0.75; // Scroll 3/4 of container width
-      el.scrollBy({
-        left: direction === "left" ? -scrollAmount : scrollAmount,
-        behavior: "smooth"
-      });
-    }
+    requestAnimationFrame(() => {
+      const el = containerRef.current;
+      if (el) {
+        const scrollAmount = Math.max(300, Math.floor(el.clientWidth * 0.75));
+        el.scrollBy({
+          left: direction === "left" ? -scrollAmount : scrollAmount,
+          behavior: "smooth"
+        });
+      }
+    });
   };
 
   if (displayedProducts.length === 0) {
