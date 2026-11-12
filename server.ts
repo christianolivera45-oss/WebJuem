@@ -12200,7 +12200,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
   }
 
   // Cloudinary & Unsplash dynamic URL optimizer for server-rendered HTML
-  function optimizeServerImageUrl(url: string | undefined | null, width: number = 400): string {
+  function optimizeServerImageUrl(url: string | undefined | null, width: number = 310): string {
     if (!url || typeof url !== "string" || !url.trim()) return "";
     const trimmed = url.trim();
     if (trimmed.includes("cloudinary.com")) {
@@ -12209,16 +12209,19 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       const prefix = trimmed.substring(0, uploadIdx + "/upload/".length);
       const rest = trimmed.substring(uploadIdx + "/upload/".length);
       const segments = rest.split("/");
-      const transform = `w_${width},c_limit,q_auto,f_auto`;
+      const transform = `w_${width},c_limit,q_auto:eco,f_auto,fl_lossy`;
       const isExisting = /^(w_|h_|c_|q_|f_|e_)/.test(segments[0] || "") && !segments[0].startsWith("v") && segments.length > 1;
-      if (isExisting) {
-        return `${prefix}${transform}/${segments.slice(1).join("/")}`;
+      let finalUrl = isExisting 
+        ? `${prefix}${transform}/${segments.slice(1).join("/")}`
+        : `${prefix}${transform}/${rest}`;
+      if (/\.(png|jpg|jpeg)$/i.test(finalUrl)) {
+        finalUrl = finalUrl.replace(/\.(png|jpg|jpeg)$/i, ".webp");
       }
-      return `${prefix}${transform}/${rest}`;
+      return finalUrl;
     }
     if (trimmed.includes("unsplash.com")) {
       let clean = trimmed.replace("auto=format", "fm=webp").replace(/[&?]w=\d+/g, "").replace(/[&?]q=\d+/g, "");
-      return clean + (clean.includes("?") ? "&" : "?") + `w=${width}&q=70`;
+      return clean + (clean.includes("?") ? "&" : "?") + `w=${width}&q=65`;
     }
     return trimmed;
   }
@@ -12542,7 +12545,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
               ${matchingProducts.slice(0, 40).map(p => `
                 <article style="border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;background:#fff;">
                   <a href="/producto/${generateSlug(p.name)}" style="text-decoration:none;color:inherit;display:block;">
-                    <img src="${optimizeServerImageUrl(p.imageUrl || imgUrl, 400)}" alt="${p.name} - ${catName} JUEM" width="200" height="200" loading="lazy" decoding="async" style="width:100%;height:200px;object-fit:cover;" />
+                    <img src="${optimizeServerImageUrl(p.imageUrl || imgUrl, 310)}" alt="${p.name} - ${catName} JUEM" width="305" height="305" loading="lazy" decoding="async" style="width:100%;aspect-ratio:1/1;object-fit:cover;" />
                     <div style="padding:12px;">
                       <h3 style="font-size:13px;font-weight:700;margin:0 0 6px;color:#0f172a;line-height:1.3;">${p.name}</h3>
                       <p style="font-size:14px;font-weight:800;color:#15803d;margin:0;">$${Number(p.price || 0).toLocaleString('es-UY')} UYU</p>
@@ -12667,7 +12670,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
               ${featuredProducts.map(p => `
                 <article style="border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;background:#fff;">
                   <a href="/producto/${generateSlug(p.name)}" style="text-decoration:none;color:inherit;display:block;">
-                    <img src="${optimizeServerImageUrl(p.imageUrl || imgUrl, 400)}" alt="${p.name} - Juem Uruguay" width="200" height="200" loading="lazy" decoding="async" style="width:100%;height:200px;object-fit:cover;" />
+                    <img src="${optimizeServerImageUrl(p.imageUrl || imgUrl, 310)}" alt="${p.name} - JUEM Uruguay" width="305" height="305" loading="lazy" decoding="async" style="width:100%;aspect-ratio:1/1;object-fit:cover;" />
                     <div style="padding:12px;">
                       <h3 style="font-size:13px;font-weight:700;margin:0 0 6px;color:#0f172a;line-height:1.3;">${p.name}</h3>
                       <p style="font-size:14px;font-weight:800;color:#15803d;margin:0;">$${Number(p.price || 0).toLocaleString('es-UY')} UYU</p>

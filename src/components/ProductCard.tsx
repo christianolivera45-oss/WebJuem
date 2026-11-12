@@ -218,8 +218,8 @@ Precio: $${Math.round(product.price)}
         <AnimatePresence>
           <motion.img
             key={currentImage || "default"}
-            src={optimizeImageUrl(currentImage, 320, "auto")}
-            srcSet={buildImageSrcSet(currentImage, [180, 320, 480, 640])}
+            src={optimizeImageUrl(currentImage, 310, "auto:eco")}
+            srcSet={buildImageSrcSet(currentImage, [160, 240, 310, 380, 480])}
             sizes={layoutMode === "list" ? IMAGE_SIZES.list : IMAGE_SIZES.catalog}
             alt={product.name}
             width="305"

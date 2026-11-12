@@ -22,8 +22,8 @@ const DEFAULT_FALLBACK_IMAGE = "https://images.unsplash.com/photo-1551028719-001
  */
 export function optimizeImageUrl(
   url: string | undefined | null,
-  width: number = 400,
-  quality: "auto" | number = "auto",
+  width: number = 310,
+  quality: "auto" | "auto:eco" | "auto:good" | "auto:low" | number | string = "auto:eco",
   crop: "limit" | "fill" | "fit" | "scale" | "thumb" = "limit"
 ): string {
   if (!url || typeof url !== "string" || !url.trim()) {
@@ -41,10 +41,14 @@ export function optimizeImageUrl(
     const rest = trimmed.substring(uploadIdx + "/upload/".length);
     const segments = rest.split("/");
 
+    const qStr = typeof quality === "string" 
+      ? (quality.startsWith("auto") ? quality : `auto:${quality}`)
+      : String(quality);
+
     const transformSegments = [
       `w_${width}`,
       `c_${crop}`,
-      `q_${quality === "auto" ? "auto:good" : quality}`,
+      `q_${qStr}`,
       "f_auto",
       "fl_lossy" // Forces lossy modern encoding (AVIF/WebP) even on PNG sources for maximum byte savings
     ].join(",");
@@ -56,13 +60,16 @@ export function optimizeImageUrl(
       !firstSegment.startsWith("v") &&
       segments.length > 1;
 
-    if (isExistingTransform) {
-      // Replace existing transformation segment with our optimized one
-      return `${prefix}${transformSegments}/${segments.slice(1).join("/")}`;
+    let finalUrl = isExistingTransform
+      ? `${prefix}${transformSegments}/${segments.slice(1).join("/")}`
+      : `${prefix}${transformSegments}/${rest}`;
+
+    // Force .webp extension on Cloudinary URL to ensure WebP/AVIF delivery over legacy PNG/JPEG
+    if (/\.(png|jpg|jpeg)$/i.test(finalUrl)) {
+      finalUrl = finalUrl.replace(/\.(png|jpg|jpeg)$/i, ".webp");
     }
 
-    // Insert new transformation segment before version/public_id
-    return `${prefix}${transformSegments}/${rest}`;
+    return finalUrl;
   }
 
   // Unsplash Optimization
@@ -71,7 +78,7 @@ export function optimizeImageUrl(
       .replace("auto=format", "fm=webp")
       .replace(/[&?]w=\d+/g, "")
       .replace(/[&?]q=\d+/g, "");
-    const q = quality === "auto" ? 70 : quality;
+    const q = typeof quality === "number" ? quality : 65;
     const separator = clean.includes("?") ? "&" : "?";
     return `${clean}${separator}w=${width}&q=${q}`;
   }
@@ -81,10 +88,11 @@ export function optimizeImageUrl(
 
 /**
  * Generates an HTML5 responsive srcset string for adaptable image loading
+ * Granular steps prevent browsers from selecting oversized 480px images for 305px slots
  */
 export function buildImageSrcSet(
   url: string | undefined | null,
-  widths: number[] = [180, 320, 480, 640]
+  widths: number[] = [160, 240, 310, 380, 480]
 ): string {
   if (!url || typeof url !== "string" || !url.trim()) return "";
   
@@ -92,7 +100,7 @@ export function buildImageSrcSet(
   if (url.startsWith("data:") || url.startsWith("blob:")) return "";
 
   return widths
-    .map((w) => `${optimizeImageUrl(url, w)} ${w}w`)
+    .map((w) => `${optimizeImageUrl(url, w, "auto:eco")} ${w}w`)
     .join(", ");
 }
 
@@ -101,8 +109,8 @@ export function buildImageSrcSet(
  * Eliminates PageSpeed Insights "Properly size images" warnings
  */
 export const IMAGE_SIZES = {
-  // Catalog Card: 2 cols on mobile with container padding (calc(50vw - 20px)), 3 cols on tablet, max ~305px on desktop
-  catalog: "(max-width: 640px) calc(50vw - 20px), (max-width: 1024px) 33vw, 305px",
+  // Catalog Card: 2 cols on mobile with container padding, 3 cols on tablet, exactly max 305px on desktop
+  catalog: "(max-width: 480px) calc(50vw - 16px), (max-width: 768px) calc(50vw - 24px), (max-width: 1024px) 30vw, 305px",
   // Catalog List Mode: fixed small thumbnail on mobile
   list: "(max-width: 640px) 110px, (max-width: 1024px) 25vw, 250px",
   // Detail Modal Main Image: ~90vw on mobile, ~600px on desktop
