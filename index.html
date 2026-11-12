@@ -119,8 +119,16 @@
       <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;600;700;800&family=Playfair+Display:wght@400;600;700&display=swap" />
     </noscript>
 
-    <!-- Preload Critical LCP Hero Banner for mobile PageSpeed -->
-    <link rel="preload" as="image" href="https://images.unsplash.com/photo-1543589077-47d81606c1bf?auto=format&fm=webp&w=750&q=70" fetchpriority="high" />
+    <!-- Preload Critical LCP Hero Banner for instant discovery in initial HTML document -->
+    <link
+      rel="preload"
+      as="image"
+      href="https://res.cloudinary.com/dwqzjqjwz/image/upload/w_760,c_limit,q_auto:eco,f_auto,fl_lossy/v1/ventas_juem_cloudinary/ciovvzemvyxcg107lgbr.webp"
+      imagesrcset="https://res.cloudinary.com/dwqzjqjwz/image/upload/w_420,c_limit,q_auto:eco,f_auto,fl_lossy/v1/ventas_juem_cloudinary/ciovvzemvyxcg107lgbr.webp 420w, https://res.cloudinary.com/dwqzjqjwz/image/upload/w_760,c_limit,q_auto:eco,f_auto,fl_lossy/v1/ventas_juem_cloudinary/ciovvzemvyxcg107lgbr.webp 760w, https://res.cloudinary.com/dwqzjqjwz/image/upload/w_1080,c_limit,q_auto:eco,f_auto,fl_lossy/v1/ventas_juem_cloudinary/ciovvzemvyxcg107lgbr.webp 1080w, https://res.cloudinary.com/dwqzjqjwz/image/upload/w_1400,c_limit,q_auto:eco,f_auto,fl_lossy/v1/ventas_juem_cloudinary/ciovvzemvyxcg107lgbr.webp 1400w"
+      imagesizes="(max-width: 768px) 100vw, (max-width: 1280px) 96vw, 1240px"
+      fetchpriority="high"
+      id="lcp-hero-preload"
+    />
 
     <!-- Favicon & Brand Icons for Google Search, Mobile & Browsers -->
     <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png" />

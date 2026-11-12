@@ -12259,6 +12259,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     let ogUrl = `${baseUrl}${rawReqUrl}`;
     let schemaJson = "";
     let preRenderedBody = "";
+    let lcpPreloadTag = "";
 
     // Multirrubro default description (Uruguay, Soportes, Juguetes, Tecnología)
     if (!settings.seoDescription || settings.seoDescription.includes("indumentaria de temporada")) {
@@ -12289,6 +12290,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
           imgUrl = product.imageUrl.startsWith("http") 
             ? product.imageUrl 
             : `${baseUrl}${product.imageUrl.startsWith("/") ? "" : "/"}${product.imageUrl}`;
+          const prodLcpUrl = optimizeServerImageUrl(product.imageUrl, 600);
+          lcpPreloadTag = `<link rel="preload" as="image" href="${prodLcpUrl}" fetchpriority="high" id="lcp-hero-preload" />`;
         }
         canonicalUrl = `${canonicalBase}/producto/${generateSlug(product.name)}`;
         
@@ -12683,6 +12686,15 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         </div>`;
     }
 
+    if (!lcpPreloadTag && segments.length === 0) {
+      const bannerSrc = (settings.heroSlides && settings.heroSlides[0]?.imageUrl) || settings.bannerImageUrl || "https://res.cloudinary.com/dwqzjqjwz/image/upload/w_760,c_limit,q_auto:eco,f_auto,fl_lossy/v1/ventas_juem_cloudinary/ciovvzemvyxcg107lgbr.webp";
+      const p420 = optimizeServerImageUrl(bannerSrc, 420);
+      const p760 = optimizeServerImageUrl(bannerSrc, 760);
+      const p1080 = optimizeServerImageUrl(bannerSrc, 1080);
+      const p1400 = optimizeServerImageUrl(bannerSrc, 1400);
+      lcpPreloadTag = `<link rel="preload" as="image" href="${p760}" imagesrcset="${p420} 420w, ${p760} 760w, ${p1080} 1080w, ${p1400} 1400w" imagesizes="(max-width: 768px) 100vw, (max-width: 1280px) 96vw, 1240px" fetchpriority="high" id="lcp-hero-preload" />`;
+    }
+
     const isAdminRoute = segments[0] === "admin";
     const userAgent = String(req.headers["user-agent"] || "").toLowerCase();
     const isBot = /googlebot|bingbot|baiduspider|yandex|duckduckbot|slurp|crawler|spider|facebookexternalhit/i.test(userAgent);
@@ -12744,6 +12756,12 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       /<link[^>]*id="seo-canonical"[^>]*\/?>/gi,
       `<link rel="canonical" href="${canonicalUrl}" id="seo-canonical" />`
     );
+    if (lcpPreloadTag) {
+      output = output.replace(
+        /<link[^>]*id="lcp-hero-preload"[^>]*\/?>/gi,
+        lcpPreloadTag
+      );
+    }
 
     // Open Graph Replaces
     output = output.replace(
