@@ -18,6 +18,7 @@ import compression from "compression";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
+import sharp from "sharp";
 import { createServer as createViteServer } from "vite";
 import { ShopState } from "./src/types";
 import pg from "pg";
@@ -4850,55 +4851,106 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     }
   });
 
-  // Serve externalized inline media images with aggressive immutable caching
+  // Bounded LRU-like cache for resized/re-encoded inline-media variants (?w=...&fmt=avif|webp)
+  const inlineMediaVariantCache = new Map<string, { contentType: string; buffer: Buffer }>();
+  const MAX_VARIANT_CACHE_ENTRIES = 400;
+
+  // Serve externalized inline media images with on-the-fly sharp resize + AVIF/WebP + immutable caching
   app.get("/api/inline-media/:filename", async (req, res) => {
     const safeName = path.basename(req.params.filename || "");
     if (!safeName || safeName.includes("..")) {
       return res.status(400).end();
     }
 
+    const rawW = Number(req.query.w);
+    const targetWidth = Number.isFinite(rawW) && rawW >= 40 && rawW <= 1600 ? Math.round(rawW) : 0;
+    const rawFmt = String(req.query.fmt || "").toLowerCase();
+    const targetFmt: "avif" | "webp" | "" = rawFmt === "avif" ? "avif" : rawFmt === "webp" ? "webp" : "";
+    const variantKey = `${safeName}|${targetWidth}|${targetFmt}`;
+
     const sendMedia = (contentType: string, buffer: Buffer) => {
       res.setHeader("Content-Type", contentType);
       res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      res.setHeader("Vary", "Accept");
       return res.status(200).send(buffer);
     };
 
-    const cached = inlineMediaCache.get(safeName);
-    if (cached) {
-      return sendMedia(cached.contentType, cached.buffer);
+    const cachedVariant = inlineMediaVariantCache.get(variantKey);
+    if (cachedVariant) {
+      return sendMedia(cachedVariant.contentType, cachedVariant.buffer);
     }
 
-    const diskPath = path.join(INLINE_MEDIA_DIR, safeName);
-    if (fs.existsSync(diskPath)) {
-      const ext = path.extname(safeName).slice(1).toLowerCase();
-      const mime = ext === "jpg" ? "image/jpeg" : ext === "svg" ? "image/svg+xml" : `image/${ext || "jpeg"}`;
-      const buffer = fs.readFileSync(diskPath);
-      inlineMediaCache.set(safeName, { contentType: mime, buffer });
-      return sendMedia(mime, buffer);
-    }
+    const resolveOriginal = async (): Promise<{ contentType: string; buffer: Buffer } | null> => {
+      const cached = inlineMediaCache.get(safeName);
+      if (cached) return cached;
 
-    if (process.env.DATABASE_URL && !dbUnavailable) {
-      try {
-        const pool = getDbPool();
-        if (pool) {
-          const dbRes = await pool.query("SELECT content_type, data_base64 FROM public.inline_media WHERE hash = $1 LIMIT 1;", [safeName]);
-          if (dbRes.rows.length > 0) {
-            const { content_type, data_base64 } = dbRes.rows[0];
-            const buffer = Buffer.from(data_base64, "base64");
-            inlineMediaCache.set(safeName, { contentType: content_type, buffer });
-            try {
-              if (!fs.existsSync(INLINE_MEDIA_DIR)) fs.mkdirSync(INLINE_MEDIA_DIR, { recursive: true });
-              fs.writeFileSync(diskPath, buffer);
-            } catch {}
-            return sendMedia(content_type, buffer);
+      const diskPath = path.join(INLINE_MEDIA_DIR, safeName);
+      if (fs.existsSync(diskPath)) {
+        const ext = path.extname(safeName).slice(1).toLowerCase();
+        const mime = ext === "jpg" ? "image/jpeg" : ext === "svg" ? "image/svg+xml" : `image/${ext || "jpeg"}`;
+        const buffer = fs.readFileSync(diskPath);
+        const item = { contentType: mime, buffer };
+        inlineMediaCache.set(safeName, item);
+        return item;
+      }
+
+      if (process.env.DATABASE_URL && !dbUnavailable) {
+        try {
+          const pool = getDbPool();
+          if (pool) {
+            const dbRes = await pool.query("SELECT content_type, data_base64 FROM public.inline_media WHERE hash = $1 LIMIT 1;", [safeName]);
+            if (dbRes.rows.length > 0) {
+              const { content_type, data_base64 } = dbRes.rows[0];
+              const buffer = Buffer.from(data_base64, "base64");
+              const item = { contentType: content_type, buffer };
+              inlineMediaCache.set(safeName, item);
+              try {
+                if (!fs.existsSync(INLINE_MEDIA_DIR)) fs.mkdirSync(INLINE_MEDIA_DIR, { recursive: true });
+                fs.writeFileSync(diskPath, buffer);
+              } catch {}
+              return item;
+            }
           }
+        } catch {
+          // Fallback below
         }
-      } catch {
-        // Fallback below
+      }
+
+      return null;
+    };
+
+    const original = await resolveOriginal();
+    if (!original) {
+      return res.status(404).end();
+    }
+
+    if ((targetWidth > 0 || targetFmt) && !original.contentType.includes("svg")) {
+      try {
+        let pipeline = sharp(original.buffer).rotate();
+        if (targetWidth > 0) {
+          pipeline = pipeline.resize({ width: targetWidth, withoutEnlargement: true });
+        }
+        let outMime = original.contentType;
+        if (targetFmt === "avif") {
+          pipeline = pipeline.avif({ quality: 52, effort: 3 });
+          outMime = "image/avif";
+        } else {
+          pipeline = pipeline.webp({ quality: 68 });
+          outMime = "image/webp";
+        }
+        const outBuffer = await pipeline.toBuffer();
+        if (inlineMediaVariantCache.size >= MAX_VARIANT_CACHE_ENTRIES) {
+          const firstKey = inlineMediaVariantCache.keys().next().value;
+          if (firstKey) inlineMediaVariantCache.delete(firstKey);
+        }
+        inlineMediaVariantCache.set(variantKey, { contentType: outMime, buffer: outBuffer });
+        return sendMedia(outMime, outBuffer);
+      } catch (imgErr) {
+        console.warn(`[inline-media] Sharp transform failed for ${safeName}:`, imgErr);
       }
     }
 
-    return res.status(404).end();
+    return sendMedia(original.contentType, original.buffer);
   });
 
   // GET store state (returns lean public storefront payload unless authenticated as admin)
@@ -12469,6 +12521,10 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     if (trimmed.includes("unsplash.com")) {
       let clean = trimmed.replace("auto=format", "fm=webp").replace(/[&?]w=\d+/g, "").replace(/[&?]q=\d+/g, "");
       return clean + (clean.includes("?") ? "&" : "?") + `w=${width}&q=65`;
+    }
+    if (trimmed.startsWith("/api/inline-media/")) {
+      const basePath = trimmed.split("?")[0];
+      return `${basePath}?w=${width}&fmt=webp`;
     }
     return trimmed;
   }
