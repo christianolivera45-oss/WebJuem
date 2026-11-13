@@ -12508,7 +12508,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       const prefix = trimmed.substring(0, uploadIdx + "/upload/".length);
       const rest = trimmed.substring(uploadIdx + "/upload/".length);
       const segments = rest.split("/");
-      const transform = `w_${width},c_limit,q_auto:eco,f_auto,fl_lossy`;
+      const transform = `w_${width},c_limit,q_62,f_webp,fl_lossy`;
       const isExisting = /^(w_|h_|c_|q_|f_|e_)/.test(segments[0] || "") && !segments[0].startsWith("v") && segments.length > 1;
       let finalUrl = isExisting 
         ? `${prefix}${transform}/${segments.slice(1).join("/")}`
@@ -12598,7 +12598,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
             ? product.imageUrl 
             : `${baseUrl}${product.imageUrl.startsWith("/") ? "" : "/"}${product.imageUrl}`;
           const prodLcpUrl = optimizeServerImageUrl(product.imageUrl, 600);
-          lcpPreloadTag = `<link rel="preload" as="image" href="${prodLcpUrl}" fetchpriority="high" id="lcp-hero-preload" />`;
+          lcpPreloadTag = `<link rel="preload" as="image" href="${prodLcpUrl}" referrerpolicy="no-referrer" fetchpriority="high" id="lcp-hero-preload" />`;
         }
         canonicalUrl = `${canonicalBase}/producto/${generateSlug(product.name)}`;
         
@@ -12994,12 +12994,12 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     }
 
     if (!lcpPreloadTag && segments.length === 0) {
-      const bannerSrc = (settings.heroSlides && settings.heroSlides[0]?.imageUrl) || settings.bannerImageUrl || "https://res.cloudinary.com/dwqzjqjwz/image/upload/w_760,c_limit,q_auto:eco,f_auto,fl_lossy/v1/ventas_juem_cloudinary/ciovvzemvyxcg107lgbr.webp";
+      const bannerSrc = (settings.heroSlides && settings.heroSlides[0]?.imageUrl) || settings.bannerImageUrl || "https://res.cloudinary.com/dwqzjqjwz/image/upload/w_760,c_limit,q_62,f_webp,fl_lossy/v1/ventas_juem_cloudinary/ciovvzemvyxcg107lgbr.webp";
       const p420 = optimizeServerImageUrl(bannerSrc, 420);
       const p760 = optimizeServerImageUrl(bannerSrc, 760);
       const p1080 = optimizeServerImageUrl(bannerSrc, 1080);
       const p1400 = optimizeServerImageUrl(bannerSrc, 1400);
-      lcpPreloadTag = `<link rel="preload" as="image" href="${p760}" imagesrcset="${p420} 420w, ${p760} 760w, ${p1080} 1080w, ${p1400} 1400w" imagesizes="(max-width: 768px) 100vw, (max-width: 1280px) 96vw, 1240px" fetchpriority="high" id="lcp-hero-preload" />`;
+      lcpPreloadTag = `<link rel="preload" as="image" href="${p760}" imagesrcset="${p420} 420w, ${p760} 760w, ${p1080} 1080w, ${p1400} 1400w" imagesizes="(max-width: 768px) 100vw, (max-width: 1280px) 96vw, 1240px" referrerpolicy="no-referrer" fetchpriority="high" id="lcp-hero-preload" />`;
     }
 
     const userAgent = String(req.headers["user-agent"] || "").toLowerCase();
