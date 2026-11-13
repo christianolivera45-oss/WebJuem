@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { Product, SiteSettings, is3DProduct, isGenericSize, isGenericColor, getProductAvailableStock, getVariantAvailableStock, isProductInStock } from "../types";
 import ProductCard from "./ProductCard";
 import ImageWatermark from "./ImageWatermark";
-import { optimizeImageUrl, buildImageSrcSet, IMAGE_SIZES } from "../utils/imageOptimizer";
+import { optimizeImageUrl, buildImageSrcSet, buildAvifSrcSet, IMAGE_SIZES } from "../utils/imageOptimizer";
 
 export const PRINT_MATERIALS = [
   { id: "PLA", name: "PLA", priceMultiplier: 1.0, description: "Biodegradable, excelente acabado estético y variedad de colores." },
@@ -1116,42 +1116,55 @@ Me gustaría coordinar stock, fabricación y envío.`;
               title="Haz clic para ampliar la imagen y verla al 100%"
             >
               <AnimatePresence mode="wait">
-                <motion.img
+                <motion.div
                   key={activeImgIndex}
-                  src={optimizeImageUrlForDetail(allImages[activeImgIndex] || allImages[0], 800, "auto") || (allImages[0] || null)}
-                  srcSet={buildImageSrcSet(allImages[activeImgIndex] || allImages[0], [400, 600, 800, 1200])}
-                  sizes={IMAGE_SIZES.detail}
-                  width="600"
-                  height="600"
-                  decoding="async"
-                  alt={product.name}
-                  onLoad={(e) => {
-                    const img = e.currentTarget;
-                    if (img.naturalWidth && img.naturalHeight) {
-                      setImageAspectRatio(img.naturalWidth / img.naturalHeight);
-                    }
-                  }}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.35, ease: "easeInOut" }}
-                  style={{
-                    filter: imageExposureMode === "boosted"
-                      ? "brightness(1.18) contrast(1.08) saturate(1.03)"
-                      : "none"
-                  }}
-                  className={`select-none transition-all duration-300 group-hover/main-img:scale-[1.02] ${
-                    mainImageFit === "cover"
-                      ? "w-full h-full object-cover rounded-2xl"
-                      : mainImageFit === "contain"
-                      ? "max-h-full max-w-full w-auto h-auto object-contain"
-                      : "w-full h-full object-contain p-0 rounded-2xl"
-                  }`}
-                  referrerPolicy="no-referrer"
-                  loading="eager"
-                  fetchPriority="high"
-                  onError={() => handleImageError(allImages[activeImgIndex] || allImages[0])}
-                />
+                  className="w-full h-full flex items-center justify-center"
+                >
+                  <picture className="w-full h-full flex items-center justify-center">
+                    {buildAvifSrcSet(allImages[activeImgIndex] || allImages[0], [400, 600, 800, 1200], "auto") && (
+                      <source
+                        type="image/avif"
+                        srcSet={buildAvifSrcSet(allImages[activeImgIndex] || allImages[0], [400, 600, 800, 1200], "auto")}
+                        sizes={IMAGE_SIZES.detail}
+                      />
+                    )}
+                    <img
+                      src={optimizeImageUrlForDetail(allImages[activeImgIndex] || allImages[0], 800, "auto") || (allImages[0] || undefined)}
+                      srcSet={buildImageSrcSet(allImages[activeImgIndex] || allImages[0], [400, 600, 800, 1200], "auto")}
+                      sizes={IMAGE_SIZES.detail}
+                      width="600"
+                      height="600"
+                      decoding="async"
+                      alt={product.name}
+                      onLoad={(e) => {
+                        const img = e.currentTarget;
+                        if (img.naturalWidth && img.naturalHeight) {
+                          setImageAspectRatio(img.naturalWidth / img.naturalHeight);
+                        }
+                      }}
+                      style={{
+                        filter: imageExposureMode === "boosted"
+                          ? "brightness(1.18) contrast(1.08) saturate(1.03)"
+                          : "none"
+                      }}
+                      className={`select-none transition-all duration-300 group-hover/main-img:scale-[1.02] ${
+                        mainImageFit === "cover"
+                          ? "w-full h-full object-cover rounded-2xl"
+                          : mainImageFit === "contain"
+                          ? "max-h-full max-w-full w-auto h-auto object-contain"
+                          : "w-full h-full object-contain p-0 rounded-2xl"
+                      }`}
+                      referrerPolicy="no-referrer"
+                      loading="eager"
+                      fetchPriority="high"
+                      onError={() => handleImageError(allImages[activeImgIndex] || allImages[0])}
+                    />
+                  </picture>
+                </motion.div>
               </AnimatePresence>
 
               {/* Anti-download Watermark & Shield */}

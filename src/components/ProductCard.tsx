@@ -3,7 +3,7 @@ import { Product, SiteSettings, getProductAvailableStock, isGenericSize, isGener
 import { ShoppingCart, Eye, Tag, Phone } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import ImageWatermark from "./ImageWatermark";
-import { optimizeImageUrl, buildImageSrcSet, IMAGE_SIZES } from "../utils/imageOptimizer";
+import { optimizeImageUrl, buildImageSrcSet, buildAvifSrcSet, IMAGE_SIZES } from "../utils/imageOptimizer";
 
 interface ProductCardProps {
   key?: string;
@@ -216,24 +216,37 @@ Precio: $${Math.round(product.price)}
         } cursor-pointer flex items-center justify-center p-1 sm:p-1.5`}
       >
         <AnimatePresence>
-          <motion.img
+          <motion.div
             key={currentImage || "default"}
-            src={optimizeImageUrl(currentImage, 310, "auto:eco")}
-            srcSet={buildImageSrcSet(currentImage, [160, 240, 310, 380, 480])}
-            sizes={layoutMode === "list" ? IMAGE_SIZES.list : IMAGE_SIZES.catalog}
-            alt={product.name}
-            width="305"
-            height="305"
-            decoding="async"
             initial={{ opacity: 0.8 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2, ease: "easeOut" }}
-            className="absolute inset-0 w-full h-full object-contain p-1 sm:p-1.5 transition-transform duration-700 ease-out group-hover:scale-106"
-            referrerPolicy="no-referrer"
-            loading="lazy"
-            onError={handleImageError}
-          />
+            className="absolute inset-0 w-full h-full"
+          >
+            <picture className="w-full h-full block">
+              {buildAvifSrcSet(currentImage, [160, 200, 260, 310, 400]) && (
+                <source
+                  type="image/avif"
+                  srcSet={buildAvifSrcSet(currentImage, [160, 200, 260, 310, 400])}
+                  sizes={layoutMode === "list" ? IMAGE_SIZES.list : IMAGE_SIZES.catalog}
+                />
+              )}
+              <img
+                src={optimizeImageUrl(currentImage, 310, "auto:eco")}
+                srcSet={buildImageSrcSet(currentImage, [160, 200, 260, 310, 400])}
+                sizes={layoutMode === "list" ? IMAGE_SIZES.list : IMAGE_SIZES.catalog}
+                alt={product.name}
+                width="305"
+                height="305"
+                decoding="async"
+                className="w-full h-full object-contain p-1 sm:p-1.5 transition-transform duration-700 ease-out group-hover:scale-106"
+                referrerPolicy="no-referrer"
+                loading="lazy"
+                onError={handleImageError}
+              />
+            </picture>
+          </motion.div>
         </AnimatePresence>
 
         {/* Anti-download Watermark & Shield */}
