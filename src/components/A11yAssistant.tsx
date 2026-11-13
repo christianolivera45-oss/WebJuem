@@ -25,6 +25,7 @@ interface A11yAssistantProps {
   selectedCategory: string;
   navigateToProductRoute: (catId: string, subId: string, forceStorefront?: boolean) => void;
   products: any[];
+  initialOpen?: boolean;
 }
 
 export default function A11yAssistant({ 
@@ -33,10 +34,11 @@ export default function A11yAssistant({
   setActiveTab, 
   selectedCategory,
   navigateToProductRoute,
-  products
+  products,
+  initialOpen = false
 }: A11yAssistantProps) {
   // Main states
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(initialOpen);
   const [voiceGuide, setVoiceGuide] = useState(false);
   const [highContrast, setHighContrast] = useState(false);
   const [largeFont, setLargeFont] = useState(false);

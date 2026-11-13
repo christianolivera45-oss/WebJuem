@@ -33,14 +33,16 @@ export default function ProductSlider({
   const displayedProducts = products;
 
   const rafIdRef = useRef<number | null>(null);
+  const containerWidthRef = useRef<number>(0);
 
   const checkScrollState = () => {
+    if (typeof window !== "undefined" && !window.matchMedia("(min-width: 640px)").matches) return;
     if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
     rafIdRef.current = requestAnimationFrame(() => {
       const el = containerRef.current;
       if (!el) return;
       const scrollLeft = el.scrollLeft;
-      const clientWidth = el.clientWidth;
+      const clientWidth = containerWidthRef.current || el.clientWidth;
       const scrollWidth = el.scrollWidth;
       setCanScrollLeft(scrollLeft > 2);
       setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 4);
@@ -49,17 +51,32 @@ export default function ProductSlider({
 
   useEffect(() => {
     const el = containerRef.current;
-    if (el) {
-      checkScrollState();
-      el.addEventListener("scroll", checkScrollState, { passive: true });
-      window.addEventListener("resize", checkScrollState, { passive: true });
+    if (!el || typeof window === "undefined") return;
+
+    let observer: ResizeObserver | null = null;
+    const isDesktop = () => window.matchMedia("(min-width: 640px)").matches;
+
+    if (typeof ResizeObserver !== "undefined") {
+      observer = new ResizeObserver((entries) => {
+        if (!isDesktop()) return;
+        const entry = entries[0];
+        if (!entry) return;
+        const width = entry.contentRect.width;
+        if (width <= 0) return;
+        containerWidthRef.current = width;
+        // Card step: 220px + 24px gap on sm (<768px), 285px + 24px gap on md+
+        const cardStep = window.innerWidth >= 768 ? 309 : 244;
+        const estimatedTotalWidth = displayedProducts.length * cardStep - 24;
+        setCanScrollRight(estimatedTotalWidth > width + 4);
+      });
+      observer.observe(el);
     }
+
+    el.addEventListener("scroll", checkScrollState, { passive: true });
     return () => {
       if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
-      if (el) {
-        el.removeEventListener("scroll", checkScrollState);
-      }
-      window.removeEventListener("resize", checkScrollState);
+      if (observer) observer.disconnect();
+      el.removeEventListener("scroll", checkScrollState);
     };
   }, [displayedProducts]);
 

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { ChevronLeft, ChevronRight, MessageCircle, ArrowRight } from "lucide-react";
 import { SiteSettings, HeroSlide } from "../types";
-import { motion, AnimatePresence } from "motion/react";
 import { optimizeImageUrl, buildImageSrcSet, IMAGE_SIZES } from "../utils/imageOptimizer";
 
 interface HeroSliderProps {
@@ -67,14 +66,11 @@ export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderPro
     if (!url || typeof url !== "string" || !url.trim()) {
       return "https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=1600&q=80";
     }
-    const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
-    const targetWidth = isMobile ? 750 : 1400;
-    return optimizeImageUrl(url, targetWidth, "auto");
+    return optimizeImageUrl(url, 760, "auto:eco");
   };
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
-  const [direction, setDirection] = useState(1); // 1 = right, -1 = left
 
   // Touch gesture support states for mobile swiping
   const [touchStart, setTouchStart] = useState<number | null>(null);
@@ -89,12 +85,10 @@ export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderPro
   }, [currentIndex, isPlaying, slides.length]);
 
   const handleNext = () => {
-    setDirection(1);
     setCurrentIndex((prev) => (prev + 1) % slides.length);
   };
 
   const handlePrev = () => {
-    setDirection(-1);
     setCurrentIndex((prev) => (prev - 1 + slides.length) % slides.length);
   };
 
@@ -128,94 +122,7 @@ export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderPro
     window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`, "_blank");
   };
 
-  // Variance configuration for motion slider transition based on SiteSettings
-  const transitionType = settings.heroSliderTransition || "slide";
-
-  const getVariants = () => {
-    switch (transitionType) {
-      case "fade":
-        return {
-          enter: { opacity: 0, scale: 1 },
-          center: { zIndex: 1, opacity: 1, scale: 1 },
-          exit: { zIndex: 0, opacity: 0, scale: 1 }
-        };
-      case "zoom":
-        return {
-          enter: { opacity: 0, scale: 1.06 },
-          center: { zIndex: 1, opacity: 1, scale: 1 },
-          exit: { zIndex: 0, opacity: 0, scale: 0.95 }
-        };
-      case "slide-up":
-        return {
-          enter: (dir: number) => ({
-            y: dir > 0 ? "100%" : "-100%",
-            opacity: 0,
-            scale: 1
-          }),
-          center: {
-            zIndex: 1,
-            y: 0,
-            opacity: 1,
-            scale: 1
-          },
-          exit: (dir: number) => ({
-            zIndex: 0,
-            y: dir < 0 ? "100%" : "-100%",
-            opacity: 0,
-            scale: 1
-          })
-        };
-      case "slide":
-      default:
-        return {
-          enter: (dir: number) => ({
-            x: dir > 0 ? "100%" : "-100%",
-            opacity: 0,
-            scale: 1
-          }),
-          center: {
-            zIndex: 1,
-            x: 0,
-            opacity: 1,
-            scale: 1
-          },
-          exit: (dir: number) => ({
-            zIndex: 0,
-            x: dir < 0 ? "100%" : "-100%",
-            opacity: 0,
-            scale: 1
-          })
-        };
-    }
-  };
-
-  const getTransition = () => {
-    switch (transitionType) {
-      case "fade":
-        return {
-          opacity: { duration: 0.5, ease: "easeInOut" }
-        };
-      case "zoom":
-        return {
-          scale: { duration: 0.6, ease: [0.25, 1, 0.5, 1] },
-          opacity: { duration: 0.5, ease: "easeInOut" }
-        };
-      case "slide-up":
-        return {
-          y: { type: "tween", ease: [0.25, 1, 0.5, 1], duration: 0.6 },
-          opacity: { duration: 0.45, ease: "easeInOut" }
-        };
-      case "slide":
-      default:
-        return {
-          x: { type: "tween", ease: [0.25, 1, 0.5, 1], duration: 0.6 },
-          opacity: { duration: 0.45, ease: "easeInOut" }
-        };
-    }
-  };
-
-  const slideVariants = getVariants();
-  const slideTransition = getTransition();
+  // Lightweight GPU CSS transition without Framer Motion layout listeners
 
   // Zone light percentages configured in admin settings (0% = dark shade, 100% = full light / no shadow)
   const lightLeft = settings.bannerLightLeft !== undefined ? settings.bannerLightLeft : 75;
@@ -256,18 +163,10 @@ export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderPro
     >
       {/* Slides Viewport */}
       <div className="absolute inset-0 w-full h-full">
-        <AnimatePresence initial={false} custom={direction}>
-          <motion.div
-            key={currentIndex}
-            custom={direction}
-            variants={slideVariants}
-            initial="enter"
-            animate="center"
-            exit="exit"
-            transition={slideTransition}
-            className="absolute inset-0 w-full h-full transform-gpu"
-            style={{ willChange: "transform, opacity" }}
-          >
+        <div
+          key={currentIndex}
+          className="absolute inset-0 w-full h-full transform-gpu transition-opacity duration-500"
+        >
             <img
               src={getOptimizedBannerUrl(slides[currentIndex].imageUrl)}
               srcSet={buildImageSrcSet(slides[currentIndex].imageUrl, [420, 760, 1080, 1400])}
@@ -275,7 +174,7 @@ export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderPro
               alt={slides[currentIndex].title || "Banner"}
               width="1280"
               height="450"
-              decoding="async"
+              decoding={currentIndex === 0 ? "sync" : "async"}
               className="w-full h-full object-cover object-center transition-opacity duration-500 filter brightness-105 contrast-[1.03] saturate-[1.05]"
               style={{ opacity: imageOpacity }}
               referrerPolicy="no-referrer"
@@ -321,40 +220,29 @@ export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderPro
                       </div>
                     )}
                     {slides[currentIndex].title && slides[currentIndex].title.trim() !== "" && (
-                      <motion.h1 
-                        initial={{ opacity: 0, y: 15 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.2, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+                      <h1
                         className={`text-xl sm:text-3xl md:text-4xl lg:text-5xl font-serif font-extrabold tracking-tight leading-[1.1] mb-2 md:mb-3 transform-gpu ${
                           isNavidad ? "text-[#1E1D1B]" : "text-[#F4EAD7] drop-shadow-[0_2px_14px_rgba(0,0,0,0.85)]"
                         }`}
-                        style={{ willChange: "opacity, transform" }}
                       >
                         {slides[currentIndex].title}
-                      </motion.h1>
+                      </h1>
                     )}
                     
                     {slides[currentIndex].subtitle && slides[currentIndex].subtitle.trim() !== "" && (
-                      <motion.p 
-                        initial={{ opacity: 0, y: 15 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.3, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+                      <p
                         className={`text-[11px] sm:text-xs md:text-sm font-sans tracking-wide leading-relaxed max-w-xl font-normal line-clamp-2 md:line-clamp-none transform-gpu ${
                           isNavidad ? "text-[#55534F]" : "text-zinc-350 drop-shadow-[0_1px_8px_rgba(0,0,0,0.9)]"
                         }`}
-                        style={{ color: isNavidad ? "#55534F" : "#D8D2C4", willChange: "opacity, transform" }}
+                        style={{ color: isNavidad ? "#55534F" : "#D8D2C4" }}
                       >
                         {slides[currentIndex].subtitle}
-                      </motion.p>
+                      </p>
                     )}
 
                     {(!slides[currentIndex].hideButton || !slides[currentIndex].hideWhatsAppButton) && (
-                      <motion.div 
-                        initial={{ opacity: 0, y: 15 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.4, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+                      <div
                         className="mt-2 sm:mt-5 flex flex-wrap items-center justify-center md:justify-start gap-2 sm:gap-3 transform-gpu"
-                        style={{ willChange: "opacity, transform" }}
                       >
                         {!slides[currentIndex].hideButton && (
                           <button
@@ -387,14 +275,13 @@ export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderPro
                             <span>Consultar</span>
                           </button>
                         )}
-                      </motion.div>
+                      </div>
                     )}
                   </div>
                 </div>
               </div>
             )}
-          </motion.div>
-        </AnimatePresence>
+          </div>
       </div>
 
       {/* Slide Navigation Left/Right Arrows - visible on hover desktop if multiple slides */}

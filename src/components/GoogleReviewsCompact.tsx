@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
 import { Star, ChevronLeft, ChevronRight, X, ExternalLink, CheckCircle2 } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
 
 interface Review {
   author_name: string;
@@ -159,18 +158,12 @@ export default function GoogleReviewsCompact({ themeMode, googlePlaceId }: Googl
               className="flex-1 min-w-0 text-center md:text-left cursor-pointer group"
             >
               <div className="relative overflow-hidden h-9 flex items-center">
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={activeReviewIndex}
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -5 }}
-                    transition={{ duration: 0.3 }}
-                    className="w-full text-xs font-medium italic select-none truncate hover:underline text-center md:text-left leading-tight"
-                  >
-                    &ldquo;{reviews[activeReviewIndex].text}&rdquo;
-                  </motion.div>
-                </AnimatePresence>
+                <div
+                  key={activeReviewIndex}
+                  className="w-full text-xs font-medium italic select-none truncate hover:underline text-center md:text-left leading-tight animate-fade-in"
+                >
+                  &ldquo;{reviews[activeReviewIndex].text}&rdquo;
+                </div>
               </div>
               
               <div className="flex items-center justify-center md:justify-start gap-1 text-[10px] opacity-75 font-mono select-none">
@@ -205,18 +198,17 @@ export default function GoogleReviewsCompact({ themeMode, googlePlaceId }: Googl
       </div>
 
       {/* Sleek, Expandable Popup Modal showing the details of the reviews */}
-      <AnimatePresence>
-        {showAllModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className={`w-full max-w-xl rounded-3xl border shadow-xl p-6 relative flex flex-col max-h-[85vh] ${
-                isDark ? "bg-zinc-900 border-zinc-800 text-white" : "bg-white border-slate-250 text-slate-800"
-              }`}
-              onClick={(e) => e.stopPropagation()}
-            >
+      {showAllModal && (
+        <div
+          onClick={() => setShowAllModal(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-fade-in"
+        >
+          <div
+            className={`w-full max-w-xl rounded-3xl border shadow-xl p-6 relative flex flex-col max-h-[85vh] ${
+              isDark ? "bg-zinc-900 border-zinc-800 text-white" : "bg-white border-slate-250 text-slate-800"
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
               {/* Close button */}
               <button
                 onClick={() => setShowAllModal(false)}
@@ -333,10 +325,9 @@ export default function GoogleReviewsCompact({ themeMode, googlePlaceId }: Googl
                 </div>
               </div>
 
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
     </div>
   );
 }

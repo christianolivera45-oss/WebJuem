@@ -1,7 +1,6 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { Product, SiteSettings, getProductAvailableStock, isGenericSize, isGenericColor } from "../types";
 import { ShoppingCart, Eye, Tag, Phone } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
 import ImageWatermark from "./ImageWatermark";
 import { optimizeImageUrl, buildImageSrcSet, buildAvifSrcSet, IMAGE_SIZES } from "../utils/imageOptimizer";
 
@@ -215,39 +214,33 @@ Precio: $${Math.round(product.price)}
             : "bg-gradient-to-br from-[#050B1A]/80 via-[#0B1730]/40 to-[#050B1A]/75"
         } cursor-pointer flex items-center justify-center p-1 sm:p-1.5`}
       >
-        <AnimatePresence>
-          <motion.div
-            key={currentImage || "default"}
-            initial={{ opacity: 0.8 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2, ease: "easeOut" }}
-            className="absolute inset-0 w-full h-full"
-          >
-            <picture className="w-full h-full block">
-              {buildAvifSrcSet(currentImage, [160, 200, 260, 310, 400]) && (
-                <source
-                  type="image/avif"
-                  srcSet={buildAvifSrcSet(currentImage, [160, 200, 260, 310, 400])}
-                  sizes={layoutMode === "list" ? IMAGE_SIZES.list : IMAGE_SIZES.catalog}
-                />
-              )}
-              <img
-                src={optimizeImageUrl(currentImage, 310, "auto:eco")}
-                srcSet={buildImageSrcSet(currentImage, [160, 200, 260, 310, 400])}
+        <div
+          key={currentImage || "default"}
+          className="absolute inset-0 w-full h-full transition-opacity duration-200 ease-out"
+        >
+          <picture className="w-full h-full block">
+            {buildAvifSrcSet(currentImage, [160, 200, 260, 310, 400]) && (
+              <source
+                type="image/avif"
+                srcSet={buildAvifSrcSet(currentImage, [160, 200, 260, 310, 400])}
                 sizes={layoutMode === "list" ? IMAGE_SIZES.list : IMAGE_SIZES.catalog}
-                alt={product.name}
-                width="305"
-                height="305"
-                decoding="async"
-                className="w-full h-full object-contain p-1 sm:p-1.5 transition-transform duration-700 ease-out group-hover:scale-106"
-                referrerPolicy="no-referrer"
-                loading="lazy"
-                onError={handleImageError}
               />
-            </picture>
-          </motion.div>
-        </AnimatePresence>
+            )}
+            <img
+              src={optimizeImageUrl(currentImage, 310, "auto:eco")}
+              srcSet={buildImageSrcSet(currentImage, [160, 200, 260, 310, 400])}
+              sizes={layoutMode === "list" ? IMAGE_SIZES.list : IMAGE_SIZES.catalog}
+              alt={product.name}
+              width="305"
+              height="305"
+              decoding="async"
+              className="w-full h-full object-contain p-1 sm:p-1.5 transition-transform duration-700 ease-out group-hover:scale-106"
+              referrerPolicy="no-referrer"
+              loading="lazy"
+              onError={handleImageError}
+            />
+          </picture>
+        </div>
 
         {/* Anti-download Watermark & Shield */}
         {settings?.enableImageWatermark !== false && (
