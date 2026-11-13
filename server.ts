@@ -249,6 +249,185 @@ const DEFAULT_SHOP_STATE: ShopState = {
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const STORE_FILE = path.join(DATA_DIR, "store.json");
+const INLINE_MEDIA_DIR = path.join(DATA_DIR, "inline-media");
+
+const inlineMediaCache = new Map<string, { contentType: string; buffer: Buffer }>();
+let inlineMediaTableInitialized = false;
+
+function persistInlineMediaToDb(hashKey: string, contentType: string, base64Data: string) {
+  if (!process.env.DATABASE_URL || dbUnavailable) return;
+  setImmediate(async () => {
+    try {
+      const pool = getDbPool();
+      if (!pool) return;
+      if (!inlineMediaTableInitialized) {
+        await pool.query(`
+          CREATE TABLE IF NOT EXISTS public.inline_media (
+            hash TEXT PRIMARY KEY,
+            content_type TEXT NOT NULL,
+            data_base64 TEXT NOT NULL,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+          );
+        `);
+        inlineMediaTableInitialized = true;
+      }
+      await pool.query(
+        "INSERT INTO public.inline_media (hash, content_type, data_base64) VALUES ($1, $2, $3) ON CONFLICT (hash) DO NOTHING;",
+        [hashKey, contentType, base64Data]
+      );
+    } catch {
+      // Non-fatal background persistence
+    }
+  });
+}
+
+function externalizeBase64Url(val: string | undefined | null): string {
+  if (!val || typeof val !== "string") return "";
+  const trimmed = val.trim();
+  if (!trimmed.startsWith("data:image/")) return trimmed;
+
+  const match = trimmed.match(/^data:(image\/([a-zA-Z0-9+.-]+));base64,(.+)$/);
+  if (!match) return trimmed;
+
+  const contentType = match[1];
+  const rawSubtype = match[2].toLowerCase();
+  const ext = rawSubtype === "jpeg" ? "jpg" : rawSubtype === "svg+xml" ? "svg" : rawSubtype;
+  const base64Data = match[3];
+  const hash = crypto.createHash("sha1").update(base64Data).digest("hex").slice(0, 16);
+  const filename = `${hash}.${ext}`;
+
+  if (!inlineMediaCache.has(filename)) {
+    const buffer = Buffer.from(base64Data, "base64");
+    inlineMediaCache.set(filename, { contentType, buffer });
+    try {
+      if (!fs.existsSync(INLINE_MEDIA_DIR)) {
+        fs.mkdirSync(INLINE_MEDIA_DIR, { recursive: true });
+      }
+      const diskPath = path.join(INLINE_MEDIA_DIR, filename);
+      if (!fs.existsSync(diskPath)) {
+        fs.writeFileSync(diskPath, buffer);
+      }
+    } catch (fsErr) {
+      console.warn("Could not write inline-media file to disk:", fsErr);
+    }
+    persistInlineMediaToDb(filename, contentType, base64Data);
+  }
+
+  return `/api/inline-media/${filename}`;
+}
+
+function sanitizeProductsImages(products: any[] | undefined): { products: any[]; modified: boolean } {
+  if (!Array.isArray(products)) return { products: [], modified: false };
+  let modified = false;
+  const sanitized = products.map((p) => {
+    let pMod = false;
+    let nextImageUrl = p.imageUrl;
+    if (typeof nextImageUrl === "string" && nextImageUrl.startsWith("data:image/")) {
+      nextImageUrl = externalizeBase64Url(nextImageUrl);
+      pMod = true;
+    }
+
+    let nextImagenes = p.imagenes;
+    if (Array.isArray(p.imagenes)) {
+      const mappedImgs = p.imagenes.map((img: any) => {
+        if (typeof img === "string" && img.startsWith("data:image/")) {
+          pMod = true;
+          return externalizeBase64Url(img);
+        }
+        return img;
+      });
+      nextImagenes = mappedImgs;
+    }
+
+    let nextVariants = p.variants;
+    if (Array.isArray(p.variants)) {
+      nextVariants = p.variants.map((v: any) => {
+        if (v && typeof v.imageUrl === "string" && v.imageUrl.startsWith("data:image/")) {
+          pMod = true;
+          return { ...v, imageUrl: externalizeBase64Url(v.imageUrl) };
+        }
+        return v;
+      });
+    }
+
+    if (pMod) {
+      modified = true;
+      return {
+        ...p,
+        imageUrl: nextImageUrl,
+        imagenes: nextImagenes,
+        variants: nextVariants
+      };
+    }
+    return p;
+  });
+
+  return { products: sanitized, modified };
+}
+
+function buildPublicStorePayload(state: ShopState, maxProducts?: number) {
+  const rawSettings: any = state.settings || {};
+  const publicSettings: any = { ...rawSettings };
+  // Never expose private API secrets or SMTP credentials to public storefront visitors
+  delete publicSettings.resendApiKey;
+  delete publicSettings.mailgunApiKey;
+  delete publicSettings.googleClientSecret;
+  delete publicSettings.emailSenderSmtpPass;
+  delete publicSettings.emailSenderSmtpUser;
+  delete publicSettings.mercadopagoAccessToken;
+
+  if (typeof publicSettings.logoImageUrl === "string" && publicSettings.logoImageUrl.startsWith("data:image/")) {
+    publicSettings.logoImageUrl = externalizeBase64Url(publicSettings.logoImageUrl);
+  }
+  if (typeof publicSettings.bannerImageUrl === "string" && publicSettings.bannerImageUrl.startsWith("data:image/")) {
+    publicSettings.bannerImageUrl = externalizeBase64Url(publicSettings.bannerImageUrl);
+  }
+  if (Array.isArray(publicSettings.heroSlides)) {
+    publicSettings.heroSlides = publicSettings.heroSlides.map((s: any) =>
+      s && typeof s.imageUrl === "string" && s.imageUrl.startsWith("data:image/")
+        ? { ...s, imageUrl: externalizeBase64Url(s.imageUrl) }
+        : s
+    );
+  }
+
+  const { products: externalized } = sanitizeProductsImages(state.products || []);
+  const activeProducts = externalized.filter((p: any) => p.active !== false && p.paused !== true);
+  const sliced = typeof maxProducts === "number" ? activeProducts.slice(0, maxProducts) : activeProducts;
+
+  const publicProducts = sliced.map((p: any) => {
+    const {
+      precioCompra,
+      precioCon40,
+      comisionML,
+      comisionMP,
+      precioVentaML,
+      stockPinamar,
+      stockMontevideo,
+      ...publicProd
+    } = p;
+    return publicProd;
+  });
+
+  const activeCoupons = Array.isArray(state.coupons)
+    ? state.coupons
+        .filter((c: any) => c && c.active !== false)
+        .map((c: any) => ({
+          code: c.code,
+          discount_percent: c.discount_percent,
+          expiration_date: c.expiration_date ?? null,
+          active: c.active !== false
+        }))
+    : [];
+
+  return {
+    settings: publicSettings,
+    categories: state.categories || [],
+    dbCategories: state.dbCategories || [],
+    dbSubcategories: state.dbSubcategories || [],
+    coupons: activeCoupons,
+    products: publicProducts
+  };
+}
 
 // Module scope cache
 let currentStoreState: ShopState = DEFAULT_SHOP_STATE;
@@ -808,6 +987,8 @@ function initDataStore(): ShopState {
           return p;
         });
         parsed.products = recalculateComboStocks(parsed.products);
+        const extResult = sanitizeProductsImages(parsed.products);
+        parsed.products = extResult.products;
         changed = true;
       }
 
@@ -2320,6 +2501,7 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
     }
 
     const recalculatedProducts = recalculateComboStocks(products);
+    const { products: sanitizedDbProducts } = sanitizeProductsImages(recalculatedProducts);
 
     // Fetch stock adjustments
     let stockAdjustments: any[] = [];
@@ -2338,7 +2520,7 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
       dbCategories,
       dbSubcategories,
       settings,
-      products: recalculatedProducts,
+      products: sanitizedDbProducts,
       coupons,
       adminCredentials,
       orders,
@@ -4668,12 +4850,67 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     }
   });
 
-  // GET store state
+  // Serve externalized inline media images with aggressive immutable caching
+  app.get("/api/inline-media/:filename", async (req, res) => {
+    const safeName = path.basename(req.params.filename || "");
+    if (!safeName || safeName.includes("..")) {
+      return res.status(400).end();
+    }
+
+    const sendMedia = (contentType: string, buffer: Buffer) => {
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      return res.status(200).send(buffer);
+    };
+
+    const cached = inlineMediaCache.get(safeName);
+    if (cached) {
+      return sendMedia(cached.contentType, cached.buffer);
+    }
+
+    const diskPath = path.join(INLINE_MEDIA_DIR, safeName);
+    if (fs.existsSync(diskPath)) {
+      const ext = path.extname(safeName).slice(1).toLowerCase();
+      const mime = ext === "jpg" ? "image/jpeg" : ext === "svg" ? "image/svg+xml" : `image/${ext || "jpeg"}`;
+      const buffer = fs.readFileSync(diskPath);
+      inlineMediaCache.set(safeName, { contentType: mime, buffer });
+      return sendMedia(mime, buffer);
+    }
+
+    if (process.env.DATABASE_URL && !dbUnavailable) {
+      try {
+        const pool = getDbPool();
+        if (pool) {
+          const dbRes = await pool.query("SELECT content_type, data_base64 FROM public.inline_media WHERE hash = $1 LIMIT 1;", [safeName]);
+          if (dbRes.rows.length > 0) {
+            const { content_type, data_base64 } = dbRes.rows[0];
+            const buffer = Buffer.from(data_base64, "base64");
+            inlineMediaCache.set(safeName, { contentType: content_type, buffer });
+            try {
+              if (!fs.existsSync(INLINE_MEDIA_DIR)) fs.mkdirSync(INLINE_MEDIA_DIR, { recursive: true });
+              fs.writeFileSync(diskPath, buffer);
+            } catch {}
+            return sendMedia(content_type, buffer);
+          }
+        }
+      } catch {
+        // Fallback below
+      }
+    }
+
+    return res.status(404).end();
+  });
+
+  // GET store state (returns lean public storefront payload unless authenticated as admin)
   app.get("/api/store", async (req, res) => {
-    // Evitar almacenamiento en caché por el navegador o CDN
-    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-    res.setHeader("Pragma", "no-cache");
-    res.setHeader("Expires", "0");
+    const isAdminRequest = isValidToken(req.headers.authorization) && req.query.scope !== "public";
+    if (!isAdminRequest) {
+      res.setHeader("Cache-Control", "public, max-age=15, s-maxage=30, stale-while-revalidate=60");
+    } else {
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+    }
 
     if (process.env.DATABASE_URL) {
       if (dbUnavailable) {
@@ -4716,7 +4953,15 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       }
     }
 
-    res.json(currentStoreState);
+    if (!isAdminRequest) {
+      return res.json(buildPublicStorePayload(currentStoreState));
+    }
+
+    const { products: sanitizedAdminProducts } = sanitizeProductsImages(currentStoreState.products);
+    res.json({
+      ...currentStoreState,
+      products: sanitizedAdminProducts
+    });
   });
 
   // POST update store state
@@ -4732,9 +4977,10 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     }
 
     try {
+      const sanitizedUpload = sanitizeProductsImages(recalculateComboStocks(products));
       currentStoreState = { 
         ...currentStoreState, // Preserve adminCredentials and any other configuration
-        products: recalculateComboStocks(products), 
+        products: sanitizedUpload.products, 
         categories, 
         settings,
         dbCategories: Array.isArray(dbCategories) ? dbCategories : currentStoreState.dbCategories,
@@ -4742,6 +4988,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         coupons: Array.isArray(coupons) ? coupons : currentStoreState.coupons,
         stockAdjustments: Array.isArray(stockAdjustments) ? stockAdjustments : currentStoreState.stockAdjustments
       };
+      invalidateDbCache();
       
       // Check and clear expired promotionBannerText before saving
       const checkerResult = checkAndClearExpiredBannerText(currentStoreState);
@@ -12232,14 +12479,18 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     const pathUrl = req.path;
     const segments = pathUrl.split("/").filter(Boolean);
     
-    let state = cachedDbState || currentStoreState;
+    let rawState = cachedDbState || currentStoreState;
     if (!cachedDbState && process.env.DATABASE_URL && !dbUnavailable) {
       try {
-        state = await getDbState();
+        rawState = await getDbState();
       } catch (e) {
         // Safe fallback in memory
       }
     }
+
+    const isAdminRoute = segments[0] === "admin";
+    const initialStorePayload = buildPublicStorePayload(rawState);
+    const state = isAdminRoute ? rawState : (initialStorePayload as unknown as ShopState);
     
     const settings: any = state.settings || {};
     const rawSiteTitle = (settings.siteTitle || "").trim();
@@ -12695,7 +12946,6 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       lcpPreloadTag = `<link rel="preload" as="image" href="${p760}" imagesrcset="${p420} 420w, ${p760} 760w, ${p1080} 1080w, ${p1400} 1400w" imagesizes="(max-width: 768px) 100vw, (max-width: 1280px) 96vw, 1240px" fetchpriority="high" id="lcp-hero-preload" />`;
     }
 
-    const isAdminRoute = segments[0] === "admin";
     const userAgent = String(req.headers["user-agent"] || "").toLowerCase();
     const isBot = /googlebot|bingbot|baiduspider|yandex|duckduckbot|slurp|crawler|spider|facebookexternalhit/i.test(userAgent);
 
@@ -12805,15 +13055,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       `<script type="application/ld+json" id="seo-schema">\n${schemaJson}\n</script>`
     );
 
-    // Initial dehydrated state for instant client hydration and eliminating CLS
+    // Initial dehydrated state for instant client hydration without base64 bloat or blocking /api/store fetches
     if (!isAdminRoute) {
-      const initialStorePayload = {
-        settings: state.settings,
-        categories: state.categories,
-        dbCategories: state.dbCategories,
-        dbSubcategories: state.dbSubcategories,
-        products: (state.products || []).filter(p => p.active !== false && p.paused !== true).slice(0, 24)
-      };
       const initialScript = `<script id="initial-store-data">window.__INITIAL_STORE__ = ${JSON.stringify(initialStorePayload)};</script>`;
       output = output.replace("</head>", `${initialScript}\n</head>`);
     }
@@ -13053,7 +13296,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       xml += `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"\n`;
       xml += `        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">\n`;
 
-      const products = state.products || [];
+      const { products } = sanitizeProductsImages(state.products || []);
       const addedImageUrls = new Set<string>();
       products.forEach(p => {
         const isWithStock = p.stock !== undefined ? p.stock > 0 : true;
