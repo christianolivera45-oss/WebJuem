@@ -96,8 +96,10 @@ export function buildImageSrcSet(
 ): string {
   if (!url || typeof url !== "string" || !url.trim()) return "";
   
-  // Don't build srcset for data URIs or blobs
-  if (url.startsWith("data:") || url.startsWith("blob:")) return "";
+  // Only build responsive srcset for dynamic image CDNs (Cloudinary, Unsplash)
+  if (url.startsWith("data:") || url.startsWith("blob:") || (!url.includes("cloudinary.com") && !url.includes("unsplash.com"))) {
+    return "";
+  }
 
   return widths
     .map((w) => `${optimizeImageUrl(url, w, "auto:eco")} ${w}w`)

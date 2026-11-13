@@ -118,9 +118,9 @@ import ThemeStyles from "./components/ThemeStyles";
 import ProductCard from "./components/ProductCard";
 import { optimizeImageUrl } from "./utils/imageOptimizer";
 import ProductSlider from "./components/ProductSlider";
-import ProductDetails from "./components/ProductDetails";
-import CartDrawer from "./components/CartDrawer";
-import Checkout from "./components/Checkout";
+const ProductDetails = lazy(() => import("./components/ProductDetails"));
+const CartDrawer = lazy(() => import("./components/CartDrawer"));
+const Checkout = lazy(() => import("./components/Checkout"));
 import HeroSlider from "./components/HeroSlider";
 const SecurityPanel = lazy(() => import("./components/SecurityPanel"));
 const DashboardGeneral = lazy(() => import("./components/DashboardGeneral").then(m => ({ default: m.DashboardGeneral })));
@@ -135,13 +135,13 @@ const DashboardTraceability = lazy(() => import("./components/DashboardTraceabil
 const AIAssistant = lazy(() => import("./components/AIAssistant"));
 import WhatsAppWidget from "./components/WhatsAppWidget";
 const A11yAssistant = lazy(() => import("./components/A11yAssistant"));
-import ImageGalleryEditor from "./components/ImageGalleryEditor";
+const ImageGalleryEditor = lazy(() => import("./components/ImageGalleryEditor"));
 import GoogleReviewsCompact from "./components/GoogleReviewsCompact";
-import AddToCartModal from "./components/AddToCartModal";
+const AddToCartModal = lazy(() => import("./components/AddToCartModal"));
 const CloudinaryExplorer = lazy(() => import("./components/CloudinaryExplorer"));
 import CommaSeparatedInput from "./components/CommaSeparatedInput";
-import VariantImagePicker from "./components/VariantImagePicker";
-import ComboComponentsBuilder from "./components/ComboComponentsBuilder";
+const VariantImagePicker = lazy(() => import("./components/VariantImagePicker"));
+const ComboComponentsBuilder = lazy(() => import("./components/ComboComponentsBuilder"));
 import { FolderOpen } from "lucide-react";
 const InteractiveMap = lazy(() => import("./components/InteractiveMap").then(m => ({ default: m.InteractiveMap })));
 
@@ -502,6 +502,7 @@ export default function App() {
     return true;
   });
   const [showSplash, setShowSplash] = useState(() => !isAuditBot);
+  const [mountDeferredWidgets, setMountDeferredWidgets] = useState(false);
   const [splashProgress, setSplashProgress] = useState(15);
   const [saving, setSaving] = useState(false);
   const [syncStatus, setSyncStatus] = useState<"synced" | "syncing" | "error">("synced");
@@ -773,6 +774,7 @@ export default function App() {
         const data = await res.json();
         if (data.valid && data.user?.role === "admin") {
           setAuthToken(token);
+          fetchStoreData(true, token);
         } else {
           handleLogout();
           showAdminToast("Acceso denegado: permisos de administrador requeridos.", "error");
@@ -2819,13 +2821,11 @@ export default function App() {
     }
   }, [loading, showSplash, isAuditBot]);
 
-  // Fetch initial data and setup routing listeners
+  // Fetch initial data and setup routing listeners without chaining critical requests on already-hydrated storefront
   useEffect(() => {
-    fetchStoreData();
     parseRoute();
-    // Load local cart if any
-    let initialToken = null;
-    let loginTime = null;
+    let initialToken: string | null = null;
+    let loginTime: string | null = null;
     let isExpired = false;
 
     try {
@@ -2833,7 +2833,7 @@ export default function App() {
       if (localCart) {
         setCart(JSON.parse(localCart));
       }
-      
+
       // Dynamic Server Token verification on program startup with 1 hour limit check
       initialToken = localStorage.getItem("apex_admin_token");
       loginTime = localStorage.getItem("apex_admin_login_time");
@@ -2841,11 +2841,56 @@ export default function App() {
     } catch (err) {
       console.warn("Storage reading is blocked or disabled: ", err);
     }
-    
-    if (initialToken && !isExpired) {
-      verifyAdminToken(initialToken);
+
+    const validInitialToken = initialToken && !isExpired ? initialToken : null;
+    const isAdminRoute = typeof window !== "undefined" && window.location.pathname.toLowerCase().startsWith("/admin");
+    const hasHydratedInitialStore = typeof window !== "undefined" && Boolean((window as any).__INITIAL_STORE__?.products?.length);
+
+    let deferredSyncTimer: any = null;
+    let idleCallbackId: any = null;
+
+    if (hasHydratedInitialStore && !isAdminRoute && !validInitialToken) {
+      // Storefront already hydrated synchronously from HTML (<script id="initial-store-data">).
+      // Schedule a non-blocking background refresh well after LCP/load so /api/store never chains in the critical path.
+      const scheduleBgSync = () => {
+        if (isAuditBot) return;
+        const win = window as any;
+        if (typeof win.requestIdleCallback === "function") {
+          idleCallbackId = win.requestIdleCallback(() => {
+            deferredSyncTimer = setTimeout(() => fetchStoreData(true), 3500);
+          }, { timeout: 5000 });
+        } else {
+          deferredSyncTimer = setTimeout(() => fetchStoreData(true), 4000);
+        }
+      };
+
+      if (document.readyState === "complete") {
+        scheduleBgSync();
+      } else {
+        window.addEventListener("load", scheduleBgSync, { once: true });
+      }
+    } else {
+      fetchStoreData(false, validInitialToken || undefined);
+    }
+
+    if (validInitialToken) {
+      verifyAdminToken(validInitialToken);
     } else if (initialToken || isExpired) {
       handleLogout();
+    }
+
+    // Defer secondary floating widgets (like A11yAssistant) outside the initial critical dependency tree
+    let widgetTimer: any = null;
+    const activateDeferredWidgets = () => {
+      setMountDeferredWidgets(true);
+    };
+    const onFirstInteraction = () => {
+      activateDeferredWidgets();
+    };
+    window.addEventListener("pointerdown", onFirstInteraction, { once: true, passive: true });
+    window.addEventListener("keydown", onFirstInteraction, { once: true, passive: true });
+    if (!isAuditBot) {
+      widgetTimer = setTimeout(activateDeferredWidgets, 3200);
     }
 
     const handlePopState = () => {
@@ -2853,6 +2898,13 @@ export default function App() {
     };
     window.addEventListener("popstate", handlePopState);
     return () => {
+      if (deferredSyncTimer) clearTimeout(deferredSyncTimer);
+      if (widgetTimer) clearTimeout(widgetTimer);
+      if (idleCallbackId && typeof (window as any).cancelIdleCallback === "function") {
+        (window as any).cancelIdleCallback(idleCallbackId);
+      }
+      window.removeEventListener("pointerdown", onFirstInteraction);
+      window.removeEventListener("keydown", onFirstInteraction);
       window.removeEventListener("popstate", handlePopState);
     };
   }, []);
@@ -3753,10 +3805,18 @@ export default function App() {
     window.history.pushState(null, "", newUrl);
   };
 
-  const fetchStoreData = async (isSilent: boolean = false) => {
+  const fetchStoreData = async (isSilent: boolean = false, explicitToken?: string) => {
     try {
       if (!isSilent) setLoading(true);
-      const res = await fetch("/api/store");
+      let activeToken = explicitToken || authToken;
+      if (!activeToken) {
+        try {
+          activeToken = localStorage.getItem("apex_admin_token");
+        } catch {}
+      }
+      const res = await fetch("/api/store", activeToken ? {
+        headers: { "Authorization": `Bearer ${activeToken}` }
+      } : undefined);
       if (!res.ok) throw new Error("No se pudo obtener la configuración de la tienda");
       const contentType = res.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
@@ -3783,7 +3843,7 @@ export default function App() {
         localStorage.setItem("juem_store_cache_v1", JSON.stringify(data));
       } catch {}
       setStore(data);
-      if (!isSilent) {
+      if (!isSilent || Boolean(explicitToken)) {
         setEditingSettings(data.settings);
       }
       setNewCategoryOrder((data.dbCategories || []).length + 1);
@@ -3992,6 +4052,7 @@ export default function App() {
         setAuthToken(data.token);
         localStorage.setItem("apex_admin_token", data.token);
         localStorage.setItem("apex_admin_login_time", Date.now().toString());
+        fetchStoreData(true, data.token);
         setIsLoginModalOpen(false);
         setActiveTab("admin");
         setUsernameInput("");
@@ -6146,6 +6207,7 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
       {activeTab === "storefront" && (
         <div className="flex-1 flex flex-col pb-16 lg:pb-0">
           {selectedProduct ? (
+            <Suspense fallback={<div className="min-h-[60vh] flex items-center justify-center"><div className="w-8 h-8 border-2 border-[#D4A55A] border-t-transparent rounded-full animate-spin" /></div>}>
             <ProductDetails
               product={store.products.find(p => String(p.id) === String(selectedProduct.id)) || selectedProduct}
               onClose={() => {
@@ -6166,6 +6228,7 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
               }}
               isCartOpen={isCartOpen}
             />
+            </Suspense>
           ) : (
             <>
               {/* Interactive Hero Slider Showcase */}
@@ -7165,6 +7228,7 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
 
       {/* RENDER DYNAMIC CHECKOUT SECTION */}
       {activeTab === "checkout" && (
+        <Suspense fallback={<div className="min-h-[60vh] flex items-center justify-center"><div className="w-8 h-8 border-2 border-[#D4A55A] border-t-transparent rounded-full animate-spin" /></div>}>
         <Checkout
           cartItems={cart}
           onUpdateQuantity={handleUpdateQuantity}
@@ -7174,6 +7238,7 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
           onBackToCatalog={() => setActiveTab("storefront")}
           coupons={store.coupons}
         />
+        </Suspense>
       )}
 
       {/* RENDER ADMIN DASHBOARD - SECURE ACCESS GUARD WHEN NOT AUTHENTICATED */}
@@ -22902,18 +22967,22 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
         </div>
       )}
 
-      {/* Cart Drawer element */}
-      <CartDrawer
-        isOpen={isCartOpen}
-        onClose={() => setIsCartOpen(false)}
-        cartItems={cart}
-        onUpdateQuantity={handleUpdateQuantity}
-        onRemoveItem={handleRemoveCartItem}
-        settings={store.settings}
-        onClearCart={handleClearCart}
-        coupons={store.coupons}
-        onProceedToCheckout={() => setActiveTab("checkout")}
-      />
+      {/* Cart Drawer element - Lazy mounted only when needed */}
+      {(isCartOpen || cart.length > 0) && (
+        <Suspense fallback={null}>
+          <CartDrawer
+            isOpen={isCartOpen}
+            onClose={() => setIsCartOpen(false)}
+            cartItems={cart}
+            onUpdateQuantity={handleUpdateQuantity}
+            onRemoveItem={handleRemoveCartItem}
+            settings={store.settings}
+            onClearCart={handleClearCart}
+            coupons={store.coupons}
+            onProceedToCheckout={() => setActiveTab("checkout")}
+          />
+        </Suspense>
+      )}
 
       {/* Mobile Drawer Navigation Menu */}
       <AnimatePresence>
@@ -23202,15 +23271,19 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
         />
       )}
 
-      {/* Panel de Accesibilidad de Juem - Siempre Activo */}
-      <A11yAssistant
-        cartCount={cart.length}
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        selectedCategory={selectedCategory}
-        navigateToProductRoute={navigateToProductRoute}
-        products={store.products || []}
-      />
+      {/* Panel de Accesibilidad de Juem - Diferido tras carga inicial / interacción */}
+      {mountDeferredWidgets && (
+        <Suspense fallback={null}>
+          <A11yAssistant
+            cartCount={cart.length}
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+            selectedCategory={selectedCategory}
+            navigateToProductRoute={navigateToProductRoute}
+            products={store.products || []}
+          />
+        </Suspense>
+      )}
 
       <AnimatePresence>
         {adminToast && (
@@ -23241,22 +23314,26 @@ const STOCK_NEUTRAL_OPTIONS: StockReasonOption[] = [
         )}
       </AnimatePresence>
 
-      <AddToCartModal
-        isOpen={addedItemModal?.isOpen ?? false}
-        onClose={() => setAddedItemModal(null)}
-        onGoToCheckout={() => {
-          setAddedItemModal(null);
-          setActiveTab("checkout");
-          window.scrollTo({ top: 0, behavior: "smooth" });
-        }}
-        product={addedItemModal?.product ?? null}
-        quantity={addedItemModal?.quantity ?? 1}
-        selectedSize={addedItemModal?.size}
-        selectedColor={addedItemModal?.color}
-        themeMode={store.settings.themeMode}
-        allProducts={store.products}
-        onAddCrossSell={handleAddToCart}
-      />
+      {addedItemModal?.isOpen && (
+        <Suspense fallback={null}>
+          <AddToCartModal
+            isOpen={addedItemModal?.isOpen ?? false}
+            onClose={() => setAddedItemModal(null)}
+            onGoToCheckout={() => {
+              setAddedItemModal(null);
+              setActiveTab("checkout");
+              window.scrollTo({ top: 0, behavior: "smooth" });
+            }}
+            product={addedItemModal?.product ?? null}
+            quantity={addedItemModal?.quantity ?? 1}
+            selectedSize={addedItemModal?.size}
+            selectedColor={addedItemModal?.color}
+            themeMode={store.settings.themeMode}
+            allProducts={store.products}
+            onAddCrossSell={handleAddToCart}
+          />
+        </Suspense>
+      )}
 
       {/* Barra de Navegación Inferior Flotante - Ultra Optimizada para Celulares */}
       {activeTab === "storefront" && (
