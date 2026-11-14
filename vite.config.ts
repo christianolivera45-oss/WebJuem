@@ -14,22 +14,34 @@ function asyncCssPlugin(): Plugin {
     apply: 'build',
     enforce: 'post',
     transformIndexHtml(html: string) {
-      const extractedLinks: string[] = [];
+      const earlyHints: string[] = [];
+
+      // Discover entry module script for early <link rel="modulepreload"> at top of <head>
+      const entryScriptMatch = html.match(/<script\s+type="module"[^>]*src="([^"]+?\.js)"[^>]*>/i);
+      if (entryScriptMatch && entryScriptMatch[1]) {
+        earlyHints.push(`<link rel="modulepreload" href="${entryScriptMatch[1]}" crossorigin>`);
+      }
+
       let updatedHtml = html.replace(
         /<link\s+([^>]*?)rel="stylesheet"([^>]*?)href="([^"]+?\.css)"([^>]*?)>\s*/gi,
         (match, p1, p2, href, p4) => {
           if (match.includes('media=') || match.includes('onload=')) return match;
           const cleanAttrs = `${p1} ${p2} ${p4}`.replace(/\s+/g, ' ').trim();
-          extractedLinks.push(
+          earlyHints.push(
             `<link rel="preload" href="${href}" as="style" onload="this.onload=null;this.rel='stylesheet'" ${cleanAttrs}>\n    <noscript><link rel="stylesheet" href="${href}" ${cleanAttrs}></noscript>`
           );
           return '';
         }
       );
 
-      if (extractedLinks.length > 0) {
-        const block = extractedLinks.join('\n    ');
-        if (updatedHtml.includes('<script type="module"')) {
+      if (earlyHints.length > 0) {
+        const block = earlyHints.join('\n    ');
+        if (updatedHtml.includes('<meta name="viewport"')) {
+          updatedHtml = updatedHtml.replace(
+            /(<meta name="viewport"[^>]*>)/i,
+            `$1\n    ${block}`
+          );
+        } else if (updatedHtml.includes('<script type="module"')) {
           updatedHtml = updatedHtml.replace(
             '<script type="module"',
             `${block}\n    <script type="module"`

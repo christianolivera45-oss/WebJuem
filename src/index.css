@@ -73,6 +73,7 @@
   display: flex;
   width: 100%;
   position: relative;
+  contain: layout paint;
 }
 
 .marquee-train-content {

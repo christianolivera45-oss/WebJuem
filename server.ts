@@ -366,7 +366,12 @@ function sanitizeProductsImages(products: any[] | undefined): { products: any[];
   return { products: sanitized, modified };
 }
 
-function buildPublicStorePayload(state: ShopState, maxProducts?: number) {
+function buildPublicStorePayload(
+  state: ShopState,
+  maxProducts?: number,
+  compactForHtml: boolean = false,
+  fullProductSlugOrId?: string
+) {
   const rawSettings: any = state.settings || {};
   const publicSettings: any = { ...rawSettings };
   // Never expose private API secrets or SMTP credentials to public storefront visitors
@@ -376,6 +381,22 @@ function buildPublicStorePayload(state: ShopState, maxProducts?: number) {
   delete publicSettings.emailSenderSmtpPass;
   delete publicSettings.emailSenderSmtpUser;
   delete publicSettings.mercadopagoAccessToken;
+
+  if (compactForHtml) {
+    delete publicSettings.emailTemplateOrderCreatedSubject;
+    delete publicSettings.emailTemplateOrderCreatedBody;
+    delete publicSettings.emailTemplateOrderStatusChangedSubject;
+    delete publicSettings.emailTemplateOrderStatusChangedBody;
+    delete publicSettings.emailThemeBgColor;
+    delete publicSettings.emailThemeTextColor;
+    delete publicSettings.emailThemeAccentColor;
+    delete publicSettings.emailSenderName;
+    delete publicSettings.mercadopagoPublicKey;
+    delete publicSettings.mercadopagoMessage;
+    delete publicSettings.transferDetails;
+    delete publicSettings.cashMessage;
+    delete publicSettings.googleReviewsCustomList;
+  }
 
   if (typeof publicSettings.logoImageUrl === "string" && publicSettings.logoImageUrl.startsWith("data:image/")) {
     publicSettings.logoImageUrl = externalizeBase64Url(publicSettings.logoImageUrl);
@@ -395,6 +416,16 @@ function buildPublicStorePayload(state: ShopState, maxProducts?: number) {
   const activeProducts = externalized.filter((p: any) => p.active !== false && p.paused !== true);
   const sliced = typeof maxProducts === "number" ? activeProducts.slice(0, maxProducts) : activeProducts;
 
+  const normalizeSlugForMatch = (txt: string) =>
+    (txt || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9\s-]/g, "")
+      .trim()
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-");
+
   const publicProducts = sliced.map((p: any) => {
     const {
       precioCompra,
@@ -406,7 +437,40 @@ function buildPublicStorePayload(state: ShopState, maxProducts?: number) {
       stockMontevideo,
       ...publicProd
     } = p;
-    return publicProd;
+
+    if (!compactForHtml) {
+      return publicProd;
+    }
+
+    const isFocusedProduct =
+      fullProductSlugOrId &&
+      (String(publicProd.id) === String(fullProductSlugOrId) ||
+        normalizeSlugForMatch(publicProd.name) === fullProductSlugOrId);
+    if (isFocusedProduct) {
+      return publicProd;
+    }
+
+    const {
+      sizeChartData,
+      sizeChartEnabled,
+      sizeChartShowSuperior,
+      sizeChartShowInferior,
+      sizeChartShowCalzado,
+      sizeChartShowRecommender,
+      calcWebPriceFromML,
+      pesoGramos,
+      costoFilamento,
+      ...compactProd
+    } = publicProd;
+
+    if (typeof compactProd.description === "string" && compactProd.description.length > 140) {
+      compactProd.description = compactProd.description.slice(0, 140);
+    }
+    if (Array.isArray(compactProd.imagenes) && compactProd.imagenes.length > 2) {
+      compactProd.imagenes = compactProd.imagenes.slice(0, 2);
+    }
+
+    return compactProd;
   });
 
   const activeCoupons = Array.isArray(state.coupons)
@@ -12730,7 +12794,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
               "merchantReturnLink": baseUrl
             }
           }
-        }, null, 2);
+        });
 
         // Pre-rendered semantic HTML for instant Googlebot indexation without waiting for JS
         const catName = product.category || "Catálogo";
@@ -12837,7 +12901,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
               "image": p.imageUrl || imgUrl
             }))
           }
-        }, null, 2);
+        });
 
         // Pre-rendered semantic HTML body for categories to immediately index in Google Search
         preRenderedBody = `
@@ -12962,7 +13026,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
           "refundType": "https://schema.org/FullRefund",
           "merchantReturnLink": baseUrl
         }
-      }, null, 2);
+      });
     }
 
     // Default homepage pre-rendering if root was not yet pre-rendered
@@ -13015,7 +13079,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       if (isBot) {
         preRenderedHtml = `<div id="root">${preRenderedBody}</div>`;
       } else {
-        preRenderedHtml = `<div id="root"></div><noscript>${preRenderedBody}</noscript>`;
+        preRenderedHtml = `<div id="root"></div><noscript><p>JUEM Uruguay — Habilita JavaScript para explorar el catálogo completo.</p></noscript>`;
       }
     }
 
@@ -13111,9 +13175,15 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       `<script type="application/ld+json" id="seo-schema">\n${schemaJson}\n</script>`
     );
 
-    // Initial dehydrated state for instant client hydration without base64 bloat or blocking /api/store fetches
+    // Compact initial dehydrated state for instant client hydration without bloating initial HTML
     if (!isAdminRoute) {
-      const initialScript = `<script id="initial-store-data">window.__INITIAL_STORE__ = ${JSON.stringify(initialStorePayload)};</script>`;
+      const htmlStorePayload = buildPublicStorePayload(
+        rawState,
+        undefined,
+        true,
+        segments[0] === "producto" ? segments[1] : undefined
+      );
+      const initialScript = `<script id="initial-store-data">window.__INITIAL_STORE__=${JSON.stringify(htmlStorePayload)};</script>`;
       output = output.replace("</head>", `${initialScript}\n</head>`);
     }
 
@@ -13661,8 +13731,10 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       }
 
       const isRoot = req.path === "/" || req.path === "";
+      const ua = String(req.headers["user-agent"] || "").toLowerCase();
+      const isBotReq = /googlebot|bingbot|baiduspider|yandex|duckduckbot|slurp|crawler|spider|facebookexternalhit/i.test(ua);
       const now = Date.now();
-      if (isRoot && cachedHomeHtml && (now - cachedHomeHtmlTime < HOME_HTML_CACHE_TTL_MS)) {
+      if (isRoot && !isBotReq && cachedHomeHtml && (now - cachedHomeHtmlTime < HOME_HTML_CACHE_TTL_MS)) {
         res.status(200).set({
           "Content-Type": "text/html; charset=utf-8",
           "Cache-Control": "public, max-age=60, s-maxage=300, stale-while-revalidate=86400"
@@ -13675,7 +13747,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         let template = fs.readFileSync(path.resolve("index.html"), "utf-8");
         template = await vite.transformIndexHtml(url, template);
         const seoHtml = await injectSEO(template, req);
-        if (isRoot) {
+        if (isRoot && !isBotReq) {
           cachedHomeHtml = seoHtml;
           cachedHomeHtmlTime = Date.now();
         }
@@ -13689,7 +13761,24 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     });
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    
+    let cachedProdLinkHeader = "";
+    try {
+      const builtIndexPath = path.join(distPath, "index.html");
+      if (fs.existsSync(builtIndexPath)) {
+        const builtHtml = fs.readFileSync(builtIndexPath, "utf-8");
+        const entryMatch = builtHtml.match(/<script\s+type="module"[^>]*src="([^"]+?\.js)"[^>]*>/i);
+        const cssMatch = builtHtml.match(/<link[^>]*rel="preload"[^>]*href="([^"]+?\.css)"[^>]*>/i);
+        const links: string[] = [];
+        if (entryMatch && entryMatch[1]) {
+          links.push(`<${entryMatch[1]}>; rel=modulepreload; crossorigin`);
+        }
+        if (cssMatch && cssMatch[1]) {
+          links.push(`<${cssMatch[1]}>; rel=preload; as=style; crossorigin`);
+        }
+        cachedProdLinkHeader = links.join(", ");
+      }
+    } catch {}
+
     // Intercept standard index.html routes for dynamic SEO meta-injections
     app.get("*", async (req, res, next) => {
       // If requests are for assets or api, skip to standard handler
@@ -13722,26 +13811,32 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       
       try {
         const isRoot = req.path === "/" || req.path === "";
+        const ua = String(req.headers["user-agent"] || "").toLowerCase();
+        const isBotReq = /googlebot|bingbot|baiduspider|yandex|duckduckbot|slurp|crawler|spider|facebookexternalhit/i.test(ua);
         const now = Date.now();
-        if (isRoot && cachedHomeHtml && (now - cachedHomeHtmlTime < HOME_HTML_CACHE_TTL_MS)) {
-          return res.status(200).set({
+        if (isRoot && !isBotReq && cachedHomeHtml && (now - cachedHomeHtmlTime < HOME_HTML_CACHE_TTL_MS)) {
+          const headers: Record<string, string> = {
             "Content-Type": "text/html; charset=utf-8",
             "Cache-Control": "public, max-age=60, s-maxage=300, stale-while-revalidate=86400"
-          }).end(cachedHomeHtml);
+          };
+          if (cachedProdLinkHeader) headers["Link"] = cachedProdLinkHeader;
+          return res.status(200).set(headers).end(cachedHomeHtml);
         }
 
         const indexHtmlPath = path.join(distPath, "index.html");
         if (fs.existsSync(indexHtmlPath)) {
           const rawHtml = fs.readFileSync(indexHtmlPath, "utf-8");
           const seoHtml = await injectSEO(rawHtml, req);
-          if (isRoot) {
+          if (isRoot && !isBotReq) {
             cachedHomeHtml = seoHtml;
             cachedHomeHtmlTime = Date.now();
           }
-          res.status(200).set({
+          const headers: Record<string, string> = {
             "Content-Type": "text/html; charset=utf-8",
             "Cache-Control": isRoot ? "public, max-age=60, s-maxage=300, stale-while-revalidate=86400" : "public, max-age=30, s-maxage=120, stale-while-revalidate=86400"
-          }).end(seoHtml);
+          };
+          if (cachedProdLinkHeader) headers["Link"] = cachedProdLinkHeader;
+          res.status(200).set(headers).end(seoHtml);
         } else {
           next();
         }

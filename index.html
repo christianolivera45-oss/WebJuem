@@ -1,119 +1,11 @@
 <!doctype html>
 <html lang="es">
   <head>
-    <!-- Global Error Shield -->
-    <script>
-      // Global error handler to gracefully silence generic "Script error." caused by cross-origin trackers or extensions
-      window.onerror = function(message, source, lineno, colno, error) {
-        var msg = message ? String(message) : '';
-        var src = source ? String(source) : '';
-        if (msg === 'Script error.' || msg.indexOf('Script error') !== -1 || msg.indexOf('script error') !== -1 || !src) {
-          console.warn("[Intercepted] Bypassed generic cross-origin Script error.");
-          return true; // Prevents the firing of the default event handler
-        }
-        return false;
-      };
-
-      // In some environments, the listener needs to catch the error in capture phase and stop immediate propagation
-      window.addEventListener('error', function(e) {
-        if (!e) return;
-        
-        // Handle element resource load failures (like failed script or stylesheet tags)
-        if (e.target && (e.target.tagName === 'SCRIPT' || e.target.tagName === 'LINK' || e.target.tagName === 'IFRAME')) {
-          console.warn("[Intercepted Load Error] Bypassed resource load error for target:", e.target.tagName, e.target.src || e.target.href);
-          e.preventDefault();
-          e.stopPropagation();
-          e.stopImmediatePropagation();
-          return true;
-        }
-
-        const msg = e.message ? String(e.message) : '';
-        if (msg === 'Script error.' || msg.indexOf('Script error') !== -1 || msg.indexOf('script error') !== -1) {
-          console.warn("[Intercepted Event] Prevented propagation of generic cross-origin Script error.");
-          e.preventDefault();
-          e.stopPropagation();
-          e.stopImmediatePropagation();
-          return true;
-        }
-      }, true);
-
-      window.addEventListener('unhandledrejection', function(e) {
-        if (!e) return;
-        const reason = e.reason && e.reason.message ? String(e.reason.message) : '';
-        if (reason === 'Script error.' || reason.indexOf('Script error') !== -1 || reason.indexOf('script error') !== -1) {
-          console.warn("[Intercepted Rejection] Prevented propagation of generic cross-origin promise rejection.");
-          e.preventDefault();
-          e.stopPropagation();
-          e.stopImmediatePropagation();
-          return true;
-        }
-      }, true);
-    </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>JUEM | Soportes, Juguetes de Navidad y Tecnología en Uruguay</title>
-    
-    <!-- Critical CSS (Above-The-Fold) para eliminar bloqueo de renderizado y saltos de diseño (CLS/FCP) -->
-    <style id="critical-css">
-      :root {
-        --bg-main: #050B1A;
-        --bg-surface: #070D1C;
-        --text-main: #F4EAD7;
-        --gold-primary: #D4A55A;
-      }
-      *, *::before, *::after {
-        box-sizing: border-box;
-      }
-      html, body {
-        margin: 0;
-        padding: 0;
-        background-color: #050B1A;
-        color: #F4EAD7;
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        -webkit-font-smoothing: antialiased;
-        text-rendering: optimizeLegibility;
-      }
-      #root {
-        min-height: 100vh;
-        display: flex;
-        flex-direction: column;
-      }
-      /* Pre-estilos para la barra superior fija y navegación principal */
-      .top-promo-bar {
-        min-height: 36px;
-        background-color: #060b1a;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-      /* Contenedor del Hero Banner con relación de aspecto fija para evitar CLS en móvil */
-      .hero-banner-container {
-        width: 100%;
-        max-width: 1280px;
-        margin: 0 auto;
-        aspect-ratio: 16 / 9;
-        min-height: 220px;
-        background-color: #070D1C;
-        border-radius: 16px;
-        overflow: hidden;
-      }
-      @media (min-width: 768px) {
-        .hero-banner-container {
-          aspect-ratio: 21 / 9;
-          min-height: 380px;
-        }
-      }
-      /* Rejilla inicial de catálogo */
-      .catalog-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-        gap: 16px;
-      }
-    </style>
-
-    <!-- Tipografías autoalojadas en /assets/*.woff2 con caché immutable de 1 año -->
-
-    <!-- Preload Critical LCP Hero Banner for instant discovery in initial HTML document -->
+    <script>window.onerror=function(m,s){var a=m?String(m):"",b=s?String(s):"";return a==="Script error."||a.indexOf("Script error")!==-1||a.indexOf("script error")!==-1||!b};window.addEventListener("error",function(e){if(!e)return;if(e.target&&(e.target.tagName==="SCRIPT"||e.target.tagName==="LINK"||e.target.tagName==="IFRAME")){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();return true}var a=e.message?String(e.message):"";if(a==="Script error."||a.indexOf("Script error")!==-1||a.indexOf("script error")!==-1){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();return true}},true);window.addEventListener("unhandledrejection",function(e){if(!e)return;var r=e.reason&&e.reason.message?String(e.reason.message):"";if(r==="Script error."||r.indexOf("Script error")!==-1||r.indexOf("script error")!==-1){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();return true}},true);</script>
+    <style id="critical-css">:root{--bg-main:#050B1A;--bg-surface:#070D1C;--text-main:#F4EAD7;--gold-primary:#D4A55A}*,*::before,*::after{box-sizing:border-box}html,body{margin:0;padding:0;background-color:#050B1A;color:#F4EAD7;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}#root{min-height:100vh;display:flex;flex-direction:column}</style>
     <link
       rel="preload"
       as="image"
@@ -124,8 +16,6 @@
       fetchpriority="high"
       id="lcp-hero-preload"
     />
-
-    <!-- Favicon & Brand Icons for Google Search, Mobile & Browsers -->
     <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png" />
     <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192x192.png" />
@@ -138,18 +28,12 @@
     <link rel="manifest" href="/site.webmanifest" />
     <link rel="ai-catalog" href="/.well-known/ai-catalog.json" />
     <meta name="theme-color" content="#070D1C" />
-    
-    <!-- Google Search Verification -->
     <meta name="google-site-verification" content="googlef39a9e33a8b2671e" />
-
-    <!-- SEO Meta Tags -->
     <meta name="description" content="Tienda online multirrubro en Uruguay. Encontrá soportes para pared y escritorio, juguetes de Navidad, tecnología y más con envíos rápidos a todo el país." id="seo-description" />
     <meta name="keywords" content="JUEM, tienda multirrubro Uruguay, soportes de pared, soportes tablet, soportes celular, juguetes de navidad, tecnologia uruguay, electronica, indumentaria, envios express montevideo canelones" />
     <meta name="author" content="JUEM" />
     <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" id="seo-robots" />
     <link rel="canonical" href="https://juem.com.uy/" id="seo-canonical" />
-
-    <!-- Open Graph / Facebook / WhatsApp -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="JUEM" />
     <meta property="og:title" content="JUEM | Soportes, Juguetes de Navidad y Tecnología en Uruguay" id="og-title" />
@@ -161,119 +45,12 @@
     <meta property="og:image:height" content="630" />
     <meta property="og:image:alt" content="JUEM - Tienda Multirrubro en Uruguay" />
     <meta property="og:url" content="https://juem.com.uy/" id="og-url" />
-
-    <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="JUEM | Soportes, Juguetes de Navidad y Tecnología en Uruguay" id="twitter-title" />
     <meta name="twitter:description" content="Tienda online multirrubro en Uruguay. Encontrá soportes para pared y escritorio, juguetes de Navidad, tecnología y más con envíos rápidos a todo el país." id="twitter-description" />
     <meta name="twitter:image" content="https://juem.com.uy/og-celestial.png?v=3" id="twitter-image" />
     <meta name="twitter:image:alt" content="JUEM - Tienda Multirrubro en Uruguay" />
-    
-    <!-- JSON-LD Structured Data Schema for General Store (Uruguay) -->
-    <script type="application/ld+json" id="seo-schema">
-      {
-        "@context": "https://schema.org",
-        "@type": "Store",
-        "name": "JUEM",
-        "alternateName": ["Juem Mvd", "Ventas Juem", "Juem Uruguay"],
-        "description": "Tienda online multirrubro en Uruguay especializada en soportes de pared y escritorio, juguetes de Navidad, artículos de tecnología, indumentaria y hogar con envíos a todo el país.",
-        "url": "https://juem.com.uy",
-        "logo": "https://juem.com.uy/favicon-512x512.png",
-        "image": "https://juem.com.uy/og-celestial.png?v=3",
-        "telephone": "+59892021124",
-        "priceRange": "$$",
-        "currenciesAccepted": "UYU",
-        "paymentAccepted": "Mercado Pago, Efectivo, Tarjeta de Crédito, Transferencia Bancaria",
-        "address": {
-          "@type": "PostalAddress",
-          "streetAddress": "Ruta Interbalnearia, Pinamar",
-          "addressLocality": "Ciudad de la Costa / Pinamar",
-          "addressRegion": "Canelones",
-          "postalCode": "15000",
-          "addressCountry": "UY"
-        },
-        "areaServed": [
-          {
-            "@type": "Country",
-            "name": "Uruguay"
-          },
-          {
-            "@type": "AdministrativeArea",
-            "name": "Montevideo"
-          },
-          {
-            "@type": "AdministrativeArea",
-            "name": "Canelones"
-          }
-        ],
-        "hasOfferCatalog": {
-          "@type": "OfferCatalog",
-          "name": "Catálogo General Multirrubro JUEM",
-          "itemListElement": [
-            {
-              "@type": "OfferCatalog",
-              "name": "Soportes y Organizadores",
-              "description": "Soportes de pared, escritorio, antirrobo y bases para celulares, tablets, monitores y controles.",
-              "url": "https://juem.com.uy/soportes"
-            },
-            {
-              "@type": "OfferCatalog",
-              "name": "Juguetes y Navidad",
-              "description": "Juguetes infantiles, juegos didácticos, figuras y regalos especiales de temporada navideña.",
-              "url": "https://juem.com.uy/juguetes"
-            },
-            {
-              "@type": "OfferCatalog",
-              "name": "Tecnología e Informática",
-              "description": "Accesorios para PC, celulares, audio, periféricos y artículos electrónicos.",
-              "url": "https://juem.com.uy/electronica"
-            },
-            {
-              "@type": "OfferCatalog",
-              "name": "Ropa e Indumentaria",
-              "description": "Indumentaria de temporada, buzos térmicos manta y accesorios textiles.",
-              "url": "https://juem.com.uy/ropa"
-            },
-            {
-              "@type": "OfferCatalog",
-              "name": "Hogar y Café",
-              "description": "Artículos para el hogar, accesorios de barismo y café espresso.",
-              "url": "https://juem.com.uy/hogar"
-            }
-          ]
-        },
-        "openingHoursSpecification": [
-          {
-            "@type": "OpeningHoursSpecification",
-            "dayOfWeek": [
-              "Monday",
-              "Tuesday",
-              "Wednesday",
-              "Thursday",
-              "Friday",
-              "Saturday",
-              "Sunday"
-            ],
-            "opens": "00:00",
-            "closes": "23:59"
-          }
-        ],
-        "sameAs": [
-          "https://www.instagram.com/juem.mvd",
-          "https://www.facebook.com/juem.mvd"
-        ],
-        "hasMerchantReturnPolicy": {
-          "@type": "MerchantReturnPolicy",
-          "applicableCountry": "UY",
-          "returnPolicyCategory": "https://schema.org/MerchantReturnFiniteReturnWindow",
-          "merchantReturnDays": 30,
-          "returnMethod": "https://schema.org/ReturnByMail",
-          "returnFees": "https://schema.org/FreeReturn",
-          "refundType": "https://schema.org/FullRefund",
-          "merchantReturnLink": "https://juem.com.uy"
-        }
-      }
-    </script>
+    <script type="application/ld+json" id="seo-schema">{"@context":"https://schema.org","@type":"Store","name":"JUEM","alternateName":["Juem Mvd","Ventas Juem","Juem Uruguay"],"description":"Tienda online multirrubro en Uruguay especializada en soportes de pared y escritorio, juguetes de Navidad, artículos de tecnología, indumentaria y hogar con envíos a todo el país.","url":"https://juem.com.uy","logo":"https://juem.com.uy/favicon-512x512.png","image":"https://juem.com.uy/og-celestial.png?v=3","telephone":"+59892021124","priceRange":"$$","currenciesAccepted":"UYU","paymentAccepted":"Mercado Pago, Efectivo, Tarjeta de Crédito, Transferencia Bancaria","address":{"@type":"PostalAddress","streetAddress":"Ruta Interbalnearia, Pinamar","addressLocality":"Ciudad de la Costa / Pinamar","addressRegion":"Canelones","postalCode":"15000","addressCountry":"UY"},"areaServed":[{"@type":"Country","name":"Uruguay"},{"@type":"AdministrativeArea","name":"Montevideo"},{"@type":"AdministrativeArea","name":"Canelones"}],"hasOfferCatalog":{"@type":"OfferCatalog","name":"Catálogo General Multirrubro JUEM","itemListElement":[{"@type":"OfferCatalog","name":"Soportes y Organizadores","description":"Soportes de pared, escritorio, antirrobo y bases para celulares, tablets, monitores y controles.","url":"https://juem.com.uy/soportes"},{"@type":"OfferCatalog","name":"Juguetes y Navidad","description":"Juguetes infantiles, juegos didácticos, figuras y regalos especiales de temporada navideña.","url":"https://juem.com.uy/juguetes"},{"@type":"OfferCatalog","name":"Tecnología e Informática","description":"Accesorios para PC, celulares, audio, periféricos y artículos electrónicos.","url":"https://juem.com.uy/electronica"},{"@type":"OfferCatalog","name":"Ropa e Indumentaria","description":"Indumentaria de temporada, buzos térmicos manta y accesorios textiles.","url":"https://juem.com.uy/ropa"},{"@type":"OfferCatalog","name":"Hogar y Café","description":"Artículos para el hogar, accesorios de barismo y café espresso.","url":"https://juem.com.uy/hogar"}]},"openingHoursSpecification":[{"@type":"OpeningHoursSpecification","dayOfWeek":["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"],"opens":"00:00","closes":"23:59"}],"sameAs":["https://www.instagram.com/juem.mvd","https://www.facebook.com/juem.mvd"],"hasMerchantReturnPolicy":{"@type":"MerchantReturnPolicy","applicableCountry":"UY","returnPolicyCategory":"https://schema.org/MerchantReturnFiniteReturnWindow","merchantReturnDays":30,"returnMethod":"https://schema.org/ReturnByMail","returnFees":"https://schema.org/FreeReturn","refundType":"https://schema.org/FullRefund","merchantReturnLink":"https://juem.com.uy"}}</script>
   </head>
   <body style="margin: 0; padding: 0; background-color: #050B1A; color: #F4EAD7; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
     <div id="root"></div>
