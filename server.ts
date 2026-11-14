@@ -13131,6 +13131,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       "",
       "# Permitir el rastreo de paginas principales canonicas y recursos estaticos",
       "Allow: /",
+      "Allow: /llms.txt",
+      "Allow: /.well-known/ai-catalog.json",
       "Allow: /producto/",
       "Allow: /assets/",
       "Allow: /favicon*",
@@ -13393,6 +13395,156 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       res.status(500).send("No se pudo generar el Sitemap de Imágenes.");
     }
   });
+
+  // Dynamic /llms.txt (AI / LLM agent crawler discovery file following https://llmstxt.org/)
+  app.get("/llms.txt", async (req, res) => {
+    try {
+      const canonicalBase = "https://juem.com.uy";
+      let rawState = cachedDbState || currentStoreState;
+      if (!cachedDbState && process.env.DATABASE_URL && !dbUnavailable) {
+        try {
+          rawState = await getDbState();
+        } catch (e) {
+          // Safe fallback in memory
+        }
+      }
+
+      const publicState = buildPublicStorePayload(rawState) as unknown as ShopState;
+      const settings: any = publicState.settings || {};
+      const sanitizeMdText = (val: string) =>
+        val
+          .replace(/[\r\n]+/g, " ")
+          .replace(/[\[\]#*_`>]/g, "")
+          .replace(/\s{2,}/g, " ")
+          .trim();
+
+      const rawSiteTitle = sanitizeMdText(String(settings.siteTitle || ""));
+      const siteHeading = rawSiteTitle && !["Ventas Juem", "Juem Mvd"].includes(rawSiteTitle)
+        ? rawSiteTitle
+        : "JUEM";
+      const summary =
+        "Tienda online multirrubro en Uruguay especializada en soportes de pared y escritorio, impresión 3D, tecnología, artículos para el hogar, indumentaria y regalos, con envíos rápidos en Montevideo, Canelones (Pinamar) y todo el país.";
+
+      const lines: string[] = [
+        `# ${siteHeading}`,
+        "",
+        `> ${summary}`,
+        "",
+        "Este sitio comercializa productos físicos en pesos uruguayos (UYU) con atención por WhatsApp y retiro en sucursales de Montevideo y Pinamar (Canelones). Las rutas administrativas (/admin), de compra (/checkout, /carrito) y los endpoints privados (/api/) están excluidos del rastreo.",
+        "",
+        "## Páginas Principales",
+        "",
+        `- [Inicio - Catálogo Completo](${canonicalBase}/): Portada principal con productos destacados, novedades y acceso al catálogo completo.`,
+        `- [Mapa del Sitio (Sitemap XML)](${canonicalBase}/sitemap.xml): Índice canónico XML de categorías y productos activos.`,
+        `- [Sitemap de Imágenes](${canonicalBase}/sitemap-image.xml): Índice XML de imágenes principales de productos publicados.`,
+        ""
+      ];
+
+      // Active Categories
+      const categories = (publicState.dbCategories || []).filter(
+        c => c.active !== false && c.id && typeof c.id === "string" && !["todos", "all"].includes(c.id.trim().toLowerCase())
+      );
+      if (categories.length > 0) {
+        lines.push("## Categorías", "");
+        categories.forEach(cat => {
+          const cleanCatId = cat.id.trim().toLowerCase();
+          const catName = sanitizeMdText(cat.nombre || cleanCatId);
+          lines.push(`- [${catName}](${canonicalBase}/${encodeURIComponent(cleanCatId)}): Productos disponibles en la categoría ${catName}.`);
+        });
+        lines.push("");
+      }
+
+      // Featured & Published In-Stock Products (capped at 40 to stay concise for LLMs)
+      const activeProducts = (publicState.products || [])
+        .filter(p => {
+          const isWithStock = p.stock !== undefined ? p.stock > 0 : true;
+          const isPublished = p.active !== false && p.paused !== true && (p as any).hidden !== true;
+          const isSecondaryVariant = (p as any).isVariant === true || Boolean((p as any).parentProductId);
+          return isWithStock && isPublished && !isSecondaryVariant && Boolean(p.name);
+        })
+        .sort((a, b) => Number(Boolean(b.featured)) - Number(Boolean(a.featured)))
+        .slice(0, 40);
+
+      if (activeProducts.length > 0) {
+        lines.push("## Productos Destacados", "");
+        activeProducts.forEach(p => {
+          const prodSlug = generateSlug(p.name);
+          if (!prodSlug) return;
+          const prodName = sanitizeMdText(p.name);
+          const priceNum = Number(p.price);
+          const priceLabel = Number.isFinite(priceNum) && priceNum > 0 ? `$${Math.round(priceNum)} UYU` : "Consultar precio";
+          const rawDesc = p.description ? sanitizeMdText(p.description).slice(0, 120) : "";
+          const descSuffix = rawDesc ? ` - ${rawDesc}${p.description && p.description.length > 120 ? "..." : ""}` : "";
+          lines.push(`- [${prodName}](${canonicalBase}/producto/${prodSlug}): ${priceLabel}${descSuffix}`);
+        });
+        lines.push("");
+      }
+
+      lines.push(
+        "## Sucursales y Reglas de Rastreo",
+        "",
+        "- Sucursales de retiro: Montevideo y Pinamar (Canelones, Uruguay).",
+        `- [Política de rastreo (robots.txt)](${canonicalBase}/robots.txt): Directivas oficiales para buscadores y agentes automatizados.`,
+        ""
+      );
+
+      res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+      res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=3600");
+      res.status(200).send(lines.join("\n"));
+    } catch (err: any) {
+      console.error("Error generating llms.txt:", err);
+      res.status(500).type("text/plain; charset=utf-8").send("# JUEM\n\n> Tienda online multirrubro en Uruguay (https://juem.com.uy).\n");
+    }
+  });
+
+  // Dynamic /.well-known/ai-catalog.json (Agentic Resource Discovery manifest: https://ards-project.github.io)
+  app.get(["/.well-known/ai-catalog.json", "/ai-catalog.json"], async (req, res) => {
+    try {
+      const canonicalBase = "https://juem.com.uy";
+      let rawState = cachedDbState || currentStoreState;
+      if (!cachedDbState && process.env.DATABASE_URL && !dbUnavailable) {
+        try {
+          rawState = await getDbState();
+        } catch (e) {
+          // Safe fallback in memory
+        }
+      }
+
+      const publicState = buildPublicStorePayload(rawState) as unknown as ShopState;
+      const settings: any = publicState.settings || {};
+      const rawSiteTitle = String(settings.siteTitle || "").trim();
+      const displayName = rawSiteTitle && !["Ventas Juem", "Juem Mvd"].includes(rawSiteTitle)
+        ? rawSiteTitle
+        : "JUEM";
+
+      const catalogManifest = {
+        specVersion: "1.0",
+        host: {
+          displayName,
+          identifier: "did:web:juem.com.uy",
+          documentationUrl: `${canonicalBase}/llms.txt`,
+          logoUrl: `${canonicalBase}/favicon-512x512.png`
+        },
+        entries: []
+      };
+
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=3600");
+      res.status(200).json(catalogManifest);
+    } catch (err: any) {
+      console.error("Error generating ai-catalog.json:", err);
+      res.status(200).type("application/json; charset=utf-8").json({
+        specVersion: "1.0",
+        host: {
+          displayName: "JUEM",
+          identifier: "did:web:juem.com.uy",
+          documentationUrl: "https://juem.com.uy/llms.txt",
+          logoUrl: "https://juem.com.uy/favicon-512x512.png"
+        },
+        entries: []
+      });
+    }
+  });
   // --- END SEO ENGINE INTEGRATION ---
 
   // --- SEO Permanent Redirection Middleware for clean URLs ---
@@ -13491,8 +13643,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     next();
   });
 
-  // Serve static assets from public directory (favicons, manifests, robots.txt)
-  app.use(express.static(path.resolve("public"), { maxAge: "1d" }));
+  // Serve static assets from public directory (favicons, manifests, robots.txt, .well-known)
+  app.use(express.static(path.resolve("public"), { maxAge: "1d", dotfiles: "allow" }));
 
   // Vite integration
   if (process.env.NODE_ENV !== "production") {
@@ -13609,6 +13761,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     }));
 
     app.use(express.static(distPath, {
+      dotfiles: "allow",
       setHeaders: (res, filePath) => {
         if (filePath.endsWith(".html")) {
           res.setHeader("Cache-Control", "public, max-age=0, must-revalidate");
