@@ -79,7 +79,9 @@ export default function HeroSlider({ settings, onExploreCatalog }: HeroSliderPro
   useEffect(() => {
     if (!isPlaying) return;
     const interval = setInterval(() => {
-      handleNext();
+      if (!document.hidden) {
+        handleNext();
+      }
     }, 6000);
     return () => clearInterval(interval);
   }, [currentIndex, isPlaying, slides.length]);

@@ -2338,13 +2338,20 @@ export default function App() {
     };
   }, []);
 
-  // Update scrolled state on scroll to add elegant shadow
+  // Update scrolled state on scroll using passive listener + rAF throttling
   useEffect(() => {
+    let scrollRaf: number | null = null;
     const handleScroll = () => {
-      setScrolled(window.scrollY > 10);
+      if (scrollRaf !== null) return;
+      scrollRaf = requestAnimationFrame(() => {
+        scrollRaf = null;
+        const nextScrolled = window.scrollY > 10;
+        setScrolled((prev) => (prev === nextScrolled ? prev : nextScrolled));
+      });
     };
-    window.addEventListener("scroll", handleScroll);
+    window.addEventListener("scroll", handleScroll, { passive: true });
     return () => {
+      if (scrollRaf !== null) cancelAnimationFrame(scrollRaf);
       window.removeEventListener("scroll", handleScroll);
     };
   }, []);
@@ -2736,16 +2743,36 @@ export default function App() {
     store.coupons
   ]);
 
-  // Auto cycle top header slides every 5 seconds
+  // Auto cycle top header slides every 5 seconds (desktop only, mobile uses pure-CSS marquee)
   useEffect(() => {
     if (bannerSlides.length <= 1) {
       setCurrentBannerIdx(0);
       return;
     }
-    const interval = setInterval(() => {
-      setCurrentBannerIdx((prev) => (prev + 1) % bannerSlides.length);
-    }, 5000);
-    return () => clearInterval(interval);
+    if (typeof window === "undefined") return;
+    const mql = window.matchMedia("(min-width: 768px)");
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    const syncInterval = () => {
+      if (interval) {
+        clearInterval(interval);
+        interval = null;
+      }
+      if (mql.matches) {
+        interval = setInterval(() => {
+          if (!document.hidden) {
+            setCurrentBannerIdx((prev) => (prev + 1) % bannerSlides.length);
+          }
+        }, 5000);
+      }
+    };
+
+    syncInterval();
+    mql.addEventListener("change", syncInterval);
+    return () => {
+      if (interval) clearInterval(interval);
+      mql.removeEventListener("change", syncInterval);
+    };
   }, [bannerSlides.length]);
 
   const activeBannerIdx = currentBannerIdx >= bannerSlides.length ? 0 : currentBannerIdx;
@@ -4993,12 +5020,12 @@ export default function App() {
                     key={catObj.id}
                     className="relative shrink-0 category-dropdown-container"
                     onMouseEnter={() => {
-                      if (window.innerWidth >= 768) {
+                      if (windowWidth >= 768) {
                         setActiveDropdown(catObj.id);
                       }
                     }}
                     onMouseLeave={() => {
-                      if (window.innerWidth >= 768) {
+                      if (windowWidth >= 768) {
                         setActiveDropdown(null);
                       }
                     }}
@@ -5080,13 +5107,10 @@ export default function App() {
                   {/* Expandable Search Input on Header */}
                   <div id="header-search-container" className={`relative items-center ${isHeaderSearchOpen ? 'flex' : 'hidden lg:flex'}`}>
                 <div
-                  style={{
-                    width: isHeaderSearchOpen ? (typeof window !== "undefined" && window.innerWidth < 640 ? "170px" : "260px") : "36px"
-                  }}
                   className={`flex items-center overflow-hidden rounded-full h-9 border transition-all duration-300 ${
                     isHeaderSearchOpen
-                      ? "border-[#D4A55A]/50 bg-[#0B1730]/90 shadow-lg shadow-[#D4A55A]/5"
-                      : "border-[#D4A55A]/20 bg-[#0B1730]/30 hover:border-[#D4A55A]/55 hover:bg-[#0B1730]/60"
+                      ? "w-[170px] sm:w-[260px] border-[#D4A55A]/50 bg-[#0B1730]/90 shadow-lg shadow-[#D4A55A]/5"
+                      : "w-9 border-[#D4A55A]/20 bg-[#0B1730]/30 hover:border-[#D4A55A]/55 hover:bg-[#0B1730]/60"
                   }`}
                 >
                   <button
@@ -6246,7 +6270,7 @@ export default function App() {
                     href={store.settings.facebookUrl || "https://facebook.com"} 
                     target="_blank" 
                     rel="noopener noreferrer"
-                    className="p-2.5 rounded-xl flex items-center justify-center gap-1.5 text-xs font-bold bg-[#1877F2] hover:bg-[#165EAB] text-white border-none shadow-sm transition-transform duration-100 active:scale-95 cursor-pointer"
+                    className="p-2.5 rounded-xl flex items-center justify-center gap-1.5 text-xs font-bold bg-[#145DBF] hover:bg-[#0F4C9E] text-white border-none shadow-sm transition-transform duration-100 active:scale-95 cursor-pointer"
                   >
                     <svg className="h-4 w-4 shrink-0 fill-white" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                       <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
@@ -6320,6 +6344,7 @@ export default function App() {
                 </div>
                 <div className="w-full h-[140px] rounded-xl overflow-hidden border border-[#D4A55A]/15 relative">
                   <iframe 
+                    title="Mapa de ubicación - Sucursal Montevideo"
                     src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3273.500741407378!2d-56.15203782349302!3d-34.868770171545755!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x959f808dc42ec093%3A0x20632d6daf9aa5fc!2sCoru%C3%B1a%203038%2C%2012000%20Montevideo%2C%20Departamento%20de%20Montevideo!5e0!3m2!1ses-419!2suy!4v1782910027474!5m2!1ses-419!2suy" 
                     className="absolute inset-0 w-full h-full"
                     style={{ border: 0 }} 
@@ -6361,6 +6386,7 @@ export default function App() {
                 </div>
                 <div className="w-full h-[140px] rounded-xl overflow-hidden border border-[#D4A55A]/15 relative">
                   <iframe 
+                    title="Mapa de ubicación - Sucursal Pinamar"
                     src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3277.703532468259!2d-55.8671867242527!3d-34.76306027289764!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x95a021e5c567911d%3A0x601fcf5d591c0db4!2sJuem!5e0!3m2!1ses-419!2suy!4v1782909992678!5m2!1ses-419!2suy" 
                     className="absolute inset-0 w-full h-full"
                     style={{ border: 0 }} 

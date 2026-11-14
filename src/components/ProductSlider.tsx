@@ -34,79 +34,131 @@ export default function ProductSlider({
 
   const rafIdRef = useRef<number | null>(null);
   const containerWidthRef = useRef<number>(0);
+  const isDesktopRef = useRef<boolean>(
+    typeof window !== "undefined" ? window.matchMedia("(min-width: 640px)").matches : true
+  );
+  const isMdRef = useRef<boolean>(
+    typeof window !== "undefined" ? window.matchMedia("(min-width: 768px)").matches : true
+  );
+  const isInViewportRef = useRef<boolean>(true);
+  const [isDesktop, setIsDesktop] = useState<boolean>(() => isDesktopRef.current);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const smMql = window.matchMedia("(min-width: 640px)");
+    const mdMql = window.matchMedia("(min-width: 768px)");
+
+    const updateMedia = () => {
+      isDesktopRef.current = smMql.matches;
+      isMdRef.current = mdMql.matches;
+      setIsDesktop(smMql.matches);
+    };
+
+    updateMedia();
+    smMql.addEventListener("change", updateMedia);
+    mdMql.addEventListener("change", updateMedia);
+    return () => {
+      smMql.removeEventListener("change", updateMedia);
+      mdMql.removeEventListener("change", updateMedia);
+    };
+  }, []);
+
+  const getEstimatedContentWidth = () => {
+    const cardStep = isMdRef.current ? 309 : 244;
+    return Math.max(0, displayedProducts.length * cardStep - 24);
+  };
 
   const checkScrollState = () => {
-    if (typeof window !== "undefined" && !window.matchMedia("(min-width: 640px)").matches) return;
+    if (!isDesktopRef.current) return;
     if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
     rafIdRef.current = requestAnimationFrame(() => {
       const el = containerRef.current;
       if (!el) return;
       const scrollLeft = el.scrollLeft;
-      const clientWidth = containerWidthRef.current || el.clientWidth;
-      const scrollWidth = el.scrollWidth;
+      const clientWidth = containerWidthRef.current;
+      if (clientWidth <= 0) return;
+      const contentWidth = getEstimatedContentWidth();
       setCanScrollLeft(scrollLeft > 2);
-      setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 4);
+      setCanScrollRight(scrollLeft + clientWidth < contentWidth - 4);
     });
   };
 
   useEffect(() => {
     const el = containerRef.current;
-    if (!el || typeof window === "undefined") return;
+    if (!el || typeof window === "undefined" || !isDesktop) {
+      setCanScrollLeft(false);
+      setCanScrollRight(false);
+      return;
+    }
 
-    let observer: ResizeObserver | null = null;
-    const isDesktop = () => window.matchMedia("(min-width: 640px)").matches;
+    let resizeObserver: ResizeObserver | null = null;
+    let intersectionObserver: IntersectionObserver | null = null;
 
     if (typeof ResizeObserver !== "undefined") {
-      observer = new ResizeObserver((entries) => {
-        if (!isDesktop()) return;
+      resizeObserver = new ResizeObserver((entries) => {
+        if (!isDesktopRef.current) return;
         const entry = entries[0];
         if (!entry) return;
         const width = entry.contentRect.width;
         if (width <= 0) return;
         containerWidthRef.current = width;
-        // Card step: 220px + 24px gap on sm (<768px), 285px + 24px gap on md+
-        const cardStep = window.innerWidth >= 768 ? 309 : 244;
-        const estimatedTotalWidth = displayedProducts.length * cardStep - 24;
-        setCanScrollRight(estimatedTotalWidth > width + 4);
+        const contentWidth = getEstimatedContentWidth();
+        setCanScrollRight(contentWidth > width + 4);
       });
-      observer.observe(el);
+      resizeObserver.observe(el);
+    }
+
+    if (typeof IntersectionObserver !== "undefined") {
+      intersectionObserver = new IntersectionObserver(
+        (entries) => {
+          const entry = entries[0];
+          if (entry) isInViewportRef.current = entry.isIntersecting;
+        },
+        { threshold: 0.1 }
+      );
+      intersectionObserver.observe(el);
     }
 
     el.addEventListener("scroll", checkScrollState, { passive: true });
     return () => {
       if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
-      if (observer) observer.disconnect();
+      if (resizeObserver) resizeObserver.disconnect();
+      if (intersectionObserver) intersectionObserver.disconnect();
       el.removeEventListener("scroll", checkScrollState);
     };
-  }, [displayedProducts]);
+  }, [displayedProducts, isDesktop]);
 
-  // Autoplay auto-scrolling effect using requestAnimationFrame and constant card step
+  // Autoplay auto-scrolling effect (desktop & visible in viewport only) without layout-thrashing measurements
   useEffect(() => {
-    if (displayedProducts.length <= 1 || isPaused || autoplaySpeed <= 0) return;
+    if (!isDesktop || displayedProducts.length <= 1 || isPaused || autoplaySpeed <= 0) return;
 
     const interval = setInterval(() => {
+      if (document.hidden || !isInViewportRef.current || !isDesktopRef.current) return;
       requestAnimationFrame(() => {
         const el = containerRef.current;
-        if (!el) return;
-        const maxScroll = el.scrollWidth - el.clientWidth;
-        if (el.scrollLeft >= maxScroll - 5) {
-          el.scrollTo({ left: 0, behavior: "smooth" });
+        const width = containerWidthRef.current;
+        if (!el || width <= 0) return;
+        const maxScroll = Math.max(0, getEstimatedContentWidth() - width);
+        if (maxScroll <= 4 || el.scrollLeft >= maxScroll - 5) {
+          if (el.scrollLeft > 0) {
+            el.scrollTo({ left: 0, behavior: "smooth" });
+          }
         } else {
-          // Standard catalog card width (305px) + gap (16px) = 321px
-          const scrollAmount = 321;
+          const scrollAmount = isMdRef.current ? 309 : 244;
           el.scrollBy({ left: scrollAmount, behavior: "smooth" });
         }
       });
     }, autoplaySpeed);
 
     return () => clearInterval(interval);
-  }, [displayedProducts, isPaused, autoplaySpeed]);
+  }, [displayedProducts, isPaused, autoplaySpeed, isDesktop]);
 
   const scroll = (direction: "left" | "right") => {
     requestAnimationFrame(() => {
       const el = containerRef.current;
       if (el) {
-        const scrollAmount = Math.max(300, Math.floor(el.clientWidth * 0.75));
+        const width = containerWidthRef.current || el.clientWidth;
+        const scrollAmount = Math.max(300, Math.floor(width * 0.75));
         el.scrollBy({
           left: direction === "left" ? -scrollAmount : scrollAmount,
           behavior: "smooth"
