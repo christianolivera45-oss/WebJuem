@@ -5438,6 +5438,7 @@ export default function App() {
       {activeTab === "storefront" && (
         <div className="flex-1 flex flex-col pb-16 lg:pb-0">
           {selectedProduct ? (
+            <main className="flex-1 flex flex-col">
             <Suspense fallback={<div className="min-h-[60vh] flex items-center justify-center"><div className="w-8 h-8 border-2 border-[#D4A55A] border-t-transparent rounded-full animate-spin" /></div>}>
             <ProductDetails
               product={store.products.find(p => String(p.id) === String(selectedProduct.id)) || selectedProduct}
@@ -5460,8 +5461,10 @@ export default function App() {
               isCartOpen={isCartOpen}
             />
             </Suspense>
+            </main>
           ) : (
             <>
+              <main className="flex-1 flex flex-col">
               {/* Interactive Hero Slider Showcase */}
           {selectedCategory === "todos" && !searchQuery && (
             <HeroSlider
@@ -5578,9 +5581,9 @@ export default function App() {
                     
                     {/* Collapsible Sorting options */}
                     <div>
-                      <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-3">
+                      <h2 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-3">
                         Ordenar por
-                      </h4>
+                      </h2>
                       <div className="grid grid-cols-2 gap-2">
                         {[
                           { id: "featured", label: "Destacados ⭐" },
@@ -5607,9 +5610,9 @@ export default function App() {
 
                     {/* Stock switch availability */}
                     <div className="flex flex-col justify-center">
-                      <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-3 font-semibold">
+                      <h2 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-3 font-semibold">
                         Disponibilidad
-                      </h4>
+                      </h2>
                       <div className="block">
                         <label className="inline-flex items-center gap-2 cursor-pointer select-none">
                           <input
@@ -5681,9 +5684,9 @@ export default function App() {
                     <div className="overflow-y-auto px-6 py-5 space-y-6 pb-28">
                       {/* Section 1: Order by */}
                       <div>
-                        <h4 className="text-[10px] font-extrabold uppercase tracking-widest text-[#D4A55A] mb-3">
+                        <h2 className="text-[10px] font-extrabold uppercase tracking-widest text-[#D4A55A] mb-3">
                           Ordenar por
-                        </h4>
+                        </h2>
                         <div className="grid grid-cols-2 gap-2">
                           {[
                             { id: "featured", label: "Destacados ⭐" },
@@ -5710,9 +5713,9 @@ export default function App() {
 
                       {/* Section 2: Store Availability */}
                       <div className="space-y-3">
-                        <h4 className="text-[10px] font-extrabold uppercase tracking-widest text-[#D4A55A]">
+                        <h2 className="text-[10px] font-extrabold uppercase tracking-widest text-[#D4A55A]">
                           Disponibilidad
-                        </h4>
+                        </h2>
                         <div className="flex items-center justify-between p-3.5 rounded-2xl border border-zinc-150 dark:border-zinc-900 bg-zinc-50/50 dark:bg-zinc-900/10">
                           <div className="flex flex-col gap-0.5">
                             <span className="text-xs font-bold">Solo con Stock disponible</span>
@@ -5735,9 +5738,9 @@ export default function App() {
 
                       {/* Section 3: Categories & Subcategories */}
                       <div>
-                        <h4 className="text-[10px] font-extrabold uppercase tracking-widest text-[#D4A55A] mb-3">
+                        <h2 className="text-[10px] font-extrabold uppercase tracking-widest text-[#D4A55A] mb-3">
                           Categorías
-                        </h4>
+                        </h2>
                         <div className="flex flex-wrap gap-2">
                           <button
                             onClick={() => {
@@ -5790,9 +5793,9 @@ export default function App() {
 
                         return (
                           <div className="space-y-3 pt-3 border-t border-zinc-150 dark:border-zinc-900">
-                            <h4 className="text-[10px] font-extrabold uppercase tracking-widest text-[#D4A55A]">
+                            <h2 className="text-[10px] font-extrabold uppercase tracking-widest text-[#D4A55A]">
                               Subcategorías de {activeCategoryObject.nombre}
-                            </h4>
+                            </h2>
                             <div className="flex flex-wrap gap-2">
                               <button
                                 onClick={() => {
@@ -5884,7 +5887,7 @@ export default function App() {
               <div className="mb-6 sm:mb-8">
                 <div className="flex items-center gap-2 mb-2 sm:mb-2.5">
                   <div className="w-1.5 h-5 theme-btn-primary rounded-full"></div>
-                  <h3 className="text-lg sm:text-xl font-bold tracking-tight">Destacados</h3>
+                  <h2 className="text-lg sm:text-xl font-bold tracking-tight">Destacados</h2>
                   <span className="text-[10px] uppercase font-bold text-yellow-400 animate-pulse">¡Los más buscados!</span>
                 </div>
                 <ProductSlider
@@ -5905,7 +5908,7 @@ export default function App() {
                 <div className="flex items-center justify-between gap-4 mb-6 flex-wrap">
                   <div className="flex items-center gap-2">
                     <div className="w-1.5 h-6 theme-btn-accent rounded-full"></div>
-                    <h3 className="text-xl font-bold tracking-tight">
+                    <h2 className="text-xl font-bold tracking-tight">
                       {searchQuery ? (
                         "Resultados de Búsqueda"
                       ) : selectedCategory !== "todos" ? (
@@ -5923,7 +5926,7 @@ export default function App() {
                       ) : (
                         "Catálogo de Productos"
                       )}
-                    </h3>
+                    </h2>
                     <span className="text-xs font-mono text-zinc-500 dark:text-zinc-400">({sortedProducts.length} productos)</span>
                   </div>
 
@@ -6191,7 +6194,7 @@ export default function App() {
                             <span className="p-1.5 rounded-lg flex items-center justify-center [&_svg]:h-4 [&_svg]:w-4 transition-transform duration-300 group-hover:scale-110" style={{ color: store.settings.primaryColor, backgroundColor: `${store.settings.primaryColor}15` }}>
                               {getCategoryIcon(catObj.icono || catObj.nombre)}
                             </span>
-                            <h3 className="text-xl font-extrabold tracking-tight flex items-center gap-1.5">
+                            <h2 className="text-xl font-extrabold tracking-tight flex items-center gap-1.5">
                               <span className="group-hover:underline">{catObj.nombre}</span>
                               <span 
                                 className="text-sm opacity-0 group-hover:opacity-100 transition-all duration-300 transform -translate-x-1 group-hover:translate-x-0"
@@ -6199,7 +6202,7 @@ export default function App() {
                               >
                                 &rarr;
                               </span>
-                            </h3>
+                            </h2>
                           </button>
                         </div>
 
@@ -6218,6 +6221,7 @@ export default function App() {
               </div>
             )}
           </section>
+              </main>
 
           {/* Features highlight banner */}
           <footer className={`py-10 sm:py-14 border-t mt-12 sm:mt-16 transition-colors duration-200 relative overflow-hidden ${
@@ -6242,11 +6246,11 @@ export default function App() {
                     <span className="p-1.5 rounded-lg bg-[#D4A55A]/10 text-[#E6BF76]">
                       <Globe className="h-4 w-4" />
                     </span>
-                    <h4 className={`font-bold text-xs uppercase tracking-wider font-sans ${
+                    <h2 className={`font-bold text-xs uppercase tracking-wider font-sans ${
                       store.settings.themeMode === "dark" ? "text-[#F4EAD7]" : "text-slate-900"
                     }`}>
                       Nuestras Redes
-                    </h4>
+                    </h2>
                   </div>
                   
                   <p className="text-xs leading-relaxed opacity-85 mb-4">
@@ -6291,11 +6295,11 @@ export default function App() {
                     <span className="p-1.5 rounded-lg bg-[#D4A55A]/10 text-[#E6BF76]">
                       <MapPin className="h-4 w-4" />
                     </span>
-                    <h4 className={`font-bold text-xs uppercase tracking-wider font-sans ${
+                    <h2 className={`font-bold text-xs uppercase tracking-wider font-sans ${
                       store.settings.themeMode === "dark" ? "text-[#F4EAD7]" : "text-slate-900"
                     }`}>
                       🗺️ Zonas de Envío
-                    </h4>
+                    </h2>
                   </div>
                   <p className="text-xs leading-relaxed opacity-85">
                     Explora de forma interactiva nuestras 10 Zonas de Envío con cobertura directa de cadetería propia en Montevideo, Canelones y Ciudad de la Costa. Costos fijos y transparentes.
@@ -6324,11 +6328,11 @@ export default function App() {
                     <span className="p-1.5 rounded-lg bg-[#D4A55A]/10 text-[#E6BF76]">
                       <MapPin className="h-4 w-4" />
                     </span>
-                    <h4 className={`font-bold text-xs uppercase tracking-wider font-sans ${
+                    <h2 className={`font-bold text-xs uppercase tracking-wider font-sans ${
                       store.settings.themeMode === "dark" ? "text-[#F4EAD7]" : "text-slate-900"
                     }`}>
                       📍 Sucursal Montevideo
-                    </h4>
+                    </h2>
                   </div>
                   <div className="text-xs space-y-2 mb-3 opacity-85">
                     <p className="text-[11px] leading-relaxed">
@@ -6366,11 +6370,11 @@ export default function App() {
                     <span className="p-1.5 rounded-lg bg-[#D4A55A]/10 text-[#E6BF76]">
                       <MapPin className="h-4 w-4" />
                     </span>
-                    <h4 className={`font-bold text-xs uppercase tracking-wider font-sans ${
+                    <h2 className={`font-bold text-xs uppercase tracking-wider font-sans ${
                       store.settings.themeMode === "dark" ? "text-[#F4EAD7]" : "text-slate-900"
                     }`}>
                       📍 Sucursal Pinamar
-                    </h4>
+                    </h2>
                   </div>
                   <div className="text-xs space-y-2 mb-3 opacity-85">
                     <p className="text-[11px] leading-relaxed">
@@ -6445,6 +6449,7 @@ export default function App() {
 
       {/* RENDER DYNAMIC CHECKOUT SECTION */}
       {activeTab === "checkout" && (
+        <main className="flex-1 flex flex-col">
         <Suspense fallback={<div className="min-h-[60vh] flex items-center justify-center"><div className="w-8 h-8 border-2 border-[#D4A55A] border-t-transparent rounded-full animate-spin" /></div>}>
         <Checkout
           cartItems={cart}
@@ -6456,6 +6461,7 @@ export default function App() {
           coupons={store.coupons}
         />
         </Suspense>
+        </main>
       )}
 
       {/* RENDER ADMIN DASHBOARD & MODALS (CODE-SPLIT LAZY CHUNK) */}

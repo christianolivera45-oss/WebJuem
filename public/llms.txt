@@ -1,0 +1,16 @@
+# JUEM
+
+> Tienda online multirrubro en Uruguay especializada en soportes de pared y escritorio, impresión 3D, tecnología, artículos para el hogar, indumentaria y regalos, con envíos rápidos en Montevideo, Canelones (Pinamar) y todo el país.
+
+Este sitio comercializa productos físicos en pesos uruguayos (UYU) con retiro en sucursales de Montevideo y Pinamar (Canelones). Las rutas administrativas (/admin), transaccionales (/checkout, /carrito) y de API (/api/) están excluidas del rastreo.
+
+## Páginas Principales
+
+- [Inicio - Catálogo Completo](https://juem.com.uy/): Portada principal con productos destacados, novedades y catálogo completo.
+- [Sitemap XML](https://juem.com.uy/sitemap.xml): Índice canónico de categorías y productos activos.
+- [Sitemap de Imágenes](https://juem.com.uy/sitemap-image.xml): Índice XML de imágenes de productos publicados.
+
+## Sucursales y Reglas de Rastreo
+
+- Sucursales de retiro: Montevideo y Pinamar (Canelones, Uruguay).
+- [Política de rastreo (robots.txt)](https://juem.com.uy/robots.txt): Directivas oficiales para buscadores y agentes automatizados.
