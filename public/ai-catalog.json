@@ -1,0 +1,10 @@
+{
+  "specVersion": "1.0",
+  "host": {
+    "displayName": "JUEM",
+    "identifier": "did:web:juem.com.uy",
+    "documentationUrl": "https://juem.com.uy/llms.txt",
+    "logoUrl": "https://juem.com.uy/favicon-512x512.png"
+  },
+  "entries": []
+}

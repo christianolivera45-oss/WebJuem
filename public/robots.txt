@@ -6,7 +6,10 @@ User-agent: *
 # Permitir el rastreo de paginas principales canonicas y recursos estaticos
 Allow: /
 Allow: /llms.txt
+Allow: /.well-known/
 Allow: /.well-known/ai-catalog.json
+Allow: /.well-known/ard.json
+Allow: /ai-catalog.json
 Allow: /producto/
 Allow: /assets/
 Allow: /favicon*
