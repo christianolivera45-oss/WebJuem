@@ -13202,7 +13202,10 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       "# Permitir el rastreo de paginas principales canonicas y recursos estaticos",
       "Allow: /",
       "Allow: /llms.txt",
+      "Allow: /.well-known/",
       "Allow: /.well-known/ai-catalog.json",
+      "Allow: /.well-known/ard.json",
+      "Allow: /ai-catalog.json",
       "Allow: /producto/",
       "Allow: /assets/",
       "Allow: /favicon*",
@@ -13567,8 +13570,26 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     }
   });
 
-  // Dynamic /.well-known/ai-catalog.json (Agentic Resource Discovery manifest: https://ards-project.github.io)
-  app.get(["/.well-known/ai-catalog.json", "/ai-catalog.json"], async (req, res) => {
+  // Dynamic /.well-known/ai-catalog.json & ARD manifests (https://ards-project.github.io)
+  const aiCatalogPaths = [
+    "/.well-known/ai-catalog.json",
+    "/ai-catalog.json",
+    "/.well-known/ai-catalog",
+    "/.well-known/ard.json",
+    "/ard.json"
+  ];
+  app.options(aiCatalogPaths, (req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept");
+    res.status(204).end();
+  });
+  app.get(aiCatalogPaths, async (req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=3600");
     try {
       const canonicalBase = "https://juem.com.uy";
       let rawState = cachedDbState || currentStoreState;
@@ -13598,12 +13619,10 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         entries: []
       };
 
-      res.setHeader("Content-Type", "application/json; charset=utf-8");
-      res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=3600");
       res.status(200).json(catalogManifest);
     } catch (err: any) {
       console.error("Error generating ai-catalog.json:", err);
-      res.status(200).type("application/json; charset=utf-8").json({
+      res.status(200).json({
         specVersion: "1.0",
         host: {
           displayName: "JUEM",
@@ -13864,8 +13883,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       }
     }));
     app.get("*", (req, res) => {
-      if (req.path.startsWith("/api/")) {
-        return res.status(404).json({ error: "Endpoint de API no encontrado" });
+      if (req.path.startsWith("/api/") || req.path.startsWith("/.well-known/") || req.path.endsWith(".json")) {
+        return res.status(404).json({ error: "Recurso no encontrado" });
       }
       res.sendFile(path.join(distPath, "index.html"));
     });

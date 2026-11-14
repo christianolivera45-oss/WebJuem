@@ -580,23 +580,38 @@ export default function App() {
 
     let deferredSyncTimer: any = null;
     let idleCallbackId: any = null;
+    let bgSyncTriggered = false;
+    const interactionEvents = ["pointerdown", "keydown", "touchstart", "scroll"] as const;
+
+    const triggerBgSyncOnce = () => {
+      if (bgSyncTriggered || isAuditBot || hasFullStoreRef.current) return;
+      bgSyncTriggered = true;
+      interactionEvents.forEach((evt) => {
+        window.removeEventListener(evt, triggerBgSyncOnce, { capture: true } as any);
+      });
+      if (deferredSyncTimer) {
+        clearTimeout(deferredSyncTimer);
+        deferredSyncTimer = null;
+      }
+      fetchStoreData(true);
+    };
+
+    const scheduleBgSync = () => {
+      if (isAuditBot) return;
+      interactionEvents.forEach((evt) => {
+        window.addEventListener(evt, triggerBgSyncOnce, { passive: true, once: true, capture: true });
+      });
+      const win = window as any;
+      deferredSyncTimer = setTimeout(() => {
+        if (typeof win.requestIdleCallback === "function") {
+          idleCallbackId = win.requestIdleCallback(() => triggerBgSyncOnce(), { timeout: 2000 });
+        } else {
+          triggerBgSyncOnce();
+        }
+      }, 5500);
+    };
 
     if (hasHydratedInitialStore && !isAdminRoute && !validInitialToken) {
-      const scheduleBgSync = () => {
-        if (isAuditBot) return;
-        const win = window as any;
-        if (typeof win.requestIdleCallback === "function") {
-          idleCallbackId = win.requestIdleCallback(
-            () => {
-              deferredSyncTimer = setTimeout(() => fetchStoreData(true), 1200);
-            },
-            { timeout: 3000 }
-          );
-        } else {
-          deferredSyncTimer = setTimeout(() => fetchStoreData(true), 1500);
-        }
-      };
-
       if (document.readyState === "complete") {
         scheduleBgSync();
       } else {
@@ -630,6 +645,10 @@ export default function App() {
     };
     window.addEventListener("popstate", handlePopState);
     return () => {
+      window.removeEventListener("load", scheduleBgSync);
+      interactionEvents.forEach((evt) => {
+        window.removeEventListener(evt, triggerBgSyncOnce, { capture: true } as any);
+      });
       if (deferredSyncTimer) clearTimeout(deferredSyncTimer);
       if (idleCallbackId && typeof (window as any).cancelIdleCallback === "function") {
         (window as any).cancelIdleCallback(idleCallbackId);
