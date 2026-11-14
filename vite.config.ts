@@ -14,14 +14,32 @@ function asyncCssPlugin(): Plugin {
     apply: 'build',
     enforce: 'post',
     transformIndexHtml(html: string) {
-      return html.replace(
-        /<link\s+([^>]*?)rel="stylesheet"([^>]*?)href="([^"]+?\.css)"([^>]*?)>/gi,
+      const extractedLinks: string[] = [];
+      let updatedHtml = html.replace(
+        /<link\s+([^>]*?)rel="stylesheet"([^>]*?)href="([^"]+?\.css)"([^>]*?)>\s*/gi,
         (match, p1, p2, href, p4) => {
           if (match.includes('media=') || match.includes('onload=')) return match;
           const cleanAttrs = `${p1} ${p2} ${p4}`.replace(/\s+/g, ' ').trim();
-          return `<link rel="preload" href="${href}" as="style" onload="this.onload=null;this.rel='stylesheet'" ${cleanAttrs}>\n    <noscript><link rel="stylesheet" href="${href}" ${cleanAttrs}></noscript>`;
+          extractedLinks.push(
+            `<link rel="preload" href="${href}" as="style" onload="this.onload=null;this.rel='stylesheet'" ${cleanAttrs}>\n    <noscript><link rel="stylesheet" href="${href}" ${cleanAttrs}></noscript>`
+          );
+          return '';
         }
       );
+
+      if (extractedLinks.length > 0) {
+        const block = extractedLinks.join('\n    ');
+        if (updatedHtml.includes('<script type="module"')) {
+          updatedHtml = updatedHtml.replace(
+            '<script type="module"',
+            `${block}\n    <script type="module"`
+          );
+        } else {
+          updatedHtml = updatedHtml.replace('</head>', `    ${block}\n  </head>`);
+        }
+      }
+
+      return updatedHtml;
     },
   };
 }
