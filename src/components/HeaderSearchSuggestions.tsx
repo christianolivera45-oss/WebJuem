@@ -1,6 +1,6 @@
 import { Product, ShopState } from "../types";
 import { optimizeImageUrl } from "../utils/imageOptimizer";
-import { calculateRelevance, normalizeText } from "../utils/storefrontHelpers";
+import { calculateRelevance, normalizeText } from "../utils/searchHelpers";
 
 interface HeaderSearchSuggestionsProps {
   store: ShopState;

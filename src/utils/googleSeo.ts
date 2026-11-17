@@ -74,15 +74,31 @@ export function formatCanonicalUrl(path?: string, base = BASE_DOMAIN): string {
 }
 
 /**
- * Validates genuine GS1 GTIN barcodes (EAN-13, EAN-8, UPC-12, ITF-14)
- * Google rejects synthetic or invalid check-digit barcodes.
+ * Validates genuine GS1 GTIN barcodes (EAN-8, UPC-12, EAN-13, ITF-14).
+ * Rejects synthetic, check-digit-invalid, repeating-digit, sequential,
+ * and GS1 restricted/in-store/coupon prefixes (which fail Google's GS1 GEPIR check).
  */
 export function validateGtin(candidate?: string | null): string | undefined {
   if (!candidate || typeof candidate !== "string") return undefined;
   const clean = candidate.trim().replace(/[-\s]/g, "");
   if (!/^\d{8}$|^\d{12}$|^\d{13}$|^\d{14}$/.test(clean)) return undefined;
-  if (/^0+$/.test(clean) || /^12345678/.test(clean)) return undefined;
+  // Reject uniform repeating digits (0000..., 1111..., etc.) and obvious sequential test numbers
+  if (/^(\d)\1+$/.test(clean) || /^12345678/.test(clean) || /^98765432/.test(clean)) return undefined;
+
   const len = clean.length;
+  // Reject GS1 restricted circulation (in-store / variable weight) & coupon prefixes
+  if (len === 12) {
+    // UPC-A: leading 2 (variable weight/in-store), 4 (retailer in-store only), 5 (coupons)
+    if (/^[245]/.test(clean)) return undefined;
+  } else if (len === 13) {
+    // EAN-13: 02, 04 (restricted in-store), 20-29 (in-store), 98-99 (coupons)
+    if (/^(02|04|2\d|98|99)/.test(clean)) return undefined;
+  } else if (len === 14) {
+    // GTIN-14: packaging indicator + 13 digits
+    const inner13 = clean.slice(1);
+    if (/^(02|04|2\d|98|99)/.test(inner13)) return undefined;
+  }
+
   const digits = clean.split("").map(Number);
   const checkDigit = digits[len - 1];
   let sum = 0;
@@ -94,6 +110,20 @@ export function validateGtin(candidate?: string | null): string | undefined {
   const calculatedCheck = (10 - (sum % 10)) % 10;
   if (checkDigit !== calculatedCheck) return undefined;
   return clean;
+}
+
+/**
+ * Returns ONLY the most specific Schema.org GTIN property recommended by Google Merchant Listing:
+ * gtin8 | gtin12 | gtin13 | gtin14 (never redundant generic `gtin` + `gtin13`).
+ */
+export function getSpecificGtinSchema(prod?: { gtin?: string | null; barcode?: string | null } | null): Record<string, string> {
+  const valid = validateGtin(prod?.gtin || prod?.barcode);
+  if (!valid) return {};
+  if (valid.length === 8) return { gtin8: valid };
+  if (valid.length === 12) return { gtin12: valid };
+  if (valid.length === 13) return { gtin13: valid };
+  if (valid.length === 14) return { gtin14: valid };
+  return {};
 }
 
 /**

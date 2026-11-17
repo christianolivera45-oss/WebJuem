@@ -16,13 +16,27 @@ function asyncCssPlugin(): Plugin {
     transformIndexHtml(html: string) {
       const earlyHints: string[] = [];
 
+      const seenModulePreloads = new Set<string>();
       // Discover entry module script for early <link rel="modulepreload"> at top of <head>
       const entryScriptMatch = html.match(/<script\s+type="module"[^>]*src="([^"]+?\.js)"[^>]*>/i);
       if (entryScriptMatch && entryScriptMatch[1]) {
+        seenModulePreloads.add(entryScriptMatch[1]);
         earlyHints.push(`<link rel="modulepreload" href="${entryScriptMatch[1]}" crossorigin>`);
       }
 
+      // Hoist Vite-generated chunk modulepreload links (e.g. vendor-react) to top of <head> without duplicates
       let updatedHtml = html.replace(
+        /<link\s+[^>]*rel="modulepreload"[^>]*href="([^"]+?\.js)"[^>]*>\s*/gi,
+        (_match, href) => {
+          if (href && !seenModulePreloads.has(href)) {
+            seenModulePreloads.add(href);
+            earlyHints.push(`<link rel="modulepreload" href="${href}" crossorigin>`);
+          }
+          return '';
+        }
+      );
+
+      updatedHtml = updatedHtml.replace(
         /<link\s+([^>]*?)rel="stylesheet"([^>]*?)href="([^"]+?\.css)"([^>]*?)>\s*/gi,
         (match, p1, p2, href, p4) => {
           if (match.includes('media=') || match.includes('onload=')) return match;
@@ -67,6 +81,19 @@ export default defineConfig(() => {
     build: {
       cssCodeSplit: true,
       chunkSizeWarningLimit: 1000,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (
+              id.includes('/node_modules/react/') ||
+              id.includes('/node_modules/react-dom/') ||
+              id.includes('/node_modules/scheduler/')
+            ) {
+              return 'vendor-react';
+            }
+          },
+        },
+      },
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.

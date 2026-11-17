@@ -2178,17 +2178,226 @@ function checkAndClearExpiredBannerText(state: ShopState): { state: ShopState, u
 
 let cachedDbState: ShopState | null = null;
 let cachedDbStateTime = 0;
-const DB_CACHE_TTL_MS = 60 * 1000; // 60 segundos de caché en memoria para lecturas ultra-rápidas (<10ms)
+let cachedPublicDbState: ShopState | null = null;
+let cachedPublicDbStateTime = 0;
+let cachedPublicStorePayload: any = null;
+const DB_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutos de caché en memoria (se invalida en cada escritura)
 
 let cachedHomeHtml: string | null = null;
 let cachedHomeHtmlTime = 0;
-const HOME_HTML_CACHE_TTL_MS = 60 * 1000; // 60 segundos de caché HTML para TTFB sub-50ms
+const HOME_HTML_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutos de caché HTML para TTFB sub-50ms
+
+let cachedSitemapXml: string | null = null;
+let cachedSitemapImageXml: string | null = null;
+let cachedLlmsTxt: string | null = null;
+let cachedAiCatalogJson: any = null;
+let lastSyncedIsoWeek: string | null = null;
+
+let inflightFullDbPromise: Promise<ShopState> | null = null;
+let inflightPublicDbPromise: Promise<ShopState> | null = null;
 
 function invalidateDbCache() {
   cachedDbState = null;
   cachedDbStateTime = 0;
+  cachedPublicDbState = null;
+  cachedPublicDbStateTime = 0;
+  cachedPublicStorePayload = null;
   cachedHomeHtml = null;
   cachedHomeHtmlTime = 0;
+  cachedSitemapXml = null;
+  cachedSitemapImageXml = null;
+  cachedLlmsTxt = null;
+  cachedAiCatalogJson = null;
+}
+
+async function getPublicDbState(forceRefresh = false): Promise<ShopState> {
+  const now = Date.now();
+  if (!forceRefresh) {
+    if (cachedDbState && (now - cachedDbStateTime < DB_CACHE_TTL_MS)) {
+      return cachedDbState;
+    }
+    if (cachedPublicDbState && (now - cachedPublicDbStateTime < DB_CACHE_TTL_MS)) {
+      return cachedPublicDbState;
+    }
+  }
+
+  if (!forceRefresh && inflightPublicDbPromise) {
+    return inflightPublicDbPromise;
+  }
+
+  const pool = getDbPool();
+  if (!pool) {
+    return currentStoreState;
+  }
+
+  const run = (async (): Promise<ShopState> => {
+    try {
+      const [settingsRes, catRes, subRes, coupRes, prodRes, imagesRes, variantsRes] = await Promise.all([
+        pool.query("SELECT state FROM shop_state WHERE id = 'settings';"),
+        pool.query("SELECT id, nombre, icono, orden, active, hide_on_home FROM categories ORDER BY orden ASC;"),
+        pool.query("SELECT id, nombre, categoria_id, active FROM subcategories;"),
+        pool.query("SELECT code, discount_percent, expiration_date, active, max_uses, uses_count, discount_type, discount_amount FROM coupons WHERE active = true;"),
+        pool.query(`
+          SELECT id, name, price, stock, category, featured, image_url, created_at, description, categoria_id, original_price, subcategoria_id, active, paused, sizes, colors, is_3d, hours_per_unit,
+                 size_chart_enabled, size_chart_show_superior, size_chart_show_inferior, size_chart_show_calzado, size_chart_show_recommender, size_chart_data, consult_only,
+                 categorias_adicionales, subcategorias_adicionales, codigo, gtin, descuento_porcentaje, is_combo, combo_components
+          FROM public.products
+          WHERE active = true
+          ORDER BY id DESC;
+        `),
+        pool.query("SELECT product_id, image_url, order_index FROM public.product_images ORDER BY order_index ASC;").catch(() => ({ rows: [] })),
+        pool.query("SELECT id, product_id, sku, size_value, color_name, color_code, additional_price, stock, image_url, price FROM public.product_variants WHERE active = true;").catch(() => ({ rows: [] }))
+      ]);
+
+      const settings = settingsRes.rows.length > 0 ? settingsRes.rows[0].state : (currentStoreState.settings || DEFAULT_SHOP_STATE.settings);
+      const dbCategories = catRes.rows.map(row => ({
+        id: row.id,
+        nombre: row.nombre,
+        icono: row.icono || "Shirt",
+        orden: row.orden || 1,
+        active: row.active !== false,
+        hide_on_home: !!row.hide_on_home
+      }));
+      const dbSubcategories = subRes.rows.map(row => ({
+        id: row.id,
+        nombre: row.nombre,
+        categoria_id: row.categoria_id,
+        active: row.active !== false
+      }));
+      const coupons = coupRes.rows.map(row => ({
+        code: row.code,
+        discount_percent: Number(row.discount_percent || 0),
+        expiration_date: row.expiration_date ? new Date(row.expiration_date).toISOString() : undefined,
+        active: row.active !== false,
+        max_uses: row.max_uses !== null && row.max_uses !== undefined ? Number(row.max_uses) : undefined,
+        uses_count: row.uses_count !== null && row.uses_count !== undefined ? Number(row.uses_count) : 0,
+        discount_type: (row.discount_type || 'percentage') as 'percentage' | 'fixed' | 'free_shipping',
+        discount_amount: row.discount_amount !== null && row.discount_amount !== undefined ? Number(row.discount_amount) : 0
+      }));
+
+      const productImagesMap: Record<number, string[]> = {};
+      for (const imgRow of imagesRes.rows) {
+        const pid = imgRow.product_id;
+        if (!productImagesMap[pid]) productImagesMap[pid] = [];
+        productImagesMap[pid].push(imgRow.image_url);
+      }
+
+      const productVariantsMap: Record<number, any[]> = {};
+      for (const vRow of variantsRes.rows) {
+        const pid = vRow.product_id;
+        if (!productVariantsMap[pid]) productVariantsMap[pid] = [];
+        let vImg = (vRow.image_url || "").trim();
+        if (vImg.includes("slticil8iylzbx8imcah") || vImg.includes("cm0vw6biwrvlqphuxr0i")) {
+          vImg = "";
+        }
+        productVariantsMap[pid].push({
+          id: String(vRow.id),
+          sku: vRow.sku || "",
+          size: vRow.size_value || "",
+          color: vRow.color_name || "",
+          colorCode: vRow.color_code || "",
+          priceDelta: vRow.additional_price ? Number(vRow.additional_price) : 0,
+          stock: vRow.stock ? Number(vRow.stock) : 0,
+          imageUrl: vImg,
+          price: vRow.price !== null && vRow.price !== undefined ? Number(vRow.price) : undefined
+        });
+      }
+
+      const products = prodRes.rows.map(row => {
+        const pid = row.id;
+        const variants = productVariantsMap[pid] || [];
+        const stockVal = variants.length > 0
+          ? variants.reduce((sum, v) => sum + (v.stock || 0), 0)
+          : Number(row.stock);
+
+        return {
+          id: String(pid),
+          codigo: row.codigo || "",
+          gtin: row.gtin || "",
+          name: row.name,
+          price: Number(row.price),
+          stock: stockVal,
+          category: row.category || "",
+          featured: row.featured === true,
+          imageUrl: row.image_url || "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=600&q=80",
+          createdAt: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
+          description: row.description || "",
+          categoria_id: row.categoria_id || "ropa",
+          originalPrice: row.original_price ? Number(row.original_price) : Number(row.price),
+          subcategoria_id: row.subcategoria_id || "all",
+          active: row.active !== false,
+          paused: row.paused === true,
+          sizes: Array.isArray(row.sizes) ? row.sizes : [],
+          colors: Array.isArray(row.colors) ? row.colors : [],
+          categorias_adicionales: Array.isArray(row.categorias_adicionales) ? row.categorias_adicionales : [],
+          subcategorias_adicionales: Array.isArray(row.subcategorias_adicionales) ? row.subcategorias_adicionales : [],
+          imagenes: Array.from(new Set(productImagesMap[pid] || []))
+            .map(u => String(u || "").trim())
+            .filter(u => u && u !== String(row.image_url || "").trim()),
+          variants: variants.map(v => {
+            const isGeneric = (!v.color || ["general", "unico", "único", "generico", "genérico", "estandar", "estándar", "-"].includes(v.color.toLowerCase().trim())) &&
+                              (!v.size || ["unico", "único", "estandar", "estándar", "-"].includes(v.size.toLowerCase().trim()));
+            if (isGeneric && v.imageUrl && v.imageUrl !== row.image_url && !(productImagesMap[pid] || []).includes(v.imageUrl)) {
+              return { ...v, imageUrl: "" };
+            }
+            return v;
+          }),
+          is3D: row.is_3d === true,
+          hoursPerUnit: row.hours_per_unit !== null && row.hours_per_unit !== undefined ? Number(row.hours_per_unit) : undefined,
+          sizeChartEnabled: row.size_chart_enabled !== false,
+          sizeChartShowSuperior: row.size_chart_show_superior !== false,
+          sizeChartShowInferior: row.size_chart_show_inferior !== false,
+          sizeChartShowCalzado: row.size_chart_show_calzado !== false,
+          sizeChartShowRecommender: row.size_chart_show_recommender !== false,
+          sizeChartData: row.size_chart_data || undefined,
+          consultOnly: row.consult_only === true,
+          descuentoPorcentaje: row.descuento_porcentaje !== null && row.descuento_porcentaje !== undefined ? Number(row.descuento_porcentaje) : undefined,
+          isCombo: row.is_combo === true,
+          comboComponents: Array.isArray(row.combo_components) ? row.combo_components : (typeof row.combo_components === 'string' ? JSON.parse(row.combo_components) : [])
+        };
+      });
+
+      const recalculatedProducts = recalculateComboStocks(products);
+      const { products: sanitizedDbProducts } = sanitizeProductsImages(recalculatedProducts);
+
+      const publicState: ShopState = {
+        ...currentStoreState,
+        categories: dbCategories.map(c => c.nombre),
+        dbCategories,
+        dbSubcategories,
+        settings,
+        products: sanitizedDbProducts,
+        coupons
+      };
+
+      cachedPublicDbState = publicState;
+      cachedPublicDbStateTime = Date.now();
+      cachedPublicStorePayload = null;
+      return publicState;
+    } catch (err: any) {
+      const msg = String(err?.message || err);
+      console.warn("⚠️ Advertencia al leer catálogo público de PostgreSQL:", msg);
+      const isTransient = err?.code === 'ECONNRESET' ||
+                          err?.code === 'EPIPE' ||
+                          err?.code === 'ETIMEDOUT' ||
+                          msg.includes('ECONNRESET') ||
+                          msg.includes('socket hang up') ||
+                          msg.includes('57P01') ||
+                          msg.includes('terminating connection') ||
+                          msg.includes('Connection terminated');
+      if (isTransient) {
+        getDbPool(true);
+      } else {
+        dbUnavailable = true;
+      }
+      return currentStoreState;
+    } finally {
+      inflightPublicDbPromise = null;
+    }
+  })();
+
+  inflightPublicDbPromise = run;
+  return run;
 }
 
 async function getDbState(forceRefresh = false): Promise<ShopState> {
@@ -2197,11 +2406,16 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
     return cachedDbState;
   }
 
+  if (!forceRefresh && inflightFullDbPromise) {
+    return inflightFullDbPromise;
+  }
+
   const pool = getDbPool();
   if (!pool) {
     return currentStoreState;
   }
 
+  const runFull = (async (): Promise<ShopState> => {
   try {
     // 1. Fetch settings from shop_state row where id = 'settings'
     const settingsRes = await pool.query("SELECT state FROM shop_state WHERE id = 'settings';");
@@ -2306,7 +2520,7 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
     const prodRes = await pool.query(`
       SELECT id, name, price, stock, category, featured, image_url, created_at, description, categoria_id, original_price, subcategoria_id, active, paused, sizes, colors, is_3d, hours_per_unit,
              size_chart_enabled, size_chart_show_superior, size_chart_show_inferior, size_chart_show_calzado, size_chart_show_recommender, size_chart_data, consult_only,
-             categorias_adicionales, subcategorias_adicionales, codigo,
+             categorias_adicionales, subcategorias_adicionales, codigo, gtin,
              precio_compra, precio_con_40, comision_ml, comision_mp, precio_venta_ml, precio_web, descuento_porcentaje, stock_pinamar, stock_montevideo, is_combo, combo_components
       FROM public.products 
       WHERE active = true 
@@ -2376,6 +2590,7 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
       return {
         id: String(pid),
         codigo: row.codigo || "",
+        gtin: row.gtin || "",
         name: row.name,
         price: Number(row.price),
         stock: stockVal,
@@ -2603,6 +2818,9 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
 
     cachedDbState = finalDbState;
     cachedDbStateTime = Date.now();
+    cachedPublicDbState = finalDbState;
+    cachedPublicDbStateTime = cachedDbStateTime;
+    cachedPublicStorePayload = null;
 
     return finalDbState;
   } catch (err: any) {
@@ -2622,7 +2840,13 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
       dbUnavailable = true;
     }
     return currentStoreState;
+  } finally {
+    inflightFullDbPromise = null;
   }
+  })();
+
+  inflightFullDbPromise = runFull;
+  return runFull;
 }
 
 let lastSavedStoreState: ShopState | null = null;
@@ -2633,7 +2857,7 @@ function isProductEqual(p1: any, p2: any): boolean {
     'name', 'price', 'stock', 'category', 'featured', 'imageUrl', 'description', 
     'categoria_id', 'originalPrice', 'subcategoria_id', 'paused', 'is3D', 
     'hoursPerUnit', 'sizeChartEnabled', 'sizeChartShowSuperior', 'sizeChartShowInferior', 
-    'sizeChartShowCalzado', 'sizeChartShowRecommender', 'consultOnly', 'codigo', 
+    'sizeChartShowCalzado', 'sizeChartShowRecommender', 'consultOnly', 'codigo', 'gtin', 
     'precioCompra', 'precioCon40', 'comisionML', 'precioVentaML', 'precioWeb', 
     'descuentoPorcentaje', 'stockPinamar', 'stockMontevideo', 'isCombo', 'calcWebPriceFromML'
   ];
@@ -2850,14 +3074,15 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
       const catAdicionales = Array.isArray(prod.categorias_adicionales) ? prod.categorias_adicionales : [];
       const subcatAdicionales = Array.isArray(prod.subcategorias_adicionales) ? prod.subcategorias_adicionales : [];
 
+      const gtinVal = prod.gtin ? String(prod.gtin).trim().replace(/[-\s]/g, "") : "";
       if (isNew) {
         const insertRes = await pool.query(`
           INSERT INTO public.products (
             name, price, stock, category, featured, image_url, description, categoria_id, original_price, subcategoria_id, active, paused, sizes, colors, is_3d, hours_per_unit,
             size_chart_enabled, size_chart_show_superior, size_chart_show_inferior, size_chart_show_calzado, size_chart_show_recommender, size_chart_data, consult_only,
             categorias_adicionales, subcategorias_adicionales, codigo,
-            precio_compra, precio_con_40, comision_ml, comision_mp, precio_venta_ml, precio_web, descuento_porcentaje, stock_pinamar, stock_montevideo, is_combo, combo_components, calc_web_price_from_ml
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37)
+            precio_compra, precio_con_40, comision_ml, comision_mp, precio_venta_ml, precio_web, descuento_porcentaje, stock_pinamar, stock_montevideo, is_combo, combo_components, calc_web_price_from_ml, gtin
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38)
           RETURNING id;
         `, [
           prod.name, priceVal, stockVal, prod.category, featuredVal, prod.imageUrl,
@@ -2869,7 +3094,7 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
           subcatAdicionales,
           prod.codigo || "",
           precioCompraVal, precioCon40Val, comisionMLVal, comisionMPVal, precioVentaMLVal, precioWebVal, descuentoPorcentajeVal, stockPinamarVal, stockMontevideoVal,
-          isComboVal, comboComponentsVal, calcWebPriceFromMLVal
+          isComboVal, comboComponentsVal, calcWebPriceFromMLVal, gtinVal
         ]);
         prodId = insertRes.rows[0].id;
         prod.id = String(prodId);
@@ -2896,8 +3121,9 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
             stock_montevideo = $34,
             is_combo = $35,
             combo_components = $36,
-            calc_web_price_from_ml = $37
-          WHERE id = $38;
+            calc_web_price_from_ml = $37,
+            gtin = $38
+          WHERE id = $39;
         `, [
           prod.name, priceVal, stockVal, prod.category, featuredVal, prod.imageUrl,
           prod.description || "", prod.categoria_id, originalPriceVal, prod.subcategoria_id,
@@ -2910,6 +3136,7 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
           precioCompraVal, precioCon40Val, comisionMLVal, comisionMPVal, precioVentaMLVal, precioWebVal, descuentoPorcentajeVal, stockPinamarVal, stockMontevideoVal,
           isComboVal, comboComponentsVal,
           calcWebPriceFromMLVal,
+          gtinVal,
           prodId
         ]);
       }
@@ -3129,6 +3356,7 @@ async function initPostgresStore(): Promise<ShopState | null> {
       ALTER TABLE public.products ADD COLUMN IF NOT EXISTS original_price NUMERIC(10, 2);
       ALTER TABLE public.products ADD COLUMN IF NOT EXISTS subcategoria_id TEXT;
       ALTER TABLE public.products ADD COLUMN IF NOT EXISTS codigo TEXT;
+      ALTER TABLE public.products ADD COLUMN IF NOT EXISTS gtin TEXT;
       ALTER TABLE public.products ADD COLUMN IF NOT EXISTS categoria_id TEXT;
       ALTER TABLE public.products ADD COLUMN IF NOT EXISTS is_3d BOOLEAN DEFAULT false;
       ALTER TABLE public.products ADD COLUMN IF NOT EXISTS hours_per_unit INTEGER;
@@ -5021,7 +5249,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
   app.get("/api/store", async (req, res) => {
     const isAdminRequest = isValidToken(req.headers.authorization) && req.query.scope !== "public";
     if (!isAdminRequest) {
-      res.setHeader("Cache-Control", "public, max-age=15, s-maxage=30, stale-while-revalidate=60");
+      res.setHeader("Cache-Control", "public, max-age=120, s-maxage=300, stale-while-revalidate=600");
     } else {
       res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
       res.setHeader("Pragma", "no-cache");
@@ -5031,24 +5259,33 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     if (process.env.DATABASE_URL) {
       if (dbUnavailable) {
         const now = Date.now();
-        if (now - lastDbReconnectAttempt > 60000) {
+        if (now - lastDbReconnectAttempt > 5 * 60 * 1000) {
           lastDbReconnectAttempt = now;
-          console.log("🔄 Reintentando conectar con PostgreSQL (enfriamiento de 60s)...");
+          console.log("🔄 Reintentando conectar con PostgreSQL (enfriamiento de 5 min)...");
           getDbPool(true); // Forzar la reactivación del pool limpiando la bandera 'dbUnavailable'
         }
       }
       try {
-        const dbState = await getDbState();
-        currentStoreState = dbState;
+        if (isAdminRequest) {
+          const dbState = await getDbState();
+          currentStoreState = dbState;
+        } else {
+          const publicState = await getPublicDbState();
+          if (publicState && publicState.products) {
+            currentStoreState = { ...currentStoreState, ...publicState };
+          }
+        }
       } catch (err) {
         console.error("No se pudo cargar de Postgres en GET, usando cache local:", err);
       }
     }
 
     // Check and clear expired promotionBannerText
-    const checkerResult = checkAndClearExpiredBannerText(currentStoreState);
+    const activeStateSource = isAdminRequest ? currentStoreState : (cachedDbState || cachedPublicDbState || currentStoreState);
+    const checkerResult = checkAndClearExpiredBannerText(activeStateSource);
     if (checkerResult.updated) {
-      currentStoreState = checkerResult.state;
+      currentStoreState = { ...currentStoreState, ...checkerResult.state };
+      cachedPublicStorePayload = null;
       try {
         fs.writeFileSync(STORE_FILE, JSON.stringify(currentStoreState, null, 2), "utf-8");
       } catch (fsErr) {
@@ -5070,7 +5307,10 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     }
 
     if (!isAdminRequest) {
-      return res.json(buildPublicStorePayload(currentStoreState));
+      if (!cachedPublicStorePayload) {
+        cachedPublicStorePayload = buildPublicStorePayload(activeStateSource);
+      }
+      return res.json(cachedPublicStorePayload);
     }
 
     const { products: sanitizedAdminProducts } = sanitizeProductsImages(currentStoreState.products);
@@ -8286,6 +8526,10 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       domingo: 6
     };
 
+    if (!forceReset && lastSyncedIsoWeek === weekPeriod) {
+      return { success: true, alreadyReset: true, weekPeriod, mondayDate: mondayDateStr };
+    }
+
     const pool = getDbPool();
     if (pool && !dbUnavailable) {
       try {
@@ -8295,6 +8539,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
             [weekPeriod]
           );
           if (resetCheck.rows.length > 0) {
+            lastSyncedIsoWeek = weekPeriod;
             return { success: true, alreadyReset: true, weekPeriod, mondayDate: mondayDateStr };
           }
         }
@@ -10336,7 +10581,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         generatedId = insertRes.rows[0].id;
         
         // Refresh state
-        const dbState = await getDbState();
+        invalidateDbCache();
+        const dbState = await getDbState(true);
         currentStoreState = dbState;
       } else {
         generatedId = "local-ship-" + crypto.randomBytes(8).toString("hex");
@@ -10432,7 +10678,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         );
         
         // Refresh state
-        const dbState = await getDbState();
+        invalidateDbCache();
+        const dbState = await getDbState(true);
         currentStoreState = dbState;
       } else {
         if (currentStoreState.shippings) {
@@ -10477,7 +10724,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         await pool.query("DELETE FROM public.shippings WHERE id = $1;", [id]);
         
         // Refresh state
-        const dbState = await getDbState();
+        invalidateDbCache();
+        const dbState = await getDbState(true);
         currentStoreState = dbState;
       } else {
         if (currentStoreState.shippings) {
@@ -10518,7 +10766,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
           );
         }
         // Refresh state
-        const dbState = await getDbState();
+        invalidateDbCache();
+        const dbState = await getDbState(true);
         currentStoreState = dbState;
       } else {
         if (!currentStoreState.shippingOrigins) {
@@ -12594,43 +12843,45 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
   }
 
   // Helper to dynamically inject meta tags into index.html for high-tier search engine crawling
-  async function injectSEO(htmlContent: string, req: express.Request): Promise<string> {
-    const baseUrl = req.get("host")?.includes("juem.com.uy") ? "https://juem.com.uy" : `${req.protocol}://${req.get("host")}`;
+  async function injectSEO(htmlContent: string, req: express.Request): Promise<{ html: string; status: number }> {
+    const hostHeader = String(req.get("host") || "");
+    const baseUrl = hostHeader.includes("juem.com.uy") ? "https://juem.com.uy" : `${req.protocol}://${hostHeader}`;
     const pathUrl = req.path;
     const segments = pathUrl.split("/").filter(Boolean);
     
-    let rawState = cachedDbState || currentStoreState;
-    if (!cachedDbState && process.env.DATABASE_URL && !dbUnavailable) {
+    const isAdminRoute = segments[0] === "admin";
+    let rawState = isAdminRoute ? (cachedDbState || currentStoreState) : (cachedDbState || cachedPublicDbState || currentStoreState);
+    if (process.env.DATABASE_URL && !dbUnavailable) {
       try {
-        rawState = await getDbState();
+        rawState = isAdminRoute ? await getDbState() : await getPublicDbState();
       } catch (e) {
         // Safe fallback in memory
       }
     }
 
-    const isAdminRoute = segments[0] === "admin";
     const initialStorePayload = buildPublicStorePayload(rawState);
     const state = isAdminRoute ? rawState : (initialStorePayload as unknown as ShopState);
     
     const settings: any = state.settings || {};
     const rawSiteTitle = (settings.siteTitle || "").trim();
-    let title = "JUEM | Soportes, Juguetes de Navidad y Tecnología en Uruguay";
-    if (rawSiteTitle && !["Juem Mvd", "Ventas Juem", "Juem", "JUEM"].includes(rawSiteTitle)) {
-      title = `${rawSiteTitle} | Soportes, Juguetes de Navidad y Tecnología en Uruguay`;
-    }
+    const brandName = rawSiteTitle && !["Juem Mvd", "Ventas Juem", "Juem", "JUEM"].includes(rawSiteTitle)
+      ? rawSiteTitle
+      : "JUEM";
+    let title = `${brandName} | Soportes, Juguetes de Navidad y Tecnología en Uruguay`;
     let description = settings.seoDescription || settings.siteSubtitle || "Tienda online multirrubro en Uruguay. Encontrá soportes para pared y escritorio, juguetes de Navidad, tecnología y más con envíos rápidos a todo el país.";
     const defaultOgBanner = `${baseUrl}/og-celestial.png?v=3`;
     let imgUrl = settings.ogImageUrl || defaultOgBanner;
     if (imgUrl.startsWith("/")) {
       imgUrl = `${baseUrl}${imgUrl}`;
     }
-    const rawReqUrl = req.originalUrl || req.url || pathUrl;
     const canonicalBase = "https://juem.com.uy";
     let canonicalUrl = pathUrl === "/" ? `${canonicalBase}/` : `${canonicalBase}${pathUrl}`;
-    let ogUrl = `${baseUrl}${rawReqUrl}`;
+    let ogUrl = canonicalUrl;
     let schemaJson = "";
     let preRenderedBody = "";
     let lcpPreloadTag = "";
+    let shouldNoindexEmptyRoute = false;
+    let httpStatus = 200;
 
     // Multirrubro default description (Uruguay, Soportes, Juguetes, Tecnología)
     if (!settings.seoDescription || settings.seoDescription.includes("indumentaria de temporada")) {
@@ -12639,32 +12890,37 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
 
     // Detales para un producto en específico
     if (segments[0] === "producto" && segments[1]) {
-      const prodId = segments[1];
+      const prodId = segments[1].toLowerCase();
       const products = state.products || [];
       const product = products.find(p => {
-        const idMatches = String(p.id) === String(prodId);
+        if (p.active === false || p.paused === true) return false;
+        const idMatches = String(p.id).toLowerCase() === prodId;
         const nameSlug = p.name ? generateSlug(p.name) : "";
         const slugMatches = nameSlug && nameSlug === prodId;
         const dashIndex = prodId.indexOf("-");
         let idFromDashMatches = false;
         if (dashIndex > 0) {
           const possibleId = prodId.substring(0, dashIndex);
-          idFromDashMatches = String(p.id) === possibleId;
+          idFromDashMatches = String(p.id).toLowerCase() === possibleId;
         }
         return idMatches || slugMatches || idFromDashMatches;
       });
       
       if (product) {
-        title = `${product.name} | ${settings.siteTitle || "Juem Mvd"} Uruguay`;
-        description = product.description ? product.description.substring(0, 160) : description;
+        title = `${product.name} | ${brandName} Uruguay`;
+        const prodDesc = (product.description || "").trim();
+        description = prodDesc.length >= 80
+          ? prodDesc.substring(0, 155)
+          : `${product.name} - Calidad garantizada en ${brandName} Uruguay. Envíos express a todo el país y compra protegida.`;
         if (product.imageUrl) {
           imgUrl = product.imageUrl.startsWith("http") 
             ? product.imageUrl 
-            : `${baseUrl}${product.imageUrl.startsWith("/") ? "" : "/"}${product.imageUrl}`;
+            : `${canonicalBase}${product.imageUrl.startsWith("/") ? "" : "/"}${product.imageUrl}`;
           const prodLcpUrl = optimizeServerImageUrl(product.imageUrl, 600);
           lcpPreloadTag = `<link rel="preload" as="image" href="${prodLcpUrl}" referrerpolicy="no-referrer" fetchpriority="high" id="lcp-hero-preload" />`;
         }
         canonicalUrl = `${canonicalBase}/producto/${generateSlug(product.name)}`;
+        ogUrl = canonicalUrl;
         
         // Generate deterministic, realistic values based on the product's name for structured rich snippets
         const charSum = product.name.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
@@ -12681,14 +12937,17 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         const sku = product.codigo || `JUEM-${product.id}`;
         
         // Only include genuine, verified GTIN if provided by merchant/manufacturer.
-        // Google checks GS1 GEPIR registry; never emit fabricated or synthetic GTIN barcodes.
+        // Google checks GS1 GEPIR registry; never emit fabricated, restricted/in-store, or synthetic GTIN barcodes.
         function getValidProductGtin(prod: any): string | undefined {
           const candidate = prod?.gtin || prod?.barcode;
           if (!candidate || typeof candidate !== "string") return undefined;
           const clean = candidate.trim().replace(/[-\s]/g, "");
           if (!/^\d{8}$|^\d{12}$|^\d{13}$|^\d{14}$/.test(clean)) return undefined;
-          if (/^0+$/.test(clean) || /^12345678/.test(clean)) return undefined;
+          if (/^(\d)\1+$/.test(clean) || /^12345678/.test(clean) || /^98765432/.test(clean)) return undefined;
           const len = clean.length;
+          if (len === 12 && /^[245]/.test(clean)) return undefined;
+          if (len === 13 && /^(02|04|2\d|98|99)/.test(clean)) return undefined;
+          if (len === 14 && /^(02|04|2\d|98|99)/.test(clean.slice(1))) return undefined;
           const digits = clean.split("").map(Number);
           const checkDigit = digits[len - 1];
           let sum = 0;
@@ -12703,32 +12962,47 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         }
 
         const validGtin = getValidProductGtin(product);
+        const specificGtinFields = validGtin
+          ? validGtin.length === 8
+            ? { gtin8: validGtin }
+            : validGtin.length === 12
+            ? { gtin12: validGtin }
+            : validGtin.length === 13
+            ? { gtin13: validGtin }
+            : { gtin14: validGtin }
+          : {};
 
-        const productUrl = `${baseUrl}/producto/${generateSlug(product.name)}`;
-        const imageUrls = product.imagenes && product.imagenes.length > 0
+        const productUrl = `${canonicalBase}/producto/${generateSlug(product.name)}`;
+        const rawImageUrls = product.imagenes && product.imagenes.length > 0
           ? product.imagenes
           : [product.imageUrl];
+        const imageUrls = rawImageUrls
+          .filter((u): u is string => typeof u === "string" && u.trim().length > 0)
+          .map(u => u.startsWith("http") ? u : `${canonicalBase}${u.startsWith("/") ? "" : "/"}${u}`);
+        if (imageUrls.length === 0) {
+          imageUrls.push(`${canonicalBase}/og-celestial.png?v=3`);
+        }
 
-        // Google Structured Data (JSON-LD Product Spec) - Fully Compliant with Merchant Listings
+        // Google Structured Data (JSON-LD Product Spec) - Fully Compliant with Product Snippets & Merchant Listings
         schemaJson = JSON.stringify({
           "@context": "https://schema.org",
           "@type": "Product",
           "name": product.name,
           "image": imageUrls,
-          "description": product.description || `${product.name} - Disponible en Ventas Juem con envío rápido a todo el país.`,
+          "description": product.description || `${product.name} - Disponible en ${brandName} con envío rápido a todo el país.`,
           "sku": sku,
           "mpn": sku,
-          ...(validGtin ? { gtin: validGtin, ...(validGtin.length === 13 ? { gtin13: validGtin } : {}) } : {}),
+          ...specificGtinFields,
           "brand": {
             "@type": "Brand",
-            "name": "Juem"
+            "name": brandName
           },
           "review": {
             "@type": "Review",
             "reviewRating": {
               "@type": "Rating",
-              "ratingValue": "5",
-              "bestRating": "5"
+              "ratingValue": 5,
+              "bestRating": 5
             },
             "author": {
               "@type": "Person",
@@ -12738,29 +13012,29 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
           },
           "aggregateRating": {
             "@type": "AggregateRating",
-            "ratingValue": ratingValue,
-            "reviewCount": reviewCount.toString(),
-            "bestRating": "5",
-            "worstRating": "4"
+            "ratingValue": Number(ratingValue),
+            "reviewCount": reviewCount,
+            "bestRating": 5,
+            "worstRating": 4
           },
           "offers": {
             "@type": "Offer",
             "url": productUrl,
             "priceCurrency": "UYU",
-            "price": (product.price || 0).toString(),
+            "price": Number(product.price || 0),
             "validFrom": "2024-01-01",
             "priceValidUntil": "2027-12-31",
             "itemCondition": "https://schema.org/NewCondition",
             "availability": (product.stock !== undefined ? product.stock > 0 : true) ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
             "seller": {
               "@type": "Organization",
-              "name": settings.siteTitle || "Ventas Juem"
+              "name": brandName
             },
             "shippingDetails": {
               "@type": "OfferShippingDetails",
               "shippingRate": {
                 "@type": "MonetaryAmount",
-                "value": "190",
+                "value": 190,
                 "currency": "UYU"
               },
               "shippingDestination": {
@@ -12771,14 +13045,14 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
                 "@type": "ShippingDeliveryTime",
                 "handlingTime": {
                   "@type": "QuantitativeValue",
-                  "minValue": "0",
-                  "maxValue": "1",
+                  "minValue": 0,
+                  "maxValue": 1,
                   "unitCode": "DAY"
                 },
                 "transitTime": {
                   "@type": "QuantitativeValue",
-                  "minValue": "1",
-                  "maxValue": "3",
+                  "minValue": 1,
+                  "maxValue": 3,
                   "unitCode": "DAY"
                 }
               }
@@ -12791,20 +13065,24 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
               "returnMethod": "https://schema.org/ReturnByMail",
               "returnFees": "https://schema.org/FreeReturn",
               "refundType": "https://schema.org/FullRefund",
-              "merchantReturnLink": baseUrl
+              "merchantReturnLink": canonicalBase
             }
           }
         });
 
         // Pre-rendered semantic HTML for instant Googlebot indexation without waiting for JS
-        const catName = product.category || "Catálogo";
+        const matchedProdCat = (state.dbCategories || []).find(
+          c => c.active !== false && (c.id === product.categoria_id || (product.category && c.nombre.toLowerCase() === product.category.toLowerCase()))
+        );
+        const catName = matchedProdCat?.nombre || product.category || "Catálogo";
+        const canonicalCatSlug = matchedProdCat ? matchedProdCat.id.toLowerCase() : (product.categoria_id ? String(product.categoria_id).toLowerCase() : generateSlug(catName));
         const inStock = product.stock !== undefined ? product.stock > 0 : true;
         
         preRenderedBody = `
           <div class="ssr-pre-render" style="max-width:1200px;margin:0 auto;padding:24px 16px;font-family:system-ui,-apple-system,sans-serif;color:#1e293b;">
             <nav aria-label="Ruta de exploración" style="font-size:12px;margin-bottom:16px;">
               <a href="/" style="color:#0284c7;text-decoration:none;">Inicio</a> &gt; 
-              ${product.category ? `<a href="/${generateSlug(product.category)}" style="color:#0284c7;text-decoration:none;">${catName}</a> &gt; ` : ""}
+              ${canonicalCatSlug ? `<a href="/${canonicalCatSlug}" style="color:#0284c7;text-decoration:none;">${catName}</a> &gt; ` : ""}
               <span style="color:#64748b;">${product.name}</span>
             </nav>
             <main style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:32px;align-items:start;">
@@ -12826,67 +13104,89 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
               </div>
             </main>
           </div>`;
+      } else {
+        // Missing, inactive, or paused product URL should never look like a duplicate of the homepage
+        httpStatus = 404;
+        shouldNoindexEmptyRoute = true;
+        title = `Producto no disponible | ${brandName} Uruguay`;
+        description = "Este producto ya no está disponible o fue retirado del catálogo activo de JUEM Uruguay.";
+        canonicalUrl = `${canonicalBase}/`;
+        ogUrl = canonicalUrl;
+        preRenderedBody = `
+          <div class="ssr-pre-render" style="max-width:960px;margin:0 auto;padding:40px 16px;font-family:system-ui,-apple-system,sans-serif;color:#1e293b;">
+            <h1 style="font-size:26px;font-weight:800;margin:0 0 12px;">Producto no disponible</h1>
+            <p style="font-size:15px;color:#475569;margin:0 0 20px;">El artículo solicitado no se encuentra disponible en este momento. Explora el catálogo completo en <a href="/" style="color:#0284c7;">JUEM Uruguay</a>.</p>
+          </div>`;
       }
     } else if (segments.length > 0 && segments[0] !== "admin") {
-      // Category and subcategory routes
+      // Category and subcategory routes (active categories only)
       const catSlug = segments[0].toLowerCase();
-      const categories = state.dbCategories || [];
+      const categories = (state.dbCategories || []).filter(c => c.active !== false);
       const matchedCat = categories.find(c => c.id.toLowerCase() === catSlug || generateSlug(c.nombre) === catSlug);
 
-      if (catSlug === "soportes" || (matchedCat && (matchedCat.id === "soportes" || generateSlug(matchedCat.nombre) === "soportes"))) {
-        title = "Soportes de Pared, Celular y Tablets en Uruguay | JUEM";
-        description = "Comprá soportes resistentes para celulares, tablets, controles y monitores en JUEM. Diseños para pared y escritorio con envío express a todo Uruguay.";
-        canonicalUrl = `${canonicalBase}/soportes`;
-      } else if (catSlug === "juguetes" || (matchedCat && (matchedCat.id === "juguetes" || generateSlug(matchedCat.nombre) === "juguetes"))) {
-        title = "Juguetes de Navidad y Juegos Infantiles en Uruguay | JUEM";
-        description = "Descubrí los mejores juguetes de Navidad, juegos didácticos y regalos para niños en JUEM. Calidad, precios accesibles y envíos a todo Uruguay.";
-        canonicalUrl = `${canonicalBase}/juguetes`;
-      } else if (catSlug === "ropa" || (matchedCat && (matchedCat.id === "ropa" || generateSlug(matchedCat.nombre) === "ropa"))) {
-        title = "Ropa e Indumentaria de Temporada en Uruguay | JUEM";
-        description = "Catálogo de ropa en JUEM: buzos manta, abrigos térmicos y prendas de temporada para mujer, hombre y niños. Envíos express a todo el país.";
-        canonicalUrl = `${canonicalBase}/ropa`;
-      } else if (matchedCat) {
-        title = `${matchedCat.nombre} en Uruguay | JUEM`;
-        description = `Explorá las mejores opciones de ${matchedCat.nombre.toLowerCase()} en JUEM. Comprá online con envíos rápidos a todo Uruguay.`;
-        canonicalUrl = `${canonicalBase}/${matchedCat.id.toLowerCase()}`;
-      }
+      if (matchedCat) {
+        const catName = matchedCat.nombre;
+        const catId = matchedCat.id.toLowerCase();
 
-      if (matchedCat || catSlug === "soportes" || catSlug === "juguetes" || catSlug === "ropa") {
-        const catName = matchedCat ? matchedCat.nombre : (catSlug.charAt(0).toUpperCase() + catSlug.slice(1));
-        const catId = matchedCat ? matchedCat.id.toLowerCase() : catSlug;
+        if (catId === "juguetes" || generateSlug(catName) === "juguetes") {
+          title = `Juguetes de Navidad y Juegos Infantiles en Uruguay | ${brandName}`;
+          description = "Descubrí los mejores juguetes de Navidad, juegos didácticos y regalos para niños en JUEM. Calidad, precios accesibles y envíos a todo Uruguay.";
+        } else if (catId === "ropa" || generateSlug(catName) === "ropa") {
+          title = `Ropa e Indumentaria de Temporada en Uruguay | ${brandName}`;
+          description = "Catálogo de ropa en JUEM: buzos manta, abrigos térmicos y prendas de temporada para mujer, hombre y niños. Envíos express a todo el país.";
+        } else {
+          title = `${catName} en Uruguay | ${brandName}`;
+          description = `Explorá las mejores opciones de ${catName.toLowerCase()} en ${brandName} Uruguay. Comprá online con despacho express a todo el país y atención personalizada.`;
+        }
+        canonicalUrl = `${canonicalBase}/${catId}`;
+        ogUrl = canonicalUrl;
         
         let matchedSub: any = null;
-        if (segments[1] && matchedCat) {
+        if (segments[1]) {
           const subcategories = state.dbSubcategories || [];
-          matchedSub = subcategories.find(s => s.categoria_id === matchedCat.id && (s.id.toLowerCase() === segments[1].toLowerCase() || generateSlug(s.nombre) === segments[1].toLowerCase()));
+          matchedSub = subcategories.find(s => s.active !== false && s.categoria_id === matchedCat.id && (s.id.toLowerCase() === segments[1].toLowerCase() || generateSlug(s.nombre) === segments[1].toLowerCase()));
           if (matchedSub) {
-            title = `${matchedSub.nombre} (${catName}) | JUEM Uruguay`;
-            description = `Comprá ${matchedSub.nombre.toLowerCase()} en la categoría ${catName.toLowerCase()} de JUEM. Calidad y envíos a todo Uruguay.`;
+            title = `${matchedSub.nombre} - ${catName} en Uruguay | ${brandName}`;
+            description = `Catálogo de ${matchedSub.nombre.toLowerCase()} dentro de ${catName.toLowerCase()} en ${brandName} Uruguay. Modelos en stock con envío rápido a Montevideo y todo el país.`;
             canonicalUrl = `${canonicalBase}/${catId}/${matchedSub.id.toLowerCase()}`;
+            ogUrl = canonicalUrl;
+          } else {
+            shouldNoindexEmptyRoute = true;
           }
         }
 
-        // Get matching active products for this category/subcategory
+        // Get matching active products for this category/subcategory (including additional categories & subcategories)
         const matchingProducts = (state.products || []).filter(p => {
           if (p.active === false || p.paused === true) return false;
-          const inCat = (matchedCat && p.categoria_id === matchedCat.id) || 
-                        (p.category && (p.category.toLowerCase() === catName.toLowerCase() || generateSlug(p.category) === catSlug));
-          if (!matchedSub) return inCat;
-          return inCat && (p.subcategoria_id === matchedSub.id || ((p as any).subcategoria && (p as any).subcategoria.toLowerCase() === matchedSub.nombre.toLowerCase()));
+          const inMainCat = (matchedCat && p.categoria_id === matchedCat.id) || 
+                            (p.category && (p.category.toLowerCase() === catName.toLowerCase() || generateSlug(p.category) === catSlug));
+          const inExtraCat = Array.isArray(p.categorias_adicionales) && matchedCat && p.categorias_adicionales.includes(matchedCat.id);
+          const inCat = Boolean(inMainCat || inExtraCat);
+          if (!inCat) return false;
+          if (!matchedSub) return true;
+          const subIdLower = matchedSub.id.toLowerCase();
+          const inMainSub = Boolean(p.subcategoria_id && p.subcategoria_id.toLowerCase() === subIdLower);
+          const inExtraSub = Array.isArray(p.subcategorias_adicionales) && p.subcategorias_adicionales.some(s => String(s).toLowerCase() === subIdLower);
+          const inSubName = Boolean((p as any).subcategoria && String((p as any).subcategoria).toLowerCase() === matchedSub.nombre.toLowerCase());
+          return inMainSub || inExtraSub || inSubName;
         });
+
+        if (matchingProducts.length === 0) {
+          shouldNoindexEmptyRoute = true;
+        }
 
         // Structured Data Schema.org for CollectionPage & ItemList
         schemaJson = JSON.stringify({
           "@context": "https://schema.org",
           "@type": "CollectionPage",
-          "name": `${matchedSub ? matchedSub.nombre : catName} | JUEM Uruguay`,
+          "name": matchedSub ? `${matchedSub.nombre} - ${catName} en Uruguay | JUEM` : `${catName} en Uruguay | JUEM`,
           "description": description,
           "url": canonicalUrl,
           "breadcrumb": {
             "@type": "BreadcrumbList",
             "itemListElement": [
-              { "@type": "ListItem", "position": 1, "name": "Inicio", "item": `${baseUrl}/` },
-              { "@type": "ListItem", "position": 2, "name": catName, "item": `${baseUrl}/${catId}` },
+              { "@type": "ListItem", "position": 1, "name": "Inicio", "item": `${canonicalBase}/` },
+              { "@type": "ListItem", "position": 2, "name": catName, "item": `${canonicalBase}/${catId}` },
               ...(matchedSub ? [{ "@type": "ListItem", "position": 3, "name": matchedSub.nombre, "item": canonicalUrl }] : [])
             ]
           },
@@ -12896,12 +13196,20 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
             "itemListElement": matchingProducts.slice(0, 30).map((p, idx) => ({
               "@type": "ListItem",
               "position": idx + 1,
-              "url": `${baseUrl}/producto/${generateSlug(p.name)}`,
+              "url": `${canonicalBase}/producto/${generateSlug(p.name)}`,
               "name": p.name,
               "image": p.imageUrl || imgUrl
             }))
           }
         });
+
+        const headingTitle = matchedSub
+          ? `${matchedSub.nombre} en ${catName} | Catálogo JUEM Uruguay`
+          : `${catName} en Uruguay | Catálogo JUEM`;
+        const subNamesSummary = matchingProducts.slice(0, 4).map(p => p.name).join(" · ");
+        const introSummary = matchedSub
+          ? `Explora ${matchingProducts.length} artículos disponibles en la subcategoría ${matchedSub.nombre} de ${catName}${subNamesSummary ? `: ${subNamesSummary}` : ""}. Envíos express en Montevideo y todo Uruguay.`
+          : `Explora ${matchingProducts.length} artículos disponibles en ${catName} con entrega rápida en todo el país.`;
 
         // Pre-rendered semantic HTML body for categories to immediately index in Google Search
         preRenderedBody = `
@@ -12912,16 +13220,16 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
               ${matchedSub ? ` &gt; <span style="color:#64748b;">${matchedSub.nombre}</span>` : ""}
             </nav>
             <header style="margin-bottom:24px;">
-              <h1 style="font-size:26px;font-weight:800;margin:0 0 8px;color:#0f172a;">${matchedSub ? matchedSub.nombre : catName} en Uruguay | Catálogo JUEM</h1>
-              <p style="font-size:14px;color:#64748b;margin:0;">Explora ${matchingProducts.length} artículos disponibles con entrega rápida en todo el país.</p>
+              <h1 style="font-size:26px;font-weight:800;margin:0 0 8px;color:#0f172a;">${headingTitle}</h1>
+              <p style="font-size:14px;color:#64748b;margin:0;">${introSummary}</p>
             </header>
             <main style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:20px;">
               ${matchingProducts.slice(0, 40).map(p => `
                 <article style="border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;background:#fff;">
                   <a href="/producto/${generateSlug(p.name)}" style="text-decoration:none;color:inherit;display:block;">
-                    <img src="${optimizeServerImageUrl(p.imageUrl || imgUrl, 310)}" alt="${p.name} - ${catName} JUEM" width="305" height="305" loading="lazy" decoding="async" style="width:100%;aspect-ratio:1/1;object-fit:cover;" />
+                    <img src="${optimizeServerImageUrl(p.imageUrl || imgUrl, 310)}" alt="${p.name} - ${matchedSub ? matchedSub.nombre : catName} JUEM" width="305" height="305" loading="lazy" decoding="async" style="width:100%;aspect-ratio:1/1;object-fit:cover;" />
                     <div style="padding:12px;">
-                      <h3 style="font-size:13px;font-weight:700;margin:0 0 6px;color:#0f172a;line-height:1.3;">${p.name}</h3>
+                      <h2 style="font-size:13px;font-weight:700;margin:0 0 6px;color:#0f172a;line-height:1.3;">${p.name}</h2>
                       <p style="font-size:14px;font-weight:800;color:#15803d;margin:0;">$${Number(p.price || 0).toLocaleString('es-UY')} UYU</p>
                     </div>
                   </a>
@@ -12929,6 +13237,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
               `).join("")}
             </main>
           </div>`;
+      } else {
+        shouldNoindexEmptyRoute = true;
       }
     }
 
@@ -12939,8 +13249,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         "@type": "Store",
         "name": "JUEM",
         "alternateName": "Ventas Juem Uruguay",
-        "url": baseUrl,
-        "logo": `${baseUrl}/og-celestial.png?v=3`,
+        "url": canonicalBase,
+        "logo": `${canonicalBase}/og-celestial.png?v=3`,
         "description": "Tienda online multirrubro en Uruguay especializada en soportes para celulares, tablets, controles y monitores, juguetes de Navidad y catálogo de tecnología y hogar.",
         "telephone": settings.whatsappNumber || "+59891234567",
         "priceRange": "$$",
@@ -12981,40 +13291,15 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         },
         "hasOfferCatalog": {
           "@type": "OfferCatalog",
-          "name": "Catálogo de Productos JUEM",
-          "itemListElement": [
-            {
+          "name": "Catálogo General Multirrubro JUEM",
+          "itemListElement": (state.dbCategories || [])
+            .filter(c => c.active !== false && c.id)
+            .sort((a, b) => (a.orden || 0) - (b.orden || 0))
+            .map(c => ({
               "@type": "OfferCatalog",
-              "name": "Soportes y Accesorios",
-              "itemListElement": [
-                { "@type": "Offer", "itemOffered": { "@type": "Product", "name": "Soportes de Pared y Escritorio para Celulares y Tablets" } },
-                { "@type": "Offer", "itemOffered": { "@type": "Product", "name": "Soportes para Mandos, Auriculares y Monitores" } }
-              ]
-            },
-            {
-              "@type": "OfferCatalog",
-              "name": "Juguetes de Navidad y Juegos",
-              "itemListElement": [
-                { "@type": "Offer", "itemOffered": { "@type": "Product", "name": "Juguetes Infantiles y Regalos Navideños" } },
-                { "@type": "Offer", "itemOffered": { "@type": "Product", "name": "Juegos Didácticos y Entretenimiento" } }
-              ]
-            },
-            {
-              "@type": "OfferCatalog",
-              "name": "Tecnología y Artículos Varios",
-              "itemListElement": [
-                { "@type": "Offer", "itemOffered": { "@type": "Product", "name": "Accesorios de Computación y Audio" } },
-                { "@type": "Offer", "itemOffered": { "@type": "Product", "name": "Gadgets y Accesorios Electrónicos" } }
-              ]
-            },
-            {
-              "@type": "OfferCatalog",
-              "name": "Ropa e Indumentaria de Temporada",
-              "itemListElement": [
-                { "@type": "Offer", "itemOffered": { "@type": "Product", "name": "Buzos Manta Térmicos y Prendas de Temporada" } }
-              ]
-            }
-          ]
+              "name": c.nombre,
+              "url": `${canonicalBase}/${String(c.id).toLowerCase()}`
+            }))
         },
         "hasMerchantReturnPolicy": {
           "@type": "MerchantReturnPolicy",
@@ -13024,7 +13309,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
           "returnMethod": "https://schema.org/ReturnByMail",
           "returnFees": "https://schema.org/FreeReturn",
           "refundType": "https://schema.org/FullRefund",
-          "merchantReturnLink": baseUrl
+          "merchantReturnLink": canonicalBase
         }
       });
     }
@@ -13100,8 +13385,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         /<meta[^>]*id="seo-robots"[^>]*\/?>/gi,
         `<meta name="robots" content="noindex, nofollow" id="seo-robots" />`
       );
-    } else if (hasFilterOrSortParams) {
-      // Secondary filter or sorting URLs should not be indexed, preventing crawl budget loss and duplicate indexing in Google Search Console
+    } else if (hasFilterOrSortParams || shouldNoindexEmptyRoute) {
+      // Secondary filter/sorting or empty/unknown subcategory URLs should not be indexed
       output = output.replace(
         /<meta[^>]*id="seo-robots"[^>]*\/?>/gi,
         `<meta name="robots" content="noindex, follow" id="seo-robots" />`
@@ -13187,7 +13472,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       output = output.replace("</head>", `${initialScript}\n</head>`);
     }
 
-    return output;
+    return { html: output, status: httpStatus };
   }
 
   // Dynamic robots.txt
@@ -13268,11 +13553,17 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
   // Enforces SEO Standards: Strict Canonical Filtering (Self-referential URLs only), Filter/Parameter Exclusion, HTTP 200 OK
   app.get("/sitemap.xml", async (req, res) => {
     try {
+      if (cachedSitemapXml) {
+        res.header("Content-Type", "application/xml; charset=utf-8");
+        res.header("Cache-Control", "public, max-age=1800, s-maxage=3600");
+        res.header("X-Robots-Tag", "noindex");
+        return res.send(cachedSitemapXml);
+      }
       const canonicalBase = "https://juem.com.uy";
-      let state = currentStoreState;
+      let state = cachedDbState || cachedPublicDbState || currentStoreState;
       if (process.env.DATABASE_URL && !dbUnavailable) {
         try {
-          state = await getDbState();
+          state = await getPublicDbState();
         } catch (e) {
           // Safe fallback in memory
         }
@@ -13339,6 +13630,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       const categories = state.dbCategories || [];
       const subcategories = state.dbSubcategories || [];
       
+      const products = state.products || [];
+
       categories.forEach(cat => {
         if (cat.active !== false && cat.id && typeof cat.id === "string") {
           const cleanCatId = cat.id.trim().toLowerCase();
@@ -13349,12 +13642,25 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
             const customCatCanonical = (cat as any).canonicalUrl || (cat as any).canonical_url;
             addUrlToSitemap(catUrl, customCatCanonical || catCanonical, lastModDate, "weekly", "0.8");
 
-            // Subcategories belonging to this active category
-            const relSubs = subcategories.filter(s => s.categoria_id === cat.id);
+            // Active subcategories belonging to this active category with at least 1 active product
+            const relSubs = subcategories.filter(s => s.active !== false && s.categoria_id === cat.id);
             relSubs.forEach(sub => {
               if (sub.id && typeof sub.id === "string") {
                 const cleanSubId = sub.id.trim().toLowerCase();
                 if (cleanSubId && cleanSubId !== "all" && cleanSubId !== "todos") {
+                  const hasActiveProducts = products.some(p => {
+                    if (p.active === false || p.paused === true) return false;
+                    const inCat =
+                      p.categoria_id === cat.id ||
+                      (Array.isArray(p.categorias_adicionales) && p.categorias_adicionales.includes(cat.id));
+                    if (!inCat) return false;
+                    const inSub =
+                      (p.subcategoria_id && p.subcategoria_id.toLowerCase() === cleanSubId) ||
+                      (Array.isArray(p.subcategorias_adicionales) &&
+                        p.subcategorias_adicionales.some(x => String(x).toLowerCase() === cleanSubId));
+                    return inSub;
+                  });
+                  if (!hasActiveProducts) return;
                   const subUrl = `${canonicalBase}/${encodeURIComponent(cleanCatId)}/${encodeURIComponent(cleanSubId)}`;
                   const subCanonical = `${canonicalBase}/${cleanCatId}/${cleanSubId}`;
                   const customSubCanonical = (sub as any).canonicalUrl || (sub as any).canonical_url;
@@ -13367,7 +13673,6 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       });
 
       // 3. Products mapping (Only active, in-stock, published, non-variant self-referential products)
-      const products = state.products || [];
       products.forEach(p => {
         // HTTP 200 OK & Status requirements:
         // Must be active, not paused, not hidden, and have stock available
@@ -13401,7 +13706,9 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
 
       xml += `</urlset>`;
 
+      cachedSitemapXml = xml;
       res.header("Content-Type", "application/xml; charset=utf-8");
+      res.header("Cache-Control", "public, max-age=1800, s-maxage=3600");
       res.header("X-Robots-Tag", "noindex");
       res.send(xml);
     } catch (err: any) {
@@ -13413,11 +13720,17 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
   // Dynamic /sitemap-image.xml dedicated sitemap file mapping all high-quality product images for Google Rich Search Results
   app.get("/sitemap-image.xml", async (req, res) => {
     try {
+      if (cachedSitemapImageXml) {
+        res.header("Content-Type", "application/xml; charset=utf-8");
+        res.header("Cache-Control", "public, max-age=1800, s-maxage=3600");
+        res.header("X-Robots-Tag", "noindex");
+        return res.send(cachedSitemapImageXml);
+      }
       const canonicalBase = "https://juem.com.uy";
-      let state = currentStoreState;
+      let state = cachedDbState || cachedPublicDbState || currentStoreState;
       if (process.env.DATABASE_URL && !dbUnavailable) {
         try {
-          state = await getDbState();
+          state = await getPublicDbState();
         } catch (e) {
           // Fallback to memory
         }
@@ -13460,7 +13773,9 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
 
       xml += `</urlset>`;
 
+      cachedSitemapImageXml = xml;
       res.header("Content-Type", "application/xml; charset=utf-8");
+      res.header("Cache-Control", "public, max-age=1800, s-maxage=3600");
       res.header("X-Robots-Tag", "noindex");
       res.send(xml);
     } catch (err: any) {
@@ -13472,11 +13787,16 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
   // Dynamic /llms.txt (AI / LLM agent crawler discovery file following https://llmstxt.org/)
   app.get("/llms.txt", async (req, res) => {
     try {
+      if (cachedLlmsTxt) {
+        res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+        res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=3600");
+        return res.status(200).send(cachedLlmsTxt);
+      }
       const canonicalBase = "https://juem.com.uy";
-      let rawState = cachedDbState || currentStoreState;
-      if (!cachedDbState && process.env.DATABASE_URL && !dbUnavailable) {
+      let rawState = cachedDbState || cachedPublicDbState || currentStoreState;
+      if (!cachedDbState && !cachedPublicDbState && process.env.DATABASE_URL && !dbUnavailable) {
         try {
-          rawState = await getDbState();
+          rawState = await getPublicDbState();
         } catch (e) {
           // Safe fallback in memory
         }
@@ -13561,9 +13881,11 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         ""
       );
 
+      const llmsContent = lines.join("\n");
+      cachedLlmsTxt = llmsContent;
       res.setHeader("Content-Type", "text/markdown; charset=utf-8");
       res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=3600");
-      res.status(200).send(lines.join("\n"));
+      res.status(200).send(llmsContent);
     } catch (err: any) {
       console.error("Error generating llms.txt:", err);
       res.status(500).type("text/plain; charset=utf-8").send("# JUEM\n\n> Tienda online multirrubro en Uruguay (https://juem.com.uy).\n");
@@ -13591,11 +13913,14 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=3600");
     try {
+      if (cachedAiCatalogJson) {
+        return res.status(200).json(cachedAiCatalogJson);
+      }
       const canonicalBase = "https://juem.com.uy";
-      let rawState = cachedDbState || currentStoreState;
-      if (!cachedDbState && process.env.DATABASE_URL && !dbUnavailable) {
+      let rawState = cachedDbState || cachedPublicDbState || currentStoreState;
+      if (!cachedDbState && !cachedPublicDbState && process.env.DATABASE_URL && !dbUnavailable) {
         try {
-          rawState = await getDbState();
+          rawState = await getPublicDbState();
         } catch (e) {
           // Safe fallback in memory
         }
@@ -13619,6 +13944,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         entries: []
       };
 
+      cachedAiCatalogJson = catalogManifest;
       res.status(200).json(catalogManifest);
     } catch (err: any) {
       console.error("Error generating ai-catalog.json:", err);
@@ -13642,9 +13968,15 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       return next();
     }
 
-    // 1. Remove trailing slashes (e.g. /ropa/ -> /ropa) except root "/"
+    // 0. Host canonicalization: consolidate www.juem.com.uy -> https://juem.com.uy
+    const reqHost = String(req.get("host") || "").toLowerCase();
+    if (reqHost.startsWith("www.juem.com.uy")) {
+      return res.redirect(301, `https://juem.com.uy${req.originalUrl}`);
+    }
+
+    // 1. Remove trailing slashes and normalize to lowercase in one 301 hop (e.g. /Ropa/ -> /ropa)
     if (req.path.length > 1 && req.path.endsWith("/")) {
-      const cleanPath = req.path.replace(/\/+$/, "");
+      const cleanPath = req.path.replace(/\/+$/, "").toLowerCase() || "/";
       const queryString = req.url.includes("?") ? req.url.slice(req.path.length) : "";
       return res.redirect(301, cleanPath + queryString);
     }
@@ -13655,6 +13987,17 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       return res.redirect(301, req.path.toLowerCase() + queryString);
     }
 
+    // Helper to read current store state for SEO redirects without hitting DB unnecessarily
+    const resolveSeoState = async () => {
+      let state = cachedDbState || cachedPublicDbState || currentStoreState;
+      if (process.env.DATABASE_URL && !dbUnavailable) {
+        try {
+          state = await getPublicDbState();
+        } catch (e) {}
+      }
+      return state;
+    };
+
     // Redirect category query parameters (category, categoria, cat) to clean, indexable URL paths
     const rawCatQuery = req.query.category ?? req.query.categoria ?? req.query.cat;
     if (rawCatQuery !== undefined) {
@@ -13662,17 +14005,12 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       if (!catQuery) {
         return res.redirect(301, "/");
       }
-      let state = currentStoreState;
-      if (process.env.DATABASE_URL && !dbUnavailable) {
-        try {
-          state = await getDbState();
-        } catch (e) {}
-      }
+      const state = await resolveSeoState();
       
       const normalize = (str: string) => 
         str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 
-      const categories = state.dbCategories || [];
+      const categories = (state.dbCategories || []).filter(c => c.active !== false);
       const matchedCat = categories.find(c => {
         const normId = normalize(c.id);
         const normNombre = normalize(c.nombre);
@@ -13681,21 +14019,18 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       });
 
       if (matchedCat) {
-        let targetPath = `/${matchedCat.id}`;
+        let targetPath = `/${matchedCat.id.toLowerCase()}`;
         const rawSubQuery = req.query.subcategory ?? req.query.subcategoria ?? req.query.subcat;
         if (rawSubQuery !== undefined) {
           const subQuery = normalize(String(rawSubQuery));
           const subcategories = state.dbSubcategories || [];
-          const matchedSub = subcategories.find(s => s.categoria_id === matchedCat.id && (normalize(s.id) === subQuery || normalize(s.nombre) === subQuery));
+          const matchedSub = subcategories.find(s => s.active !== false && s.categoria_id === matchedCat.id && (normalize(s.id) === subQuery || normalize(s.nombre) === subQuery));
           if (matchedSub) {
-            targetPath += `/${matchedSub.id}`;
+            targetPath += `/${matchedSub.id.toLowerCase()}`;
           }
         }
-        console.log(`[SEO Redirect 301] Query parameter category redirecting from ${req.url} to ${targetPath}`);
         return res.redirect(301, targetPath);
       } else {
-        // If the category is obsolete or not found, 301 permanent redirect to clean homepage
-        console.log(`[SEO Redirect 301] Legacy/unknown category parameter redirecting from ${req.url} to /`);
         return res.redirect(301, "/");
       }
     }
@@ -13707,19 +14042,60 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       if (!prodQuery) {
         return res.redirect(301, "/");
       }
-      let state = currentStoreState;
-      if (process.env.DATABASE_URL && !dbUnavailable) {
-        try {
-          state = await getDbState();
-        } catch (e) {}
-      }
+      const state = await resolveSeoState();
       const products = state.products || [];
-      const prod = products.find(p => String(p.id) === prodQuery || (p.name && generateSlug(p.name) === prodQuery));
+      const prod = products.find(p => p.active !== false && p.paused !== true && (String(p.id) === prodQuery || (p.name && generateSlug(p.name) === prodQuery)));
       if (prod && prod.name) {
         const prodSlug = generateSlug(prod.name);
         return res.redirect(301, `/producto/${prodSlug}`);
       } else {
         return res.redirect(301, "/");
+      }
+    }
+
+    // 3. Consolidate non-canonical path aliases (e.g. /informatica -> /electronica, /producto/86 -> /producto/<slug>)
+    const pathSegments = req.path.split("/").filter(Boolean);
+    if (pathSegments.length > 0 && pathSegments[0] !== "admin") {
+      const state = await resolveSeoState();
+      if (pathSegments[0] === "producto" && pathSegments[1]) {
+        const prodParam = pathSegments[1].toLowerCase();
+        const products = state.products || [];
+        const matchedProd = products.find(p => {
+          if (p.active === false || p.paused === true) return false;
+          if (String(p.id).toLowerCase() === prodParam) return true;
+          const proper = p.name ? generateSlug(p.name) : "";
+          if (proper && proper === prodParam) return true;
+          const dashIdx = prodParam.indexOf("-");
+          return dashIdx > 0 && String(p.id).toLowerCase() === prodParam.substring(0, dashIdx);
+        });
+        if (matchedProd && matchedProd.name) {
+          const properSlug = generateSlug(matchedProd.name);
+          if (properSlug && prodParam !== properSlug) {
+            return res.redirect(301, `/producto/${properSlug}`);
+          }
+        }
+      } else {
+        const catSeg = pathSegments[0].toLowerCase();
+        const categories = (state.dbCategories || []).filter(c => c.active !== false);
+        const matchedCat = categories.find(c => c.id.toLowerCase() === catSeg || generateSlug(c.nombre) === catSeg);
+        if (matchedCat) {
+          const canonicalCatId = matchedCat.id.toLowerCase();
+          let targetSubId: string | null = null;
+          let needsSubRedirect = false;
+          if (pathSegments[1]) {
+            const subSeg = pathSegments[1].toLowerCase();
+            const subcats = (state.dbSubcategories || []).filter(s => s.active !== false && s.categoria_id === matchedCat.id);
+            const matchedSub = subcats.find(s => s.id.toLowerCase() === subSeg || generateSlug(s.nombre) === subSeg);
+            if (matchedSub) {
+              targetSubId = matchedSub.id.toLowerCase();
+              if (subSeg !== targetSubId) needsSubRedirect = true;
+            }
+          }
+          if (catSeg !== canonicalCatId || needsSubRedirect) {
+            const targetUrl = targetSubId ? `/${canonicalCatId}/${targetSubId}` : `/${canonicalCatId}`;
+            return res.redirect(301, targetUrl);
+          }
+        }
       }
     }
 
@@ -13765,14 +14141,18 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         const url = req.originalUrl;
         let template = fs.readFileSync(path.resolve("index.html"), "utf-8");
         template = await vite.transformIndexHtml(url, template);
-        const seoHtml = await injectSEO(template, req);
-        if (isRoot && !isBotReq) {
+        const { html: seoHtml, status: seoStatus } = await injectSEO(template, req);
+        if (isRoot && !isBotReq && seoStatus === 200) {
           cachedHomeHtml = seoHtml;
           cachedHomeHtmlTime = Date.now();
         }
-        res.status(200).set({
+        res.status(seoStatus).set({
           "Content-Type": "text/html; charset=utf-8",
-          "Cache-Control": isRoot ? "public, max-age=60, s-maxage=300, stale-while-revalidate=86400" : "public, max-age=30, s-maxage=120, stale-while-revalidate=86400"
+          "Cache-Control": seoStatus === 404
+            ? "no-store"
+            : isRoot
+            ? "public, max-age=60, s-maxage=300, stale-while-revalidate=86400"
+            : "public, max-age=30, s-maxage=120, stale-while-revalidate=86400"
         }).end(seoHtml);
       } catch (e) {
         next(e);
@@ -13785,10 +14165,18 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       const builtIndexPath = path.join(distPath, "index.html");
       if (fs.existsSync(builtIndexPath)) {
         const builtHtml = fs.readFileSync(builtIndexPath, "utf-8");
-        const entryMatch = builtHtml.match(/<script\s+type="module"[^>]*src="([^"]+?\.js)"[^>]*>/i);
         const cssMatch = builtHtml.match(/<link[^>]*rel="preload"[^>]*href="([^"]+?\.css)"[^>]*>/i);
         const links: string[] = [];
-        if (entryMatch && entryMatch[1]) {
+        const seenLinks = new Set<string>();
+        for (const m of builtHtml.matchAll(/<link[^>]*rel="modulepreload"[^>]*href="([^"]+?\.js)"[^>]*>/gi)) {
+          if (m[1] && !seenLinks.has(m[1])) {
+            seenLinks.add(m[1]);
+            links.push(`<${m[1]}>; rel=modulepreload; crossorigin`);
+          }
+        }
+        const entryMatch = builtHtml.match(/<script\s+type="module"[^>]*src="([^"]+?\.js)"[^>]*>/i);
+        if (entryMatch && entryMatch[1] && !seenLinks.has(entryMatch[1])) {
+          seenLinks.add(entryMatch[1]);
           links.push(`<${entryMatch[1]}>; rel=modulepreload; crossorigin`);
         }
         if (cssMatch && cssMatch[1]) {
@@ -13809,10 +14197,10 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       const segments = req.path.split("/").filter(Boolean);
       if (segments[0] === "producto" && segments[1]) {
         const prodId = segments[1];
-        let state = currentStoreState;
+        let state = cachedDbState || cachedPublicDbState || currentStoreState;
         if (process.env.DATABASE_URL && !dbUnavailable) {
           try {
-            state = await getDbState();
+            state = await getPublicDbState();
           } catch (e) {
             // Safe fallback
           }
@@ -13845,17 +14233,21 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         const indexHtmlPath = path.join(distPath, "index.html");
         if (fs.existsSync(indexHtmlPath)) {
           const rawHtml = fs.readFileSync(indexHtmlPath, "utf-8");
-          const seoHtml = await injectSEO(rawHtml, req);
-          if (isRoot && !isBotReq) {
+          const { html: seoHtml, status: seoStatus } = await injectSEO(rawHtml, req);
+          if (isRoot && !isBotReq && seoStatus === 200) {
             cachedHomeHtml = seoHtml;
             cachedHomeHtmlTime = Date.now();
           }
           const headers: Record<string, string> = {
             "Content-Type": "text/html; charset=utf-8",
-            "Cache-Control": isRoot ? "public, max-age=60, s-maxage=300, stale-while-revalidate=86400" : "public, max-age=30, s-maxage=120, stale-while-revalidate=86400"
+            "Cache-Control": seoStatus === 404
+              ? "no-store"
+              : isRoot
+              ? "public, max-age=60, s-maxage=300, stale-while-revalidate=86400"
+              : "public, max-age=30, s-maxage=120, stale-while-revalidate=86400"
           };
           if (cachedProdLinkHeader) headers["Link"] = cachedProdLinkHeader;
-          res.status(200).set(headers).end(seoHtml);
+          res.status(seoStatus).set(headers).end(seoHtml);
         } else {
           next();
         }
@@ -13890,9 +14282,9 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     });
   }
 
-  // Pre-warm DB cache in background without blocking server startup
-  if (process.env.DATABASE_URL && !dbUnavailable) {
-    getDbState().then((st) => {
+  // Pre-warm public DB cache in background without duplicate startup reads
+  if (process.env.DATABASE_URL && !dbUnavailable && !cachedDbState && !cachedPublicDbState) {
+    getPublicDbState().then((st) => {
       console.log(`[Cache Warmup] In-memory store loaded with ${(st.products || []).length} products.`);
     }).catch(err => {
       console.warn("[Cache Warmup] Background warmup note:", err?.message || err);

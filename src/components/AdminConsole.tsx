@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import CommaSeparatedInput from "../components/CommaSeparatedInput";
 import { createPortal } from "react-dom";
 import { AdminTask, Category, Coupon, Product, ProductVariant, Shipping, ShippingOrigin, SiteSettings, StockAdjustment, StockTransfer, Subcategory, is3DProduct } from "../types";
+import { validateGtin } from "../utils/googleSeo";
 
 interface StockReasonOption {
   id: string;
@@ -1097,6 +1098,7 @@ export default function AdminConsole({ ctx }: AdminConsoleProps) {
                         const nextSku = getNextAutoSKU(store.products);
                         setNewProduct({
                           codigo: nextSku,
+                          gtin: "",
                           name: "",
                           description: "",
                           price: 0,
@@ -4896,6 +4898,49 @@ export default function AdminConsole({ ctx }: AdminConsoleProps) {
                               )}
                             </div>
                           </div>
+
+                          {/* GTIN / Código de Barras Oficial GS1 (Opcional para Google Shopping / Merchant) */}
+                          <div>
+                            <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-2 flex flex-wrap items-center justify-between gap-2">
+                              <span>GTIN / Código de Barras Oficial GS1 (Opcional — EAN-13 / UPC-12)</span>
+                              {(() => {
+                                const raw = (newProduct.gtin || "").trim();
+                                if (!raw) {
+                                  return (
+                                    <span className="text-[9px] font-semibold text-zinc-500 normal-case">
+                                      Dejar vacío en personalizados 3D o genéricos sin código de fábrica
+                                    </span>
+                                  );
+                                }
+                                const valid = validateGtin(raw);
+                                if (valid) {
+                                  const fmt =
+                                    valid.length === 8 ? "EAN-8" : valid.length === 12 ? "UPC-12" : valid.length === 13 ? "EAN-13" : "GTIN-14";
+                                  return (
+                                    <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-wider">
+                                      ✓ {fmt} válido para Google
+                                    </span>
+                                  );
+                                }
+                                return (
+                                  <span className="text-[9px] font-bold text-amber-400 normal-case">
+                                    ⚠ Código no GS1 / dígito inválido (no se enviará a Google)
+                                  </span>
+                                );
+                              })()}
+                            </label>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              value={newProduct.gtin || ""}
+                              onChange={(e) => {
+                                const val = e.target.value.replace(/[^\d-\s]/g, "").trim();
+                                setNewProduct({ ...newProduct, gtin: val });
+                              }}
+                              className="w-full px-4 py-2.5 bg-[#050B1A] border border-zinc-800 hover:border-zinc-750 focus:border-[#D4A55A] rounded-xl text-xs font-mono font-semibold outline-none focus:ring-2 focus:ring-[#D4A55A]/30 text-[#F4EAD7] placeholder-zinc-600 transition-all duration-300"
+                              placeholder="Ej: 7730918020014 (solo si el fabricante tiene código GS1 oficial)"
+                            />
+                          </div>
                           
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                             {/* Categoría Principal */}
@@ -6742,6 +6787,50 @@ export default function AdminConsole({ ctx }: AdminConsoleProps) {
                               />
                             </div>
                           </div>
+
+                          {/* GTIN / Código de Barras Oficial GS1 */}
+                          <div>
+                            <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                              <span>GTIN / Código de Barras Oficial GS1 (Opcional — EAN-13 / UPC-12)</span>
+                              {(() => {
+                                const raw = (editingProduct.gtin || "").trim();
+                                if (!raw) {
+                                  return (
+                                    <span className="text-[9px] font-medium text-slate-400 dark:text-zinc-500 normal-case">
+                                      Dejar vacío en 3D, artesanales o genéricos
+                                    </span>
+                                  );
+                                }
+                                const valid = validateGtin(raw);
+                                if (valid) {
+                                  const fmt =
+                                    valid.length === 8 ? "EAN-8" : valid.length === 12 ? "UPC-12" : valid.length === 13 ? "EAN-13" : "GTIN-14";
+                                  return (
+                                    <span className="text-[9px] font-bold text-emerald-500 uppercase tracking-wider">
+                                      ✓ {fmt} válido para Google
+                                    </span>
+                                  );
+                                }
+                                return (
+                                  <span className="text-[9px] font-bold text-amber-500 normal-case">
+                                    ⚠ Código no GS1 / dígito inválido (omitido en Google JSON-LD)
+                                  </span>
+                                );
+                              })()}
+                            </label>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              value={editingProduct.gtin || ""}
+                              onChange={(e) => {
+                                const val = e.target.value.replace(/[^\d-\s]/g, "").trim();
+                                setEditingProduct({ ...editingProduct, gtin: val });
+                              }}
+                              className="w-full px-3 py-2 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg text-xs font-mono font-semibold outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 dark:text-white"
+                              placeholder="Ej: 7730918020014 (solo códigos de barras oficiales GS1)"
+                            />
+                          </div>
+
                       <div>
                         <label className="block text-[10px] font-extrabold text-slate-500 dark:text-zinc-400 uppercase tracking-widest mb-1.5">Categoría Principal *</label>
                         <select

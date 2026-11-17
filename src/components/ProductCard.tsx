@@ -3,6 +3,7 @@ import { Product, SiteSettings, getProductAvailableStock, isGenericSize, isGener
 import { ShoppingCart, Eye, Tag, Phone } from "lucide-react";
 import ImageWatermark from "./ImageWatermark";
 import { optimizeImageUrl, buildImageSrcSet, buildAvifSrcSet, IMAGE_SIZES } from "../utils/imageOptimizer";
+import { generateSlug } from "../utils/storefrontHelpers";
 
 interface ProductCardProps {
   key?: string;
@@ -296,14 +297,24 @@ Precio: $${Math.round(product.price)}
             className="relative mt-0.5 sm:mt-1 flex flex-col justify-start w-full min-w-0"
           >
             <h3 
-              onClick={(e) => {
-                e.stopPropagation();
-                onViewProduct(product);
-              }}
               className={`text-[11px] sm:text-sm font-semibold tracking-wide leading-snug transition-colors cursor-pointer select-none block w-full line-clamp-2 ${isNavidad ? "text-[#1E1D1B] group-hover:text-[#285744]" : "text-[#F4EAD7] group-hover:text-[#E6BF76]"}`}
               title={product.name}
             >
-              {product.name}
+              <a
+                href={`/producto/${generateSlug(product.name)}`}
+                onClick={(e) => {
+                  if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onViewProduct(product);
+                  } else {
+                    e.stopPropagation();
+                  }
+                }}
+                className="text-inherit no-underline"
+              >
+                {product.name}
+              </a>
             </h3>
           </div>
 

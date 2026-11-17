@@ -24,6 +24,7 @@ export interface ComboComponent {
 export interface Product {
   id: string;
   codigo?: string; // Product code / SKU matching spreadsheet code (e.g., J001)
+  gtin?: string; // Optional official GS1 barcode (EAN-8, UPC-12, EAN-13, ITF-14)
   name: string;
   description: string;
   price: number;
@@ -200,6 +201,7 @@ export interface SiteSettings {
   metaPixelId?: string;
   seoDescription?: string;
   seoKeywords?: string;
+  faviconUrl?: string;
   facebookUrl?: string;
   instagramUrl?: string;
   styleSystemNotes?: string;

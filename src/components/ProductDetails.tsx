@@ -6,6 +6,7 @@ import { Product, SiteSettings, is3DProduct, isGenericSize, isGenericColor, getP
 import ProductCard from "./ProductCard";
 import ImageWatermark from "./ImageWatermark";
 import { optimizeImageUrl, buildImageSrcSet, buildAvifSrcSet, IMAGE_SIZES } from "../utils/imageOptimizer";
+import { generateSlug } from "../utils/storefrontHelpers";
 
 export const PRINT_MATERIALS = [
   { id: "PLA", name: "PLA", priceMultiplier: 1.0, description: "Biodegradable, excelente acabado estético y variedad de colores." },
@@ -767,139 +768,6 @@ Me gustaría coordinar stock, fabricación y envío.`;
 
   const solvedCategory = dbCategories.find(c => String(c.id) === String(product.categoria_id)) || { nombre: product.category, id: product.categoria_id || "todos" };
 
-  const productSchema = useMemo(() => {
-    const sku = product.codigo || `JUEM-${product.id}`;
-    const productUrl = typeof window !== "undefined"
-      ? `${window.location.protocol}//${window.location.host}/producto/${encodeURIComponent((product.name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-"))}`
-      : `https://juem.com.uy/producto/${product.id}`;
-
-    const imageUrls = product.imagenes && product.imagenes.length > 0
-      ? product.imagenes
-      : [product.imageUrl];
-
-    // Only include genuine, verified GTIN if provided by merchant/manufacturer.
-    // Google checks GS1 GEPIR registry; never emit fabricated or synthetic GTIN barcodes.
-    const getValidProductGtin = (prod: any): string | undefined => {
-      const candidate = prod?.gtin || prod?.barcode;
-      if (!candidate || typeof candidate !== "string") return undefined;
-      const clean = candidate.trim().replace(/[-\s]/g, "");
-      if (!/^\d{8}$|^\d{12}$|^\d{13}$|^\d{14}$/.test(clean)) return undefined;
-      if (/^0+$/.test(clean) || /^12345678/.test(clean)) return undefined;
-      const len = clean.length;
-      const digits = clean.split("").map(Number);
-      const checkDigit = digits[len - 1];
-      let sum = 0;
-      let weight = 3;
-      for (let i = len - 2; i >= 0; i--) {
-        sum += digits[i] * weight;
-        weight = weight === 3 ? 1 : 3;
-      }
-      const calculatedCheck = (10 - (sum % 10)) % 10;
-      if (checkDigit !== calculatedCheck) return undefined;
-      return clean;
-    };
-
-    const validGtin = getValidProductGtin(product);
-
-    let charSum = 0;
-    for (let i = 0; i < product.name.length; i++) charSum += product.name.charCodeAt(i);
-    const ratingValue = (4.7 + (charSum % 4) * 0.1).toFixed(1);
-    const reviewCount = 12 + (charSum % 25);
-    const reviewsList = [
-      "Excelente calidad y atención. El pedido me llegó súper rápido a Montevideo.",
-      "Muy conforme con la compra. El producto es exactamente como se ve en las fotos.",
-      "Llegó en impecables condiciones y el talle es perfecto.",
-      "Súper recomendado Ventas Juem, la prenda es de excelente confección."
-    ];
-    const selectedReviewText = reviewsList[charSum % reviewsList.length];
-
-    return {
-      "@context": "https://schema.org",
-      "@type": "Product",
-      "name": product.name,
-      "image": imageUrls,
-      "description": product.description || `${product.name} - Disponible en Ventas Juem con envío rápido a todo el país.`,
-      "sku": sku,
-      "mpn": sku,
-      ...(validGtin ? { gtin: validGtin, ...(validGtin.length === 13 ? { gtin13: validGtin } : {}) } : {}),
-      "brand": {
-        "@type": "Brand",
-        "name": "Juem"
-      },
-      "review": {
-        "@type": "Review",
-        "reviewRating": {
-          "@type": "Rating",
-          "ratingValue": "5",
-          "bestRating": "5"
-        },
-        "author": {
-          "@type": "Person",
-          "name": "Cliente Verificado de Uruguay"
-        },
-        "reviewBody": selectedReviewText
-      },
-      "aggregateRating": {
-        "@type": "AggregateRating",
-        "ratingValue": ratingValue,
-        "reviewCount": reviewCount.toString(),
-        "bestRating": "5",
-        "worstRating": "4"
-      },
-      "offers": {
-        "@type": "Offer",
-        "url": productUrl,
-        "priceCurrency": "UYU",
-        "price": (dynamicPrice || product.price || 0).toString(),
-        "validFrom": "2024-01-01",
-        "priceValidUntil": "2027-12-31",
-        "itemCondition": "https://schema.org/NewCondition",
-        "availability": currentStock > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
-        "seller": {
-          "@type": "Organization",
-          "name": settings?.siteTitle || "Ventas Juem"
-        },
-        "shippingDetails": {
-          "@type": "OfferShippingDetails",
-          "shippingRate": {
-            "@type": "MonetaryAmount",
-            "value": "190",
-            "currency": "UYU"
-          },
-          "shippingDestination": {
-            "@type": "DefinedRegion",
-            "addressCountry": "UY"
-          },
-          "deliveryTime": {
-            "@type": "ShippingDeliveryTime",
-            "handlingTime": {
-              "@type": "QuantitativeValue",
-              "minValue": "0",
-              "maxValue": "1",
-              "unitCode": "DAY"
-            },
-            "transitTime": {
-              "@type": "QuantitativeValue",
-              "minValue": "1",
-              "maxValue": "3",
-              "unitCode": "DAY"
-            }
-          }
-        },
-        "hasMerchantReturnPolicy": {
-          "@type": "MerchantReturnPolicy",
-          "applicableCountry": "UY",
-          "returnPolicyCategory": "https://schema.org/MerchantReturnFiniteReturnWindow",
-          "merchantReturnDays": 30,
-          "returnMethod": "https://schema.org/ReturnByMail",
-          "returnFees": "https://schema.org/FreeReturn",
-          "refundType": "https://schema.org/FullRefund",
-          "merchantReturnLink": typeof window !== "undefined" ? window.location.origin : "https://juem.com.uy"
-        }
-      }
-    };
-  }, [product, settings, dynamicPrice, currentStock]);
-
   const breadcrumbSchema = {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
@@ -908,19 +776,19 @@ Me gustaría coordinar stock, fabricación y envío.`;
         "@type": "ListItem",
         "position": 1,
         "name": "Inicio",
-        "item": typeof window !== "undefined" ? `${window.location.protocol}//${window.location.host}/` : "https://ventas-juem.com/"
+        "item": "https://juem.com.uy/"
       },
       {
         "@type": "ListItem",
         "position": 2,
         "name": solvedCategory.nombre || "Categoría",
-        "item": typeof window !== "undefined" ? `${window.location.protocol}//${window.location.host}/${solvedCategory.id || "todos"}` : "https://ventas-juem.com/todos"
+        "item": `https://juem.com.uy/${solvedCategory.id || "todos"}`
       },
       {
         "@type": "ListItem",
         "position": 3,
         "name": product.name,
-        "item": typeof window !== "undefined" ? `${window.location.protocol}//${window.location.host}/producto/${product.id}` : "https://ventas-juem.com/"
+        "item": `https://juem.com.uy/producto/${generateSlug(product.name)}`
       }
     ]
   };
@@ -939,12 +807,9 @@ Me gustaría coordinar stock, fabricación y envío.`;
         }
       `}</style>
 
-      {/* Schema.org BreadcrumbList and Product structured data */}
+      {/* Schema.org BreadcrumbList (Product JSON-LD is rendered cleanly once in <head>#seo-schema) */}
       <script type="application/ld+json">
         {JSON.stringify(breadcrumbSchema)}
-      </script>
-      <script type="application/ld+json">
-        {JSON.stringify(productSchema)}
       </script>
 
       {/* Dynamic SEO Breadcrumbs */}

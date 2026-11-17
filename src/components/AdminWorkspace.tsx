@@ -503,7 +503,7 @@ export default function AdminWorkspace({
       if (document.visibilityState === "visible") {
         fetchAdminTasks();
       }
-    }, 60000);
+    }, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [authToken]);
 

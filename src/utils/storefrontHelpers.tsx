@@ -1,60 +1,18 @@
-import React from "react";
+import { lazy, Suspense } from "react";
 import {
   Grid,
   Shirt,
   Smartphone,
   Sparkles,
   Home,
-  Watch,
-  Percent,
   Laptop,
-  Palette,
-  Tag,
-  Box,
-  Coffee,
-  Gamepad2,
-  Wrench,
   Gift,
-  Crown,
-  Heart,
-  Footprints,
-  BookOpen,
-  Scissors,
-  Gem,
-  Flame,
-  Lightbulb,
   Smile,
-  Printer,
-  Music,
-  Dumbbell,
-  Glasses,
-  Baby,
-  Wine,
-  Tv,
-  HardDrive,
-  Headphones,
-  Sofa,
-  Cpu
+  Box
 } from "lucide-react";
-import { Product, SiteSettings, Category, Subcategory } from "../types";
+import { Product, SiteSettings } from "../types";
 
-export const normalizeText = (text: string): string => {
-  if (!text) return "";
-  let norm = text
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9 ]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  norm = norm
-    .split(" ")
-    .map((word) => (word === "negor" ? "negro" : word))
-    .join(" ");
-
-  return norm;
-};
+const ExtraCategoryIcon = lazy(() => import("../components/ExtraCategoryIcons"));
 
 export const generateSlug = (text: string): string => {
   if (!text) return "";
@@ -66,106 +24,6 @@ export const generateSlug = (text: string): string => {
     .trim()
     .replace(/\s+/g, "-")
     .replace(/-+/g, "-");
-};
-
-export const calculateRelevance = (
-  product: Product,
-  query: string,
-  dbCategories?: Category[],
-  dbSubcategories?: Subcategory[]
-): number => {
-  const normalizedQuery = normalizeText(query);
-  if (!normalizedQuery) return 0;
-
-  const normalizedName = normalizeText(product.name);
-  const normalizedDesc = normalizeText(product.description || "");
-
-  const mainCat = (dbCategories || []).find((c) => c.id === product.categoria_id);
-  const mainCatName = mainCat ? normalizeText(mainCat.nombre) : "";
-  const fallbackCatName = product.category ? normalizeText(product.category) : "";
-
-  const subCat = (dbSubcategories || []).find((s) => s.id === product.subcategoria_id);
-  const subCatName = subCat ? normalizeText(subCat.nombre) : "";
-
-  const topColors = product.colors || [];
-  const variantColors = (product.variants || []).map((v) => v.color).filter(Boolean);
-  const allColors = Array.from(new Set([...topColors, ...variantColors]));
-  const colorsStr = allColors.map(normalizeText).join(" ");
-
-  const topSizes = product.sizes || [];
-  const variantSizes = (product.variants || []).map((v) => v.size).filter(Boolean);
-  const allSizes = Array.from(new Set([...topSizes, ...variantSizes]));
-  const sizesStr = allSizes.map(normalizeText).join(" ");
-
-  const queryTokens = normalizedQuery.split(" ").filter((t) => t.length > 0);
-  if (queryTokens.length === 0) return 0;
-
-  let score = 0;
-
-  const collapsedName = normalizedName.replace(/\s+/g, "");
-  const collapsedQuery = normalizedQuery.replace(/\s+/g, "");
-
-  if (normalizedName === normalizedQuery) {
-    score += 500;
-  } else if (normalizedName.startsWith(normalizedQuery)) {
-    score += 250;
-  } else if (normalizedName.includes(normalizedQuery)) {
-    score += 150;
-  } else if (collapsedQuery.length >= 2) {
-    if (collapsedName === collapsedQuery) {
-      score += 450;
-    } else if (collapsedName.startsWith(collapsedQuery)) {
-      score += 200;
-    } else if (collapsedName.includes(collapsedQuery)) {
-      score += 120;
-    }
-  }
-
-  queryTokens.forEach((token) => {
-    const cleanToken = token.endsWith("s") && token.length > 3 ? token.slice(0, -1) : token;
-
-    const matchedNameWords = normalizedName.split(" ").some((word) => {
-      const cleanWord = word.endsWith("s") && word.length > 3 ? word.slice(0, -1) : word;
-      return cleanWord.includes(cleanToken) || cleanToken.includes(cleanWord);
-    });
-
-    if (matchedNameWords) {
-      score += 80;
-    } else if (normalizedName.includes(token)) {
-      score += 40;
-    }
-  });
-
-  if (mainCatName && (mainCatName.includes(normalizedQuery) || normalizedQuery.includes(mainCatName))) {
-    score += 100;
-  } else if (fallbackCatName && (fallbackCatName.includes(normalizedQuery) || normalizedQuery.includes(fallbackCatName))) {
-    score += 60;
-  }
-  if (subCatName && (subCatName.includes(normalizedQuery) || normalizedQuery.includes(subCatName))) {
-    score += 80;
-  }
-
-  queryTokens.forEach((token) => {
-    if (mainCatName && mainCatName.includes(token)) score += 20;
-    if (fallbackCatName && fallbackCatName.includes(token)) score += 10;
-    if (subCatName && subCatName.includes(token)) score += 15;
-  });
-
-  if (normalizedDesc.includes(normalizedQuery)) {
-    score += 50;
-  }
-  queryTokens.forEach((token) => {
-    if (normalizedDesc.includes(token)) {
-      score += 10;
-    }
-  });
-
-  queryTokens.forEach((token) => {
-    if (colorsStr.includes(token)) score += 15;
-    if (sizesStr.includes(token)) score += 15;
-  });
-
-  return score;
 };
 
 export const STOREFRONT_DEFAULT_SETTINGS: SiteSettings = {
@@ -252,45 +110,13 @@ export const getCategoryIcon = (categoryOrIcon: string) => {
   if (cat === "smartphone" || cat === "celular" || cat === "celulares") return <Smartphone className="h-5 w-5" />;
   if (cat === "sparkles" || cat === "destacado" || cat === "destacados") return <Sparkles className="h-5 w-5" />;
   if (cat === "home" || cat === "hogar") return <Home className="h-5 w-5" />;
-  if (cat === "watch" || cat === "relojes") return <Watch className="h-5 w-5" />;
-  if (cat === "percent" || cat === "descuentos") return <Percent className="h-5 w-5" />;
   if (cat === "laptop" || cat === "pc") return <Laptop className="h-5 w-5" />;
-  if (cat === "palette" || cat === "diseno") return <Palette className="h-5 w-5" />;
-  if (cat === "tag" || cat === "promos" || cat === "etiqueta") return <Tag className="h-5 w-5" />;
-  if (cat === "box" || cat === "paquete") return <Box className="h-5 w-5" />;
-  if (cat === "coffee" || cat === "mate") return <Coffee className="h-5 w-5" />;
-  if (cat === "gamepad2" || cat === "gaming") return <Gamepad2 className="h-5 w-5" />;
-  if (cat === "wrench" || cat === "herramientas") return <Wrench className="h-5 w-5" />;
   if (cat === "gift" || cat === "regalos" || cat === "regalo") return <Gift className="h-5 w-5" />;
-  if (cat === "crown" || cat === "premium") return <Crown className="h-5 w-5" />;
-  if (cat === "heart" || cat === "favoritos") return <Heart className="h-5 w-5" />;
-  if (cat === "footprints" || cat === "calzado" || cat === "zapatillas" || cat === "zapatos") return <Footprints className="h-5 w-5" />;
-  if (cat === "bookopen" || cat === "libreria" || cat === "libros" || cat === "agenda") return <BookOpen className="h-5 w-5" />;
-  if (cat === "scissors" || cat === "manualidades" || cat === "costura") return <Scissors className="h-5 w-5" />;
-  if (cat === "gem" || cat === "joyas" || cat === "joyeria" || cat === "accesorios") return <Gem className="h-5 w-5" />;
-  if (cat === "flame" || cat === "hot" || cat === "tendencia") return <Flame className="h-5 w-5" />;
-  if (cat === "lightbulb" || cat === "iluminacion" || cat === "lamparas") return <Lightbulb className="h-5 w-5" />;
   if (cat === "smile" || cat === "juguetes" || cat === "ninos") return <Smile className="h-5 w-5" />;
-  if (cat === "printer" || cat === "impresora" || cat === "impresiones") return <Printer className="h-5 w-5" />;
-  if (cat === "music" || cat === "musica") return <Music className="h-5 w-5" />;
-  if (cat === "dumbbell" || cat === "deportes" || cat === "deporte" || cat === "fitness") return <Dumbbell className="h-5 w-5" />;
-  if (cat === "glasses" || cat === "lentes" || cat === "gafas") return <Glasses className="h-5 w-5" />;
-  if (cat === "baby" || cat === "bebe" || cat === "bebes") return <Baby className="h-5 w-5" />;
-  if (cat === "wine" || cat === "bazar" || cat === "copas" || cat === "vajilla") return <Wine className="h-5 w-5" />;
-  if (cat === "tv" || cat === "televisores" || cat === "pantallas") return <Tv className="h-5 w-5" />;
-  if (cat === "harddrive" || cat === "discos" || cat === "almacenamiento") return <HardDrive className="h-5 w-5" />;
-  if (cat === "headphones" || cat === "auriculares") return <Headphones className="h-5 w-5" />;
-  if (cat === "sofa" || cat === "muebles" || cat === "deco" || cat === "decoracion") return <Sofa className="h-5 w-5" />;
-  if (cat === "cpu" || cat === "computacion" || cat === "hardware") return <Cpu className="h-5 w-5" />;
+  if (cat === "box" || cat === "paquete") return <Box className="h-5 w-5" />;
 
-  if (cat.includes("impresio") || cat.includes("3d") || cat.includes("filamento") || cat.includes("pla") || cat.includes("llaver")) {
-    return <Printer className="h-5 w-5" />;
-  }
   if (cat.includes("ropa") || cat.includes("vest") || cat.includes("moda") || cat.includes("prend") || cat.includes("remera") || cat.includes("abrigo") || cat.includes("buzo") || cat.includes("jean") || cat.includes("panta") || cat.includes("shirt")) {
     return <Shirt className="h-5 w-5" />;
-  }
-  if (cat.includes("calza") || cat.includes("zapat") || cat.includes("bota") || cat.includes("sandalia") || cat.includes("foot")) {
-    return <Footprints className="h-5 w-5" />;
   }
   if (cat.includes("electron") || cat.includes("tecno") || cat.includes("celular") || cat.includes("notebook") || cat.includes("comput") || cat.includes("smart") || cat.includes("tablet") || cat.includes("audio") || cat.includes("parlante") || cat.includes("chip") || cat.includes("laptop") || cat.includes("phone")) {
     return <Laptop className="h-5 w-5" />;
@@ -298,70 +124,20 @@ export const getCategoryIcon = (categoryOrIcon: string) => {
   if (cat.includes("hogar") || cat.includes("casa") || cat.includes("mueble") || cat.includes("decor") || cat.includes("jardin") || cat.includes("sofa")) {
     return <Home className="h-5 w-5" />;
   }
-  if (cat.includes("bazar") || cat.includes("cocina") || cat.includes("mate") || cat.includes("cafe") || cat.includes("taza") || cat.includes("termo") || cat.includes("vaso") || cat.includes("copa") || cat.includes("vajilla") || cat.includes("wine")) {
-    return <Coffee className="h-5 w-5" />;
-  }
-  if (cat.includes("accesor") || cat.includes("joya") || cat.includes("reloj") || cat.includes("bols") || cat.includes("mochila") || cat.includes("cartera") || cat.includes("watch") || cat.includes("gem")) {
-    return <Watch className="h-5 w-5" />;
-  }
-  if (cat.includes("game") || cat.includes("juego") || cat.includes("consola") || cat.includes("playstation") || cat.includes("xbox") || cat.includes("nintendo")) {
-    return <Gamepad2 className="h-5 w-5" />;
-  }
   if (cat.includes("regal") || cat.includes("gift") || cat.includes("juguet") || cat.includes("peluch") || cat.includes("smile") || cat.includes("nino")) {
     return <Gift className="h-5 w-5" />;
   }
-  if (cat.includes("oferta") || cat.includes("promoc") || cat.includes("descu") || cat.includes("liquid") || cat.includes("sale") || cat.includes("porcent")) {
-    return <Percent className="h-5 w-5" />;
-  }
 
-  return <Box className="h-5 w-5" />;
+  return (
+    <Suspense fallback={<Box className="h-5 w-5" />}>
+      <ExtraCategoryIcon name={categoryOrIcon} />
+    </Suspense>
+  );
 };
 
 export const getCategoryDisplayName = (cat: string) => {
   if (cat === "Artículos electrónicos") return "Electrónica";
   return cat;
-};
-
-export const SUBCATEGORIES_MAP: Record<string, { id: string; name: string }[]> = {
-  "Ropa": [
-    { id: "all", name: "Ver todo Ropa" },
-    { id: "hombre", name: "Hombre" },
-    { id: "mujer", name: "Mujer" },
-    { id: "invierno", name: "Invierno" }
-  ],
-  "Artículos electrónicos": [
-    { id: "all", name: "Ver todo Electrónica" },
-    { id: "celulares", name: "Celulares" },
-    { id: "audio", name: "Audio" },
-    { id: "pc", name: "PC y accesorios" }
-  ],
-  "Accesorios": [
-    { id: "all", name: "Ver todo Accesorios" },
-    { id: "mochilas", name: "Mochilas" },
-    { id: "relojes", name: "Relojes" },
-    { id: "fundas", name: "Fundas" }
-  ],
-  "Hogar": [
-    { id: "all", name: "Ver todo Hogar" },
-    { id: "decoracion", name: "Decoración" },
-    { id: "cocina", name: "Cocina" },
-    { id: "organizacion", name: "Organización" }
-  ]
-};
-
-export const SUBCATEGORY_KEYWORDS: Record<string, string[]> = {
-  hombre: ["hombre", "men", "masculino", "camisa hombre", "pantalón hombre", "chaqueta hombre"],
-  mujer: ["mujer", "women", "femenino", "vestido", "blusa", "falda", "cartera mujer"],
-  invierno: ["invierno", "winter", "abrigo", "jacket", "chaqueta", "bomber", "buzo", "sudadera", "capucha", "suéter", "sueter", "saco", "lana", "guantes", "bufanda"],
-  celulares: ["celular", "teléfono", "telefono", "phone", "iphone", "samsung", "cargador", "funda celular", "xiaomi", "motorola"],
-  audio: ["audio", "parlante", "audífono", "audifono", "auricular", "headphones", "bluetooth", "sonido", "sonar", "micrófono", "microfono"],
-  pc: ["teclado", "mouse", "monitor", "pantalla", "computadora", "pc", "gamer", "usb", "cable", "organizador cables", "disco duro", "memoria", "portatil", "laptop"],
-  mochilas: ["mochila", "bolso", "cartera", "morral", "maletín", "viaje", "organizador"],
-  relojes: ["reloj", "smartwatch", "reloj inteligente", "cronógrafo", "cronografo", "pulsera watch"],
-  fundas: ["funda", "estuche", "case", "protector", "cubierta"],
-  decoracion: ["vela", "cuadro", "lámpara", "lampara", "adorno", "plant", "espejo", "alfombra", "deco", "decoración", "decoracion"],
-  cocina: ["cocina", "taza", "plato", "vaso", "cubiertos", "artículos cocina", "cafetera", "tetera", "organizador cocina", "ollas", "sarten"],
-  organizacion: ["estante", "caja", "reloj pared", "perchero", "organiz", "cajón", "cajon", "almacenamiento", "percheros"]
 };
 
 function resolveComponentStock(
