@@ -1,10 +1,10 @@
-import { lazy, Suspense, type FormEvent } from "react";
+import { lazy, Suspense, useEffect, useState, type FormEvent } from "react";
 import { AlertCircle, AlertTriangle, ArrowLeftRight, ArrowRight, Box, Check, CheckCircle2, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, Clock, Copy, Cpu, CreditCard, Database, DollarSign, Edit, Edit3, ExternalLink, Eye, EyeOff, Facebook, FileText, Flame, FolderOpen, Gift, Globe, Grid, GripVertical, History, Image, Info, Layout, List, Loader2, Lock, Mail, MapPin, Maximize2, Menu, MessageCircle, Minimize2, Minus, Package, Palette, Percent, Phone, Plus, Printer, Receipt, RefreshCw, RotateCcw, Ruler, Save, Scale, Search, Send, Shield, ShieldCheck, ShoppingBag as CartIcon, ShoppingCart, Sliders, Smartphone, Sparkles, Star, Sun, Tag, Target, Trash2, TrendingDown, TrendingUp, Truck, Type, Upload, X } from "lucide-react";
 import { ICON_LABELS, THEME_PRESETS, generateSlug, getCategoryIcon, getProductSizeChartData, normalizeText } from "../utils/shopLogic.tsx";
 import { AnimatePresence, motion } from "motion/react";
 import CommaSeparatedInput from "../components/CommaSeparatedInput";
 import { createPortal } from "react-dom";
-import { AdminTask, Category, Coupon, Product, ProductVariant, Shipping, ShippingOrigin, SiteSettings, StockAdjustment, StockTransfer, Subcategory, is3DProduct } from "../types";
+import { AdminTask, Category, Coupon, Product, ProductVariant, Shipping, ShippingOrigin, SiteSettings, StockAdjustment, StockTransfer, Subcategory, getVariantGalleryImages, is3DProduct, withNormalizedVariantGallery } from "../types";
 import { validateGtin } from "../utils/googleSeo";
 
 interface StockReasonOption {
@@ -131,6 +131,7 @@ const DashboardTraceability = lazy(() => import("./DashboardTraceability").then(
 const ImageGalleryEditor = lazy(() => import("./ImageGalleryEditor"));
 const CloudinaryExplorer = lazy(() => import("./CloudinaryExplorer"));
 const VariantImagePicker = lazy(() => import("./VariantImagePicker"));
+const VariantGalleryManager = lazy(() => import("./VariantGalleryManager"));
 const ComboComponentsBuilder = lazy(() => import("./ComboComponentsBuilder"));
 
 export interface AdminConsoleProps {
@@ -419,6 +420,13 @@ export default function AdminConsole({ ctx }: AdminConsoleProps) {
     uploadingSlideIdx,
     usernameInput,
   } = ctx;
+
+  const [expandedNewVariantIdx, setExpandedNewVariantIdx] = useState<number | null>(null);
+  const [expandedEditVariantIdx, setExpandedEditVariantIdx] = useState<number | null>(null);
+
+  useEffect(() => {
+    setExpandedEditVariantIdx(null);
+  }, [editingProduct?.id]);
 
   const handlePrintTransferReceipt = async (group: any) => {
     const printWindow = window.open("", "_blank", "width=850,height=950");
@@ -6238,7 +6246,9 @@ export default function AdminConsole({ ctx }: AdminConsoleProps) {
                                     stockPinamar: 0,
                                     stockMontevideo: 0,
                                     stock: 0,
-                                    priceDelta: 0
+                                    priceDelta: 0,
+                                    imageUrl: "",
+                                    imagenes: []
                                   });
                                 }
                               }
@@ -6351,7 +6361,9 @@ export default function AdminConsole({ ctx }: AdminConsoleProps) {
                                   stockPinamar: stkPin,
                                   stockMontevideo: 0,
                                   stock: stkPin,
-                                  priceDelta: 0
+                                  priceDelta: 0,
+                                  imageUrl: "",
+                                  imagenes: []
                                 };
                                 const updated = [...current, newV];
                                 setNewProduct(updateProductCalculations({
@@ -6380,13 +6392,16 @@ export default function AdminConsole({ ctx }: AdminConsoleProps) {
                                 <th className="p-2">Stock Pinamar</th>
                                 <th className="p-2">Total</th>
                                 <th className="p-2">Precio Diferente (Opcional)</th>
-                                <th className="p-2">Foto URL (Opcional)</th>
+                                <th className="p-2">Galería Independiente</th>
                                 <th className="p-2 text-right">Acciones</th>
                               </tr>
                             </thead>
                             <tbody>
-                              {(newProduct.variants || []).map((v, i) => (
-                                <tr key={i} className="border-b border-slate-100 dark:border-zinc-900/50 hover:bg-slate-50/50 dark:hover:bg-zinc-900/30 text-slate-700 dark:text-zinc-300">
+                              {(newProduct.variants || []).map((v, i) => {
+                                const varImgs = getVariantGalleryImages(v);
+                                const isExpanded = expandedNewVariantIdx === i;
+                                return (
+                                <tr key={i} className={`border-b border-slate-100 dark:border-zinc-900/50 hover:bg-slate-50/50 dark:hover:bg-zinc-900/30 text-slate-700 dark:text-zinc-300 ${isExpanded ? "bg-[#D4A55A]/10" : ""}`}>
                                   <td className="p-2 font-mono font-bold text-indigo-500 dark:text-indigo-400">{v.size}</td>
                                   <td className="p-2 flex items-center gap-2">
                                     <span className="w-3.5 h-3.5 rounded-full border border-zinc-300 dark:border-zinc-800 shadow-sm" style={{ backgroundColor: v.colorCode || '#666' }}></span>
@@ -6449,19 +6464,34 @@ export default function AdminConsole({ ctx }: AdminConsoleProps) {
                                     </div>
                                   </td>
                                   <td className="p-2">
-                                    <VariantImagePicker
-                                      galleryImages={[newProduct.imageUrl, ...(newProduct.imagenes || [])].filter(Boolean)}
-                                      selectedUrl={v.imageUrl || ""}
-                                      onChange={(url) => {
-                                        const nextArr = JSON.parse(JSON.stringify(newProduct.variants || []));
-                                        nextArr[i].imageUrl = url;
-                                        setNewProduct({
-                                          ...newProduct,
-                                          variants: nextArr
-                                        });
-                                      }}
-                                      showToast={showToast}
-                                    />
+                                    <div className="flex items-center gap-2">
+                                      {varImgs.length > 0 && (
+                                        <div className="flex -space-x-1.5 shrink-0">
+                                          {varImgs.slice(0, 3).map((thumb, tIdx) => (
+                                            <img
+                                              key={tIdx}
+                                              src={thumb}
+                                              alt={`${v.color} #${tIdx + 1}`}
+                                              className="w-7 h-7 rounded-md object-cover border border-zinc-700 bg-zinc-900"
+                                              referrerPolicy="no-referrer"
+                                            />
+                                          ))}
+                                        </div>
+                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={() => setExpandedNewVariantIdx(isExpanded ? null : i)}
+                                        className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider border transition-all cursor-pointer whitespace-nowrap ${
+                                          isExpanded
+                                            ? "bg-[#D4A55A] text-[#050B1A] border-[#D4A55A]"
+                                            : varImgs.length > 0
+                                            ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/25"
+                                            : "bg-zinc-800 text-zinc-200 border-zinc-700 hover:border-[#D4A55A]"
+                                        }`}
+                                      >
+                                        {isExpanded ? "Ocultar" : `Galería (${varImgs.length})`}
+                                      </button>
+                                    </div>
                                   </td>
                                   <td className="p-2 text-right">
                                     <button
@@ -6473,6 +6503,10 @@ export default function AdminConsole({ ctx }: AdminConsoleProps) {
                                           variants: nextVariants,
                                           stock: nextVariants.reduce((sum, item) => sum + item.stock, 0)
                                         });
+                                        if (expandedNewVariantIdx === i) setExpandedNewVariantIdx(null);
+                                        else if (expandedNewVariantIdx !== null && expandedNewVariantIdx > i) {
+                                          setExpandedNewVariantIdx(expandedNewVariantIdx - 1);
+                                        }
                                       }}
                                       className="text-red-500 hover:text-red-600 font-bold transition-all cursor-pointer"
                                     >
@@ -6480,13 +6514,114 @@ export default function AdminConsole({ ctx }: AdminConsoleProps) {
                                     </button>
                                   </td>
                                 </tr>
-                              ))}
+                                );
+                              })}
                             </tbody>
                           </table>
                         </div>
                       ) : (
                         <div className="p-3 text-center text-zinc-500 text-[11px] bg-slate-100/30 dark:bg-zinc-950 rounded-lg border border-dashed border-slate-200 dark:border-zinc-800">
                            Sin combinaciones registradas. Se usará el stock físico general definido arriba. Puedes autogenerarlas o añadirlas manualmente.
+                        </div>
+                      )}
+
+                      {(newProduct.variants || []).length > 0 && (
+                        <div className="space-y-3 pt-2 border-t border-zinc-800/80">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <h5 className="text-[11px] font-black text-[#D4A55A] uppercase tracking-wider">
+                                Galerías Independientes por Variante
+                              </h5>
+                              <p className="text-[10px] text-zinc-400">
+                                Seleccioná una variante para cargar, ordenar o eliminar sus propias fotos sin mezclar colores.
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {(newProduct.variants || []).map((v, idx) => {
+                                const count = getVariantGalleryImages(v).length;
+                                const active = expandedNewVariantIdx === idx;
+                                return (
+                                  <button
+                                    key={`${v.color}-${v.size}-${idx}`}
+                                    type="button"
+                                    onClick={() => setExpandedNewVariantIdx(active ? null : idx)}
+                                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border flex items-center gap-1.5 cursor-pointer transition-all ${
+                                      active
+                                        ? "bg-[#D4A55A] text-[#050B1A] border-[#D4A55A]"
+                                        : "bg-[#050B1A] text-zinc-300 border-zinc-700 hover:border-[#D4A55A]/60"
+                                    }`}
+                                  >
+                                    <span
+                                      className="w-2.5 h-2.5 rounded-full border border-white/25"
+                                      style={{ backgroundColor: v.colorCode || "#6b7280" }}
+                                    />
+                                    <span>{v.color} · {v.size}</span>
+                                    <span className={`font-mono ${active ? "text-[#050B1A]" : "text-[#E6BF76]"}`}>({count})</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {expandedNewVariantIdx !== null && (newProduct.variants || [])[expandedNewVariantIdx] && (
+                            <Suspense fallback={<div className="p-4 text-xs text-zinc-400">Cargando gestor de galería...</div>}>
+                              <VariantGalleryManager
+                                variant={(newProduct.variants || [])[expandedNewVariantIdx]}
+                                variantIndex={expandedNewVariantIdx}
+                                allVariants={newProduct.variants || []}
+                                onUpdateImages={(updatedImages) => {
+                                  const targetIdx = expandedNewVariantIdx;
+                                  setNewProduct((prev) => {
+                                    const nextArr = [...(prev.variants || [])];
+                                    if (!nextArr[targetIdx]) return prev;
+                                    nextArr[targetIdx] = withNormalizedVariantGallery({
+                                      ...nextArr[targetIdx],
+                                      imagenes: updatedImages,
+                                      imageUrl: updatedImages[0] || ""
+                                    });
+                                    return { ...prev, variants: nextArr };
+                                  });
+                                }}
+                                onCopyToSameColorSizes={(colorName, imgs) => {
+                                  const cleanColor = colorName.trim().toLowerCase();
+                                  setNewProduct((prev) => ({
+                                    ...prev,
+                                    variants: (prev.variants || []).map((item) =>
+                                      (item.color || "").trim().toLowerCase() === cleanColor
+                                        ? withNormalizedVariantGallery({
+                                            ...item,
+                                            imagenes: [...imgs],
+                                            imageUrl: imgs[0] || ""
+                                          })
+                                        : item
+                                    )
+                                  }));
+                                  showAdminToast(`Galería aplicada a todos los talles de ${colorName}.`, "success");
+                                }}
+                                onOpenCloudinarySelector={() => {
+                                  const targetIdx = expandedNewVariantIdx;
+                                  setCloudinarySelectorConfig({
+                                    isOpen: true,
+                                    onSelect: (url) => {
+                                      setNewProduct((prev) => {
+                                        const nextArr = [...(prev.variants || [])];
+                                        if (!nextArr[targetIdx]) return prev;
+                                        const existing = getVariantGalleryImages(nextArr[targetIdx]);
+                                        const merged = existing.includes(url) ? existing : [...existing, url];
+                                        nextArr[targetIdx] = withNormalizedVariantGallery({
+                                          ...nextArr[targetIdx],
+                                          imagenes: merged,
+                                          imageUrl: merged[0] || ""
+                                        });
+                                        return { ...prev, variants: nextArr };
+                                      });
+                                    }
+                                  });
+                                }}
+                                showToast={showToast}
+                              />
+                            </Suspense>
+                          )}
                         </div>
                       )}
                     </div>
@@ -8126,7 +8261,9 @@ export default function AdminConsole({ ctx }: AdminConsoleProps) {
                                     stockPinamar: 0,
                                     stockMontevideo: 0,
                                     stock: 0,
-                                    priceDelta: 0
+                                    priceDelta: 0,
+                                    imageUrl: "",
+                                    imagenes: []
                                   });
                                 }
                               }
@@ -8258,7 +8395,9 @@ export default function AdminConsole({ ctx }: AdminConsoleProps) {
                                   stockPinamar: stkPin,
                                   stockMontevideo: stkMon,
                                   stock: stkPin + stkMon,
-                                  priceDelta: 0
+                                  priceDelta: 0,
+                                  imageUrl: "",
+                                  imagenes: []
                                 };
                                 const updated = [...current, newV];
                                 setEditingProduct(updateProductCalculations({
@@ -8287,13 +8426,16 @@ export default function AdminConsole({ ctx }: AdminConsoleProps) {
                                 <th className="p-3">Stock MVD</th>
                                 <th className="p-3">Total</th>
                                 <th className="p-3">Precio Específico (Opcional)</th>
-                                <th className="p-3">Foto (Opcional)</th>
+                                <th className="p-3">Galería Independiente</th>
                                 <th className="p-3 text-right">Acciones</th>
                               </tr>
                             </thead>
                             <tbody>
-                              {(editingProduct.variants || []).map((v, i) => (
-                                <tr key={i} className="border-b border-zinc-900/50 hover:bg-[#D4A55A]/5 text-zinc-300 transition-all duration-150">
+                              {(editingProduct.variants || []).map((v, i) => {
+                                const varImgs = getVariantGalleryImages(v);
+                                const isExpanded = expandedEditVariantIdx === i;
+                                return (
+                                <tr key={i} className={`border-b border-zinc-900/50 hover:bg-[#D4A55A]/5 text-zinc-300 transition-all duration-150 ${isExpanded ? "bg-[#D4A55A]/10" : ""}`}>
                                   <td className="p-3 font-mono font-black text-[#D4A55A]">{v.size}</td>
                                   <td className="p-3 flex items-center gap-2 font-bold">
                                     <span className="w-3.5 h-3.5 rounded-full border border-white/10 shadow-sm shrink-0" style={{ backgroundColor: v.colorCode || '#666' }}></span>
@@ -8374,19 +8516,34 @@ export default function AdminConsole({ ctx }: AdminConsoleProps) {
                                     </div>
                                   </td>
                                   <td className="p-3">
-                                    <VariantImagePicker
-                                      galleryImages={[editingProduct.imageUrl, ...(editingProduct.imagenes || [])].filter(Boolean)}
-                                      selectedUrl={v.imageUrl || ""}
-                                      onChange={(url) => {
-                                        const nextArr = JSON.parse(JSON.stringify(editingProduct.variants || []));
-                                        nextArr[i].imageUrl = url;
-                                        setEditingProduct({
-                                          ...editingProduct,
-                                          variants: nextArr
-                                        });
-                                      }}
-                                      showToast={showToast}
-                                    />
+                                    <div className="flex items-center gap-2">
+                                      {varImgs.length > 0 && (
+                                        <div className="flex -space-x-1.5 shrink-0">
+                                          {varImgs.slice(0, 3).map((thumb, tIdx) => (
+                                            <img
+                                              key={tIdx}
+                                              src={thumb}
+                                              alt={`${v.color} #${tIdx + 1}`}
+                                              className="w-7 h-7 rounded-md object-cover border border-zinc-700 bg-zinc-900"
+                                              referrerPolicy="no-referrer"
+                                            />
+                                          ))}
+                                        </div>
+                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={() => setExpandedEditVariantIdx(isExpanded ? null : i)}
+                                        className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider border transition-all cursor-pointer whitespace-nowrap ${
+                                          isExpanded
+                                            ? "bg-[#D4A55A] text-[#050B1A] border-[#D4A55A]"
+                                            : varImgs.length > 0
+                                            ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/25"
+                                            : "bg-zinc-800 text-zinc-200 border-zinc-700 hover:border-[#D4A55A]"
+                                        }`}
+                                      >
+                                        {isExpanded ? "Ocultar" : `Galería (${varImgs.length})`}
+                                      </button>
+                                    </div>
                                   </td>
                                   <td className="p-3 text-right">
                                     <button
@@ -8398,6 +8555,10 @@ export default function AdminConsole({ ctx }: AdminConsoleProps) {
                                           variants: nextVariants,
                                           stock: nextVariants.reduce((sum, item) => sum + item.stock, 0)
                                         });
+                                        if (expandedEditVariantIdx === i) setExpandedEditVariantIdx(null);
+                                        else if (expandedEditVariantIdx !== null && expandedEditVariantIdx > i) {
+                                          setExpandedEditVariantIdx(expandedEditVariantIdx - 1);
+                                        }
                                       }}
                                       className="text-red-400 hover:text-red-500 font-black text-[10px] uppercase tracking-wider transition-all cursor-pointer hover:underline"
                                     >
@@ -8405,13 +8566,119 @@ export default function AdminConsole({ ctx }: AdminConsoleProps) {
                                     </button>
                                   </td>
                                 </tr>
-                              ))}
+                                );
+                              })}
                             </tbody>
                           </table>
                         </div>
                       ) : (
                         <div className="p-5 text-center text-zinc-400 text-xs bg-zinc-950/40 rounded-2xl border border-dashed border-zinc-800 leading-relaxed font-medium">
                           Sin combinaciones registradas. Se usará el stock físico general definido arriba. Puedes <span className="text-[#D4A55A] font-bold">autogenerarlas</span> o añadirlas manualmente usando el panel superior.
+                        </div>
+                      )}
+
+                      {(editingProduct.variants || []).length > 0 && (
+                        <div className="space-y-3 pt-3 border-t border-zinc-800/80">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <h5 className="text-[11px] font-black text-[#D4A55A] uppercase tracking-wider">
+                                Galerías Independientes por Variante
+                              </h5>
+                              <p className="text-[10px] text-zinc-400">
+                                Administrá las fotos exclusivas de cada variante. Al cambiar de variante en la tienda se mostrarán solo sus propias imágenes.
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {(editingProduct.variants || []).map((v, idx) => {
+                                const count = getVariantGalleryImages(v).length;
+                                const active = expandedEditVariantIdx === idx;
+                                return (
+                                  <button
+                                    key={`${v.color}-${v.size}-${idx}`}
+                                    type="button"
+                                    onClick={() => setExpandedEditVariantIdx(active ? null : idx)}
+                                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border flex items-center gap-1.5 cursor-pointer transition-all ${
+                                      active
+                                        ? "bg-[#D4A55A] text-[#050B1A] border-[#D4A55A]"
+                                        : "bg-[#050B1A] text-zinc-300 border-zinc-700 hover:border-[#D4A55A]/60"
+                                    }`}
+                                  >
+                                    <span
+                                      className="w-2.5 h-2.5 rounded-full border border-white/25"
+                                      style={{ backgroundColor: v.colorCode || "#6b7280" }}
+                                    />
+                                    <span>{v.color} · {v.size}</span>
+                                    <span className={`font-mono ${active ? "text-[#050B1A]" : "text-[#E6BF76]"}`}>({count})</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {expandedEditVariantIdx !== null && (editingProduct.variants || [])[expandedEditVariantIdx] && (
+                            <Suspense fallback={<div className="p-4 text-xs text-zinc-400">Cargando gestor de galería...</div>}>
+                              <VariantGalleryManager
+                                variant={(editingProduct.variants || [])[expandedEditVariantIdx]}
+                                variantIndex={expandedEditVariantIdx}
+                                allVariants={editingProduct.variants || []}
+                                onUpdateImages={(updatedImages) => {
+                                  const targetIdx = expandedEditVariantIdx;
+                                  setEditingProduct((prev: Product | null) => {
+                                    if (!prev) return prev;
+                                    const nextArr = [...(prev.variants || [])];
+                                    if (!nextArr[targetIdx]) return prev;
+                                    nextArr[targetIdx] = withNormalizedVariantGallery({
+                                      ...nextArr[targetIdx],
+                                      imagenes: updatedImages,
+                                      imageUrl: updatedImages[0] || ""
+                                    });
+                                    return { ...prev, variants: nextArr };
+                                  });
+                                }}
+                                onCopyToSameColorSizes={(colorName, imgs) => {
+                                  const cleanColor = colorName.trim().toLowerCase();
+                                  setEditingProduct((prev: Product | null) => {
+                                    if (!prev) return prev;
+                                    return {
+                                      ...prev,
+                                      variants: (prev.variants || []).map((item) =>
+                                        (item.color || "").trim().toLowerCase() === cleanColor
+                                          ? withNormalizedVariantGallery({
+                                              ...item,
+                                              imagenes: [...imgs],
+                                              imageUrl: imgs[0] || ""
+                                            })
+                                          : item
+                                      )
+                                    };
+                                  });
+                                  showAdminToast(`Galería aplicada a todos los talles de ${colorName}.`, "success");
+                                }}
+                                onOpenCloudinarySelector={() => {
+                                  const targetIdx = expandedEditVariantIdx;
+                                  setCloudinarySelectorConfig({
+                                    isOpen: true,
+                                    onSelect: (url) => {
+                                      setEditingProduct((prev: Product | null) => {
+                                        if (!prev) return prev;
+                                        const nextArr = [...(prev.variants || [])];
+                                        if (!nextArr[targetIdx]) return prev;
+                                        const existing = getVariantGalleryImages(nextArr[targetIdx]);
+                                        const merged = existing.includes(url) ? existing : [...existing, url];
+                                        nextArr[targetIdx] = withNormalizedVariantGallery({
+                                          ...nextArr[targetIdx],
+                                          imagenes: merged,
+                                          imageUrl: merged[0] || ""
+                                        });
+                                        return { ...prev, variants: nextArr };
+                                      });
+                                    }
+                                  });
+                                }}
+                                showToast={showToast}
+                              />
+                            </Suspense>
+                          )}
                         </div>
                       )}
                     </div>

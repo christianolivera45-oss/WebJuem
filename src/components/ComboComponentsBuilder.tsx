@@ -502,6 +502,7 @@ export default function ComboComponentsBuilder({
                                     if (onVariantsChange) {
                                       const nextArr = JSON.parse(JSON.stringify(variants));
                                       nextArr[i].imageUrl = url;
+                                      nextArr[i].imagenes = url ? [url] : [];
                                       onVariantsChange(nextArr);
                                     }
                                   }}

@@ -6,7 +6,8 @@ export interface ProductVariant {
   colorCode?: string; // e.g. '#2563eb'
   priceDelta?: number;
   stock: number;
-  imageUrl?: string; // Image associated with this color/variant
+  imageUrl?: string; // Primary image associated with this color/variant
+  imagenes?: string[]; // Independent ordered gallery for this variant (index 0 = primary)
   price?: number; // Custom override price
   stockPinamar?: number;
   stockMontevideo?: number;
@@ -40,6 +41,7 @@ export interface Product {
   stock: number;
   featured: boolean;
   createdAt: string;
+  updatedAt?: string;
   sizes?: string[];
   colors?: string[];
   active?: boolean; // Logical soft delete
@@ -402,6 +404,8 @@ export interface ShopState {
   shippingOrigins?: ShippingOrigin[];
   stockTransfers?: StockTransfer[];
   stockAdjustments?: StockAdjustment[];
+  isAdminScope?: boolean;
+  stateVersion?: string;
 }
 
 export interface CartItem {
@@ -544,6 +548,88 @@ export function isGenericColor(col?: string): boolean {
     "ninguno", "no aplica", "sin color", "unico color", "estándar", "único",
     "sin colores", "varios", "surtido", "color general"
   ].includes(norm);
+}
+
+/**
+ * Defined neutral fallback SVG image used when a selected variant in a multi-variant
+ * product has no images of its own — prevents leaking or mixing photos from other colors.
+ */
+export const VARIANT_EMPTY_GALLERY_PLACEHOLDER =
+  "data:image/svg+xml;utf8," +
+  encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="800" viewBox="0 0 800 800">
+      <defs>
+        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#0b1730"/>
+          <stop offset="100%" stop-color="#050b1a"/>
+        </linearGradient>
+      </defs>
+      <rect width="800" height="800" fill="url(#bg)"/>
+      <rect x="44" y="44" width="712" height="712" rx="36" fill="none" stroke="#d4a55a" stroke-opacity="0.28" stroke-width="2" stroke-dasharray="10 10"/>
+      <g transform="translate(400,340)" fill="none" stroke="#d4a55a" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" opacity="0.75">
+        <rect x="-78" y="-58" width="156" height="116" rx="18"/>
+        <circle cx="-30" cy="-16" r="14"/>
+        <path d="M-78 30 L-22 -14 L18 18 L44 -4 L78 30"/>
+      </g>
+      <text x="400" y="465" text-anchor="middle" fill="#f4ead7" font-family="system-ui, -apple-system, sans-serif" font-size="26" font-weight="700">
+        Variante sin imagen asignada
+      </text>
+      <text x="400" y="505" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="18">
+        Esta variante no tiene fotografías cargadas todavía
+      </text>
+    </svg>`
+  );
+
+/**
+ * Returns the deduplicated ordered gallery of images belonging strictly to one variant.
+ * Falls back to legacy variant.imageUrl when variant.imagenes is empty/absent.
+ */
+export function getVariantGalleryImages(variant?: ProductVariant | null): string[] {
+  if (!variant) return [];
+  const list: string[] = [];
+  if (Array.isArray(variant.imagenes)) {
+    for (const raw of variant.imagenes) {
+      const u = typeof raw === "string" ? raw.trim() : "";
+      if (u && !list.includes(u)) {
+        list.push(u);
+      }
+    }
+  }
+  const primary = typeof variant.imageUrl === "string" ? variant.imageUrl.trim() : "";
+  if (primary && !list.includes(primary) && list.length === 0) {
+    list.push(primary);
+  }
+  return list;
+}
+
+/**
+ * Normalizes a variant object so imageUrl (index 0) and imagenes (ordered gallery) stay in sync.
+ */
+export function withNormalizedVariantGallery(variant: ProductVariant, nextImages: string[]): ProductVariant {
+  const cleaned = Array.from(
+    new Set(
+      (nextImages || [])
+        .map((u) => (typeof u === "string" ? u.trim() : ""))
+        .filter(Boolean)
+    )
+  );
+  return {
+    ...variant,
+    imagenes: cleaned,
+    imageUrl: cleaned[0] || ""
+  };
+}
+
+/**
+ * True when a product has at least one non-generic variant with its own gallery images,
+ * indicating that variant galleries are managed independently per variant/color.
+ */
+export function productUsesVariantGalleries(product?: Product | null): boolean {
+  if (!product || !Array.isArray(product.variants) || product.variants.length === 0) return false;
+  return product.variants.some((v) => {
+    if (isGenericColor(v.color) && isGenericSize(v.size)) return false;
+    return getVariantGalleryImages(v).length > 0;
+  });
 }
 
 /**

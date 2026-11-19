@@ -2,7 +2,19 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { createPortal } from "react-dom";
 import { X, ShoppingCart, MessageSquare, ShieldCheck, Truck, RefreshCw, ChevronLeft, ChevronRight, AlertCircle, Share2, Maximize2, Minimize2, ZoomIn, ZoomOut, Scan, Cpu, Wrench, Clock, Calendar, Home, Ruler, Palette, Sun, MapPin, Package, CheckCircle2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { Product, SiteSettings, is3DProduct, isGenericSize, isGenericColor, getProductAvailableStock, getVariantAvailableStock, isProductInStock } from "../types";
+import {
+  Product,
+  SiteSettings,
+  is3DProduct,
+  isGenericSize,
+  isGenericColor,
+  getProductAvailableStock,
+  getVariantAvailableStock,
+  isProductInStock,
+  getVariantGalleryImages,
+  productUsesVariantGalleries,
+  VARIANT_EMPTY_GALLERY_PLACEHOLDER
+} from "../types";
 import ProductCard from "./ProductCard";
 import ImageWatermark from "./ImageWatermark";
 import { optimizeImageUrl, buildImageSrcSet, buildAvifSrcSet, IMAGE_SIZES } from "../utils/imageOptimizer";
@@ -546,36 +558,86 @@ export default function ProductDetails({
     setActiveImgIndex(0);
   }, [product.id]);
 
-  // Dynamic Image carousels:
-  // Strictly respects the photos added by the store manager (product.imageUrl and product.imagenes).
-  // Only incorporates variant images if they belong to a real, distinct color/size variant (not generic items like "General/Único")
-  // and have not failed to load.
-  const allImages = useMemo(() => {
-    const rawList = [product.imageUrl, ...(product.imagenes || [])];
-    const base = rawList.filter((img): img is string => Boolean(img && typeof img === "string" && img.trim().length > 0 && !failedImages.has(img)));
-    
-    // Add variant images ONLY if the product has multiple genuine variants with distinct colors/sizes
-    const hasMultipleVariants = (variants || []).length > 1;
-    if (hasMultipleVariants) {
-      const distinctVariantImgs = (variants || [])
-        .filter(v => v.imageUrl && !isGenericColor(v.color) && !isGenericSize(v.size) && !failedImages.has(v.imageUrl))
-        .map(v => v.imageUrl as string);
+  // Determine whether this product manages independent per-variant galleries
+  const usesVariantGalleries = useMemo(() => productUsesVariantGalleries(product), [product]);
 
-      distinctVariantImgs.forEach(img => {
-        if (!base.includes(img)) {
-          base.push(img);
+  // Dynamic Image carousels strictly isolated per selected variant/color when variant galleries are active
+  const { allImages, isEmptyVariantFallback } = useMemo(() => {
+    const cleanValid = (arr: Array<string | undefined | null>) =>
+      Array.from(
+        new Set(
+          arr
+            .filter((img): img is string => Boolean(img && typeof img === "string" && img.trim().length > 0 && !failedImages.has(img.trim())))
+            .map((img) => img.trim())
+        )
+      );
+
+    if (usesVariantGalleries) {
+      const lowerColor = selectedColor ? selectedColor.toLowerCase().trim() : "";
+      const lowerSize = selectedSize ? selectedSize.toLowerCase().trim() : "";
+
+      if (lowerColor) {
+        // 1. Exact (size + color) match if size is selected
+        const exactVar = lowerSize
+          ? (variants || []).find(
+              (v) =>
+                (v.color || "").toLowerCase().trim() === lowerColor &&
+                (v.size || "").toLowerCase().trim() === lowerSize
+            )
+          : undefined;
+        let variantImgs = exactVar ? getVariantGalleryImages(exactVar) : [];
+
+        // 2. If exact size row had no photos or only color was selected, look strictly within the SAME color
+        if (variantImgs.length === 0) {
+          const sameColorVars = (variants || []).filter(
+            (v) => (v.color || "").toLowerCase().trim() === lowerColor
+          );
+          const mergedSameColor: string[] = [];
+          for (const sv of sameColorVars) {
+            for (const u of getVariantGalleryImages(sv)) {
+              if (!mergedSameColor.includes(u)) mergedSameColor.push(u);
+            }
+          }
+          variantImgs = mergedSameColor;
         }
-      });
+
+        const validVarImgs = cleanValid(variantImgs);
+        if (validVarImgs.length > 0) {
+          return { allImages: validVarImgs, isEmptyVariantFallback: false };
+        }
+        // Variant has no own images -> defined alternative image, never mixing other colors
+        return { allImages: [VARIANT_EMPTY_GALLERY_PLACEHOLDER], isEmptyVariantFallback: true };
+      }
+
+      if (!shouldShowColors && lowerSize) {
+        const sizeVar = (variants || []).find(
+          (v) => (v.size || "").toLowerCase().trim() === lowerSize
+        );
+        const validSizeImgs = cleanValid(sizeVar ? getVariantGalleryImages(sizeVar) : []);
+        if (validSizeImgs.length > 0) {
+          return { allImages: validSizeImgs, isEmptyVariantFallback: false };
+        }
+        return { allImages: [VARIANT_EMPTY_GALLERY_PLACEHOLDER], isEmptyVariantFallback: true };
+      }
+
+      // Multi-color product before customer selects any color: show only product cover image
+      const coverOnly = cleanValid([product.imageUrl]);
+      if (coverOnly.length > 0) {
+        return { allImages: coverOnly, isEmptyVariantFallback: false };
+      }
+      return { allImages: [VARIANT_EMPTY_GALLERY_PLACEHOLDER], isEmptyVariantFallback: true };
     }
 
+    // Shared gallery mode (products without variants, 1 generic variant, or shared gallery without per-variant photos)
+    const base = cleanValid([product.imageUrl, ...(product.imagenes || [])]);
     if (base.length === 0) {
       base.push("https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=1200&q=80");
     }
-    return base;
-  }, [product.imageUrl, product.imagenes, variants, failedImages]);
+    return { allImages: base, isEmptyVariantFallback: false };
+  }, [product.imageUrl, product.imagenes, variants, failedImages, usesVariantGalleries, selectedColor, selectedSize, shouldShowColors]);
 
   const handleImageError = useCallback((failedUrl?: string | null) => {
-    if (!failedUrl) return;
+    if (!failedUrl || failedUrl.startsWith("data:image/svg+xml")) return;
     setFailedImages(prev => {
       const next = new Set(prev);
       next.add(failedUrl);
@@ -585,6 +647,9 @@ export default function ProductDetails({
   }, []);
 
   const [activeImgIndex, setActiveImgIndex] = useState(0);
+  const safeImgIndex = activeImgIndex >= 0 && activeImgIndex < allImages.length ? activeImgIndex : 0;
+  const activeImageUrl = allImages[safeImgIndex] || allImages[0];
+
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [imageBgMode, setImageBgMode] = useState<"default" | "light" | "gold" | "contrast">("default");
   const [imageExposureMode, setImageExposureMode] = useState<"normal" | "boosted">("normal");
@@ -600,10 +665,10 @@ export default function ProductDetails({
       if (e.key === "Escape") {
         setIsLightboxOpen(false);
       } else if (e.key === "ArrowLeft") {
-        setActiveImgIndex((prev) => (prev === 0 ? allImages.length - 1 : prev - 1));
+        setActiveImgIndex((prev) => (prev <= 0 ? allImages.length - 1 : prev - 1));
         setLightboxZoom(1);
       } else if (e.key === "ArrowRight") {
-        setActiveImgIndex((prev) => (prev === allImages.length - 1 ? 0 : prev + 1));
+        setActiveImgIndex((prev) => (prev >= allImages.length - 1 ? 0 : prev + 1));
         setLightboxZoom(1);
       }
     };
@@ -654,22 +719,17 @@ export default function ProductDetails({
     };
   }, []);
 
-  // Automatically update activeImgIndex when selectedColor changes
+  // Reset gallery to image #1 whenever selected variant (color/size) changes
   useEffect(() => {
+    if (usesVariantGalleries) {
+      setActiveImgIndex(0);
+      setLightboxZoom(1);
+      return;
+    }
+    // Legacy shared gallery behavior when no per-variant galleries exist
     if (selectedColor && selectedColor !== autoSwitchedColorRef.current) {
       autoSwitchedColorRef.current = selectedColor;
       const lowerColor = selectedColor.toLowerCase().trim();
-      // Strategy 1: Check if any variant has a specific variant imageUrl
-      const matchedV = (variants || []).find(v => v.color && v.color.toLowerCase().trim() === lowerColor && v.imageUrl);
-      if (matchedV && matchedV.imageUrl) {
-        const idx = allImages.indexOf(matchedV.imageUrl);
-        if (idx !== -1) {
-          setActiveImgIndex(idx);
-          return;
-        }
-      }
-
-      // Strategy 2: Check standard image URLs for a substring containing the color name
       const matchesUrl = allImages.findIndex(img => {
         try {
           const decoded = decodeURIComponent(img).toLowerCase();
@@ -682,15 +742,15 @@ export default function ProductDetails({
         setActiveImgIndex(matchesUrl);
       }
     }
-  }, [selectedColor, product.id, variants, allImages]);
+  }, [selectedColor, selectedSize, product.id, usesVariantGalleries, allImages]);
 
   const handlePrevImg = () => {
-    setActiveImgIndex((prev) => (prev === 0 ? allImages.length - 1 : prev - 1));
+    setActiveImgIndex((prev) => (prev <= 0 ? allImages.length - 1 : prev - 1));
     setLightboxZoom(1);
   };
 
   const handleNextImg = () => {
-    setActiveImgIndex((prev) => (prev === allImages.length - 1 ? 0 : prev + 1));
+    setActiveImgIndex((prev) => (prev >= allImages.length - 1 ? 0 : prev + 1));
     setLightboxZoom(1);
   };
 
@@ -882,14 +942,14 @@ Me gustaría coordinar stock, fabricación y envío.`;
             )}
 
             {/* Subtle soft image ambient glow behind image to gracefully eliminate harsh letterboxing */}
-            {optimizeImageUrlForDetail(allImages[activeImgIndex] || allImages[0], 120, 20) && (
+            {!isEmptyVariantFallback && optimizeImageUrlForDetail(activeImageUrl, 120, 20) && (
               <div className="absolute inset-0 pointer-events-none select-none overflow-hidden opacity-20">
                 <img
-                  src={optimizeImageUrlForDetail(allImages[activeImgIndex] || allImages[0], 120, 20) || null}
+                  src={optimizeImageUrlForDetail(activeImageUrl, 120, 20) || null}
                   alt=""
                   className="w-full h-full object-cover blur-2xl scale-125"
                   referrerPolicy="no-referrer"
-                  onError={() => handleImageError(allImages[activeImgIndex] || allImages[0])}
+                  onError={() => handleImageError(activeImageUrl)}
                 />
               </div>
             )}
@@ -982,7 +1042,7 @@ Me gustaría coordinar stock, fabricación y envío.`;
             >
               <AnimatePresence mode="wait">
                 <motion.div
-                  key={activeImgIndex}
+                  key={`${selectedColor}-${selectedSize}-${safeImgIndex}-${activeImageUrl || ""}`}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
@@ -990,21 +1050,21 @@ Me gustaría coordinar stock, fabricación y envío.`;
                   className="w-full h-full flex items-center justify-center"
                 >
                   <picture className="w-full h-full flex items-center justify-center">
-                    {buildAvifSrcSet(allImages[activeImgIndex] || allImages[0], [400, 600, 800, 1200], "auto") && (
+                    {!isEmptyVariantFallback && buildAvifSrcSet(activeImageUrl, [400, 600, 800, 1200], "auto") && (
                       <source
                         type="image/avif"
-                        srcSet={buildAvifSrcSet(allImages[activeImgIndex] || allImages[0], [400, 600, 800, 1200], "auto")}
+                        srcSet={buildAvifSrcSet(activeImageUrl, [400, 600, 800, 1200], "auto")}
                         sizes={IMAGE_SIZES.detail}
                       />
                     )}
                     <img
-                      src={optimizeImageUrlForDetail(allImages[activeImgIndex] || allImages[0], 800, "auto") || (allImages[0] || undefined)}
-                      srcSet={buildImageSrcSet(allImages[activeImgIndex] || allImages[0], [400, 600, 800, 1200], "auto")}
+                      src={isEmptyVariantFallback ? activeImageUrl : (optimizeImageUrlForDetail(activeImageUrl, 800, "auto") || (allImages[0] || undefined))}
+                      srcSet={isEmptyVariantFallback ? undefined : buildImageSrcSet(activeImageUrl, [400, 600, 800, 1200], "auto")}
                       sizes={IMAGE_SIZES.detail}
                       width="600"
                       height="600"
                       decoding="async"
-                      alt={product.name}
+                      alt={selectedColor ? `${product.name} - ${selectedColor}` : product.name}
                       onLoad={(e) => {
                         const img = e.currentTarget;
                         if (img.naturalWidth && img.naturalHeight) {
@@ -1026,14 +1086,14 @@ Me gustaría coordinar stock, fabricación y envío.`;
                       referrerPolicy="no-referrer"
                       loading="eager"
                       fetchPriority="high"
-                      onError={() => handleImageError(allImages[activeImgIndex] || allImages[0])}
+                      onError={() => handleImageError(activeImageUrl)}
                     />
                   </picture>
                 </motion.div>
               </AnimatePresence>
 
               {/* Anti-download Watermark & Shield */}
-              {settings?.enableImageWatermark !== false && (
+              {!isEmptyVariantFallback && settings?.enableImageWatermark !== false && (
                 <ImageWatermark 
                   text={settings?.watermarkText || "JUEM MVD"} 
                   variant="detail" 
@@ -1041,10 +1101,12 @@ Me gustaría coordinar stock, fabricación y envío.`;
               )}
 
               {/* Floating expand indicator */}
-              <div className="absolute top-2.5 right-2.5 sm:top-3 sm:right-3 bg-black/70 backdrop-blur-md rounded-full p-2 text-white/90 opacity-0 group-hover/main-img:opacity-100 transition-all duration-300 z-10 shadow-lg hover:scale-105 hover:bg-black/90 flex items-center gap-1.5 px-2.5">
-                <Maximize2 className="w-3.5 h-3.5 text-[#E6BF76]" />
-                <span className="text-[10px] font-bold text-white hidden sm:inline">Ampliar</span>
-              </div>
+              {!isEmptyVariantFallback && (
+                <div className="absolute top-2.5 right-2.5 sm:top-3 sm:right-3 bg-black/70 backdrop-blur-md rounded-full p-2 text-white/90 opacity-0 group-hover/main-img:opacity-100 transition-all duration-300 z-10 shadow-lg hover:scale-105 hover:bg-black/90 flex items-center gap-1.5 px-2.5">
+                  <Maximize2 className="w-3.5 h-3.5 text-[#E6BF76]" />
+                  <span className="text-[10px] font-bold text-white hidden sm:inline">Ampliar</span>
+                </div>
+              )}
             </div>
             
 
@@ -1075,7 +1137,7 @@ Me gustaría coordinar stock, fabricación y envío.`;
                     key={idx}
                     onClick={(e) => { e.stopPropagation(); setActiveImgIndex(idx); }}
                     className={`h-1.5 w-1.5 rounded-full transition-all duration-300 ${
-                      activeImgIndex === idx ? "bg-white w-3.5" : "bg-white/40 hover:bg-white/70"
+                      safeImgIndex === idx ? "bg-white w-3.5" : "bg-white/40 hover:bg-white/70"
                     }`}
                   />
                 ))}
@@ -1088,10 +1150,10 @@ Me gustaría coordinar stock, fabricación y envío.`;
             <div className="flex items-center gap-2 sm:gap-2.5 pt-0.5 pb-1 select-none w-full justify-center max-w-full overflow-x-auto no-scrollbar shrink-0">
               {allImages.map((imgUrl, idx) => (
                 <button
-                  key={idx}
+                  key={`${selectedColor}-${idx}-${imgUrl}`}
                   onClick={() => setActiveImgIndex(idx)}
                   className={`relative w-[58px] h-[58px] sm:w-[74px] sm:h-[74px] rounded-xl sm:rounded-2xl overflow-hidden border-2 transition-all duration-300 shrink-0 cursor-pointer ${
-                    activeImgIndex === idx 
+                    safeImgIndex === idx 
                       ? "border-[#D4A55A] scale-[1.04] shadow-md shadow-[#D4A55A]/20 bg-[#0B1730]" 
                       : isThemeDark
                       ? "border-zinc-800 bg-[#0c0c0e]/40 hover:border-zinc-700 opacity-80"
@@ -1517,10 +1579,10 @@ Me gustaría coordinar stock, fabricación y envío.`;
               onClick={() => setIsLightboxOpen(false)}
             >
               {/* Ambient glowing backdrop of the current product photo to eliminate dark empty voids */}
-              {optimizeImageUrlForDetail(allImages[activeImgIndex] || allImages[0], 400, 30) && (
+              {!isEmptyVariantFallback && optimizeImageUrlForDetail(activeImageUrl, 400, 30) && (
                 <div className="absolute inset-0 pointer-events-none select-none overflow-hidden z-0">
                   <img
-                    src={optimizeImageUrlForDetail(allImages[activeImgIndex] || allImages[0], 400, 30) || (allImages[0] || null)}
+                    src={optimizeImageUrlForDetail(activeImageUrl, 400, 30) || (allImages[0] || null)}
                     alt=""
                     className="w-full h-full object-cover blur-3xl opacity-35 scale-125 saturate-150 transition-all duration-500"
                     referrerPolicy="no-referrer"
@@ -1539,7 +1601,7 @@ Me gustaría coordinar stock, fabricación y envío.`;
                   {/* Counter & Product Name */}
                   <div className="flex items-center gap-1.5 bg-black/80 backdrop-blur-xl border border-white/15 px-2.5 py-1 rounded-lg shadow-lg max-w-[60%] sm:max-w-md">
                     <span className="text-[#E6BF76] font-mono text-[10px] sm:text-[11px] font-black bg-amber-500/20 border border-amber-500/40 px-1.5 py-0.5 rounded shrink-0">
-                      {activeImgIndex + 1} / {allImages.length}
+                      {safeImgIndex + 1} / {allImages.length}
                     </span>
                     <span className="text-[11px] sm:text-xs font-bold text-zinc-200 truncate">
                       {product.name}
@@ -1598,8 +1660,8 @@ Me gustaría coordinar stock, fabricación y envío.`;
                 <div className="relative inline-flex items-center justify-center overflow-hidden rounded-xl bg-black/60 border border-white/15 shadow-2xl">
                   <AnimatePresence mode="wait">
                     <motion.img
-                      key={activeImgIndex}
-                      src={optimizeImageUrlForDetail(allImages[activeImgIndex] || allImages[0], 1600, 85) || (allImages[0] || null)}
+                      key={`${selectedColor}-${safeImgIndex}-${activeImageUrl || ""}`}
+                      src={isEmptyVariantFallback ? activeImageUrl : (optimizeImageUrlForDetail(activeImageUrl, 1600, 85) || (allImages[0] || null))}
                       alt={product.name}
                       initial={{ opacity: 0, scale: 0.95 }}
                       animate={{ 
@@ -1618,7 +1680,7 @@ Me gustaría coordinar stock, fabricación y envío.`;
                       className={`select-none rounded-xl transition-all duration-300 max-h-[50vh] sm:max-h-[58vh] max-w-[88vw] sm:max-w-[70vw] w-auto h-auto object-contain origin-center ${lightboxZoom > 1 ? "cursor-zoom-out" : "cursor-zoom-in"}`}
                       referrerPolicy="no-referrer"
                       loading="eager"
-                      onError={() => handleImageError(allImages[activeImgIndex] || allImages[0])}
+                      onError={() => handleImageError(activeImageUrl)}
                     />
                   </AnimatePresence>
 
@@ -1666,7 +1728,7 @@ Me gustaría coordinar stock, fabricación y envío.`;
                             setLightboxZoom(1);
                           }}
                           className={`relative w-8 h-8 sm:w-10 sm:h-10 rounded-lg overflow-hidden border transition-all duration-300 shrink-0 cursor-pointer ${
-                            activeImgIndex === idx 
+                            safeImgIndex === idx 
                               ? "border-[#D4A55A] scale-105 shadow-md bg-[#0B1730]" 
                               : "border-white/10 bg-black/40 hover:border-white/30 opacity-70 hover:opacity-100"
                           }`}
@@ -2184,7 +2246,7 @@ Me gustaría coordinar stock, fabricación y envío.`;
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 min-w-0">
               <img 
-                src={optimizeImageUrlForDetail(allImages[0], 120, 65) || (allImages[0] || null)}
+                src={isEmptyVariantFallback ? allImages[0] : (optimizeImageUrlForDetail(allImages[0], 120, 65) || (allImages[0] || undefined))}
                 alt={product.name}
                 className="w-10 h-10 rounded-lg object-contain bg-[#050B1A]/40 border border-[#D4A55A]/10 p-0.5 shrink-0"
                 referrerPolicy="no-referrer"

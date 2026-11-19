@@ -10,7 +10,9 @@ import {
   StockTransfer,
   StockAdjustment,
   AdminTask,
-  Coupon
+  Coupon,
+  withNormalizedVariantGallery,
+  getVariantGalleryImages
 } from "../types";
 import { DEFAULT_SETTINGS, normalizeText } from "../utils/shopLogic.tsx";
 import { getComboDynamicStocks } from "../utils/storefrontHelpers";
@@ -580,13 +582,15 @@ export default function AdminWorkspace({
 
     let sPinamar = Number(p.stockPinamar || 0);
     let sMontevideo = Number(p.stockMontevideo || 0);
+    const hasVariants = Array.isArray(p.variants) && p.variants.length > 0;
 
-    if (p.variants && p.variants.length > 0) {
+    if (hasVariants && p.variants) {
       sPinamar = p.variants.reduce((sum, v) => sum + Number(v.stockPinamar || 0), 0);
       sMontevideo = p.variants.reduce((sum, v) => sum + Number(v.stockMontevideo || 0), 0);
     }
 
-    const sTotal = sPinamar + sMontevideo;
+    const branchTotal = sPinamar + sMontevideo;
+    const sTotal = hasVariants || branchTotal > 0 ? branchTotal : Number(p.stock || 0);
 
     return {
       ...p,
@@ -606,10 +610,16 @@ export default function AdminWorkspace({
     const precioCompra = p.precioCompra !== undefined ? p.precioCompra : 0;
     const precioCon40 = p.precioCon40 !== undefined ? p.precioCon40 : Number((precioCompra * 1.4).toFixed(2));
     const comisionML = p.comisionML !== undefined ? p.comisionML : 0;
-    const precioVentaML = p.precioVentaML !== undefined ? p.precioVentaML : p.price || 0;
-    const calcWebPriceFromML = p.calcWebPriceFromML === true;
+    const precioVentaML = p.precioVentaML !== undefined ? p.precioVentaML : 0;
+    const calcWebPriceFromML = p.calcWebPriceFromML !== false;
     const precioWeb =
-      p.precioWeb !== undefined ? p.precioWeb : calcWebPriceFromML ? Number((precioVentaML - comisionML).toFixed(2)) : 0;
+      p.precioWeb !== undefined
+        ? p.precioWeb
+        : p.price !== undefined
+        ? p.price
+        : calcWebPriceFromML
+        ? Number((precioVentaML - comisionML).toFixed(2))
+        : 0;
     const comisionMP = p.comisionMP !== undefined ? p.comisionMP : Number((precioWeb * 0.12).toFixed(2));
 
     let descuentoPorcentaje = p.descuentoPorcentaje !== undefined ? p.descuentoPorcentaje : 0;
@@ -636,7 +646,9 @@ export default function AdminWorkspace({
       stockPinamar = preparedVariants.reduce((sum, v) => sum + v.stockPinamar, 0);
       stockMontevideo = preparedVariants.reduce((sum, v) => sum + v.stockMontevideo, 0);
     }
-    const stockTotalActual = stockPinamar + stockMontevideo;
+    const branchTotal = stockPinamar + stockMontevideo;
+    const stockTotalActual =
+      (preparedVariants && preparedVariants.length > 0) || branchTotal > 0 ? branchTotal : Number(p.stock || 0);
 
     return {
       ...p,
@@ -646,6 +658,7 @@ export default function AdminWorkspace({
       comisionMP,
       precioVentaML,
       precioWeb,
+      calcWebPriceFromML,
       descuentoPorcentaje,
       stockPinamar,
       stockMontevideo,
@@ -1440,24 +1453,58 @@ export default function AdminWorkspace({
     if (!authToken && activeToken) {
       setAuthToken(activeToken);
     }
+
+    // Safety guard: refuse to save if the client somehow only holds a stripped public payload
+    // (no isAdminScope flag AND existing products lack admin-only financial/stock keys).
+    const hasAdminProductData =
+      updatedStore.isAdminScope === true ||
+      store.isAdminScope === true ||
+      (updatedStore.products || []).some(
+        (p) =>
+          p.precioCompra !== undefined ||
+          p.comisionML !== undefined ||
+          p.precioVentaML !== undefined ||
+          p.stockPinamar !== undefined
+      );
+    if (!hasAdminProductData && (updatedStore.products || []).length > 0) {
+      await fetchStoreData(true, activeToken);
+      if (!isBackground) {
+        showCustomAlert(
+          "Sincronización requerida",
+          "Se recargaron los datos completos de administración desde el servidor para proteger costos y comisiones. Por favor, vuelve a guardar el cambio."
+        );
+      }
+      return false;
+    }
+
     if (!isBackground) {
       setSyncStatus("syncing");
       setSaving(true);
     }
     try {
+      const payloadWithVersion = {
+        ...updatedStore,
+        expectedStateVersion: updatedStore.stateVersion || store.stateVersion
+      };
       const res = await fetch("/api/store", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${activeToken}`
         },
-        body: JSON.stringify(updatedStore)
+        body: JSON.stringify(payloadWithVersion)
       });
 
       if (!res.ok) {
         if (res.status === 403) {
           onLogout();
           throw new Error("Sesión vencida. Por favor, vuelve a iniciar sesión.");
+        }
+        if (res.status === 409) {
+          await fetchStoreData(true, activeToken);
+          throw new Error(
+            "Los datos cambiaron en otra sesión o proceso mientras editabas. Se recargó la versión más reciente del servidor para evitar sobrescrituras."
+          );
         }
         throw new Error("No se pudo guardar la información en la base de datos.");
       }
@@ -1487,6 +1534,73 @@ export default function AdminWorkspace({
       return false;
     } finally {
       if (!isBackground) {
+        setSaving(false);
+      }
+    }
+  };
+
+  const updateSingleProductOnServer = async (
+    productId: string | number,
+    patch: Partial<Product>,
+    options: { expectedUpdatedAt?: string; allowZeroFields?: string[]; isBackground?: boolean } = {}
+  ): Promise<boolean> => {
+    const activeToken = authToken || localStorage.getItem("apex_admin_token");
+    if (!activeToken) return false;
+    if (!options.isBackground) {
+      setSyncStatus("syncing");
+      setSaving(true);
+    }
+    try {
+      const res = await fetch(`/api/products/${encodeURIComponent(String(productId))}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${activeToken}`
+        },
+        body: JSON.stringify({
+          updates: patch,
+          expectedUpdatedAt: options.expectedUpdatedAt,
+          allowZeroFields: options.allowZeroFields
+        })
+      });
+
+      if (!res.ok) {
+        if (res.status === 403) {
+          onLogout();
+          throw new Error("Sesión vencida. Por favor, vuelve a iniciar sesión.");
+        }
+        if (res.status === 409) {
+          await fetchStoreData(true, activeToken);
+          throw new Error(
+            "Este producto fue modificado recientemente en otra sesión o proceso. Se recargaron los datos actuales para evitar sobrescribir cambios."
+          );
+        }
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.message || "No se pudo actualizar el producto en el servidor.");
+      }
+
+      const resData = await res.json();
+      if (resData.success && resData.state) {
+        setStore(resData.state);
+      } else if (resData.success && resData.product) {
+        setStore((prev) => ({
+          ...prev,
+          products: prev.products.map((p) => (String(p.id) === String(productId) ? resData.product : p))
+        }));
+      }
+      if (!options.isBackground) {
+        setSyncStatus("synced");
+      }
+      return true;
+    } catch (err: any) {
+      console.error(err);
+      if (!options.isBackground) {
+        setSyncStatus("error");
+        showCustomAlert("Error de actualización", err.message || "No se pudo actualizar el producto.");
+      }
+      return false;
+    } finally {
+      if (!options.isBackground) {
         setSaving(false);
       }
     }
@@ -1717,16 +1831,18 @@ export default function AdminWorkspace({
     const comboStocks = newProduct.isCombo
       ? getComboDynamicStocksAdmin(newProduct.comboComponents || [], newProduct.variants || [])
       : { stockPinamar: 0, stockMontevideo: 0, stockTotal: 0, updatedVariants: [] };
-    const preparedVariants = newProduct.isCombo
-      ? comboStocks.updatedVariants
-      : newProduct.variants && newProduct.variants.length > 0
-      ? newProduct.variants.map((v) => ({
-          ...v,
-          stockPinamar: Number(v.stockPinamar || 0),
-          stockMontevideo: 0,
-          stock: Number(v.stockPinamar || 0)
-        }))
-      : [];
+    const preparedVariants = (
+      newProduct.isCombo
+        ? comboStocks.updatedVariants
+        : newProduct.variants && newProduct.variants.length > 0
+        ? newProduct.variants.map((v) => ({
+            ...v,
+            stockPinamar: Number(v.stockPinamar || 0),
+            stockMontevideo: 0,
+            stock: Number(v.stockPinamar || 0)
+          }))
+        : []
+    ).map((v) => withNormalizedVariantGallery(v));
     const finalStockPinamar = newProduct.isCombo
       ? comboStocks.stockPinamar
       : preparedVariants.length > 0
@@ -1734,6 +1850,10 @@ export default function AdminWorkspace({
       : Number(newProduct.stockPinamar || 0);
     const finalStockMontevideo = newProduct.isCombo ? comboStocks.stockMontevideo : 0;
     const finalStockTotal = newProduct.isCombo ? comboStocks.stockTotal : finalStockPinamar;
+
+    const firstVariantImg = preparedVariants
+      .map((v) => getVariantGalleryImages(v)[0])
+      .find(Boolean);
 
     const created: Product = {
       id: "prod-" + Date.now(),
@@ -1749,6 +1869,7 @@ export default function AdminWorkspace({
       subcategorias_adicionales: newProduct.subcategorias_adicionales || [],
       imageUrl:
         newProduct.imageUrl ||
+        firstVariantImg ||
         "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=600&q=80",
       stock: finalStockTotal,
       featured: !!newProduct.featured,
@@ -1866,10 +1987,27 @@ export default function AdminWorkspace({
       finalProduct.stockTotalActual = comboStocks.stockTotal;
       finalProduct.variants = comboStocks.updatedVariants;
     }
+    if (Array.isArray(finalProduct.variants)) {
+      finalProduct.variants = finalProduct.variants.map((v) => withNormalizedVariantGallery(v));
+      if (!finalProduct.imageUrl) {
+        const firstVariantImg = finalProduct.variants
+          .map((v) => getVariantGalleryImages(v)[0])
+          .find(Boolean);
+        if (firstVariantImg) {
+          finalProduct.imageUrl = firstVariantImg;
+        }
+      }
+    }
 
-    const updatedProducts = store.products.map((p) => (String(p.id) === String(finalProduct.id) ? finalProduct : p));
-    const updatedState = { ...store, products: updatedProducts };
-    const success = await saveStateToServer(updatedState);
+    const previousProd = store.products.find((p) => String(p.id) === String(finalProduct.id));
+    const allowZeroFields = ["precioCompra", "precioCon40", "comisionML", "comisionMP", "precioVentaML", "precioWeb"].filter(
+      (field) => Number((finalProduct as any)[field] ?? 0) === 0
+    );
+
+    const success = await updateSingleProductOnServer(finalProduct.id, finalProduct, {
+      expectedUpdatedAt: previousProd?.updatedAt,
+      allowZeroFields
+    });
     if (success) {
       showAdminToast("¡Modificaciones guardadas correctamente! 💾", "success");
       setEditingProduct(null);
@@ -1893,13 +2031,19 @@ export default function AdminWorkspace({
   };
 
   const handleTogglePause = async (productId: string | number) => {
+    const target = store.products.find((p) => String(p.id) === String(productId));
+    if (!target) return;
     const originalProducts = store.products;
-    const updatedProducts = store.products.map((p) =>
-      String(p.id) === String(productId) ? { ...p, paused: !p.paused } : p
+    const nextPaused = !target.paused;
+    setStore({
+      ...store,
+      products: store.products.map((p) => (String(p.id) === String(productId) ? { ...p, paused: nextPaused } : p))
+    });
+    const success = await updateSingleProductOnServer(
+      productId,
+      { paused: nextPaused },
+      { expectedUpdatedAt: target.updatedAt, isBackground: true }
     );
-    const updatedState = { ...store, products: updatedProducts };
-    setStore(updatedState);
-    const success = await saveStateToServer(updatedState, true);
     if (success) {
       showAdminToast("Estado de pausa actualizado correctamente.", "success");
     } else {
@@ -1909,13 +2053,19 @@ export default function AdminWorkspace({
   };
 
   const handleToggleFeatured = async (productId: string | number) => {
+    const target = store.products.find((p) => String(p.id) === String(productId));
+    if (!target) return;
     const originalProducts = store.products;
-    const updatedProducts = store.products.map((p) =>
-      String(p.id) === String(productId) ? { ...p, featured: !p.featured } : p
+    const nextFeatured = !target.featured;
+    setStore({
+      ...store,
+      products: store.products.map((p) => (String(p.id) === String(productId) ? { ...p, featured: nextFeatured } : p))
+    });
+    const success = await updateSingleProductOnServer(
+      productId,
+      { featured: nextFeatured },
+      { expectedUpdatedAt: target.updatedAt, isBackground: true }
     );
-    const updatedState = { ...store, products: updatedProducts };
-    setStore(updatedState);
-    const success = await saveStateToServer(updatedState, true);
     if (success) {
       showAdminToast("Estado destacado actualizado correctamente. ⭐", "success");
     } else {

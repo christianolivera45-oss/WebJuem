@@ -35,6 +35,22 @@ import {
   reconcileInventoryAudit 
 } from "./server_inventory";
 import { GoogleGenAI, Type } from "@google/genai";
+import {
+  stripConfidentialProductFields,
+  mergeProtectedProductUpdate,
+  ensureProtectionTables,
+  computeProductsChecksum,
+  logProductChanges,
+  detectProductTransitionAnomalies,
+  recordSystemAlert,
+  createSystemBackup,
+  listBackups,
+  getBackupById,
+  verifyBackupIntegrity,
+  diffProductsAgainstSnapshot,
+  scanCatalogAnomaliesAgainstBackup,
+  ensureDailyBackup
+} from "./server/dataProtection";
 
 let aiClient: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI {
@@ -427,16 +443,7 @@ function buildPublicStorePayload(
       .replace(/-+/g, "-");
 
   const publicProducts = sliced.map((p: any) => {
-    const {
-      precioCompra,
-      precioCon40,
-      comisionML,
-      comisionMP,
-      precioVentaML,
-      stockPinamar,
-      stockMontevideo,
-      ...publicProd
-    } = p;
+    const publicProd = stripConfidentialProductFields(p);
 
     if (!compactForHtml) {
       return publicProd;
@@ -2069,9 +2076,22 @@ async function approveOrderAndDeductStock(
       await client.query("COMMIT;");
       console.log(`[Seguridad Stock] Transacción completada con éxito. Stock descontado para Orden ${orderId}.`);
       
-      // Force state reload
-      const dbState = await getDbState();
+      // Force state reload and audit product stock changes
+      const prevProductsSnapshot = JSON.parse(JSON.stringify(currentStoreState?.products || []));
+      invalidateDbCache();
+      const dbState = await getDbState(true);
       currentStoreState = dbState;
+      try {
+        fs.writeFileSync(STORE_FILE, JSON.stringify(currentStoreState, null, 2), "utf-8");
+      } catch {}
+
+      const prevById = new Map<string, any>(prevProductsSnapshot.map((p: any) => [String(p.id), p]));
+      for (const nextP of dbState.products || []) {
+        const prevP = prevById.get(String(nextP.id));
+        if (prevP && (prevP.stock !== nextP.stock || prevP.stockPinamar !== nextP.stockPinamar || prevP.stockMontevideo !== nextP.stockMontevideo)) {
+          logProductChanges(pool, DATA_DIR, prevP, nextP, `order_approved:${orderId}`, "system").catch(() => {});
+        }
+      }
       
       const order = dbState.orders?.find(o => o.id === orderId);
       if (order) {
@@ -2213,9 +2233,6 @@ function invalidateDbCache() {
 async function getPublicDbState(forceRefresh = false): Promise<ShopState> {
   const now = Date.now();
   if (!forceRefresh) {
-    if (cachedDbState && (now - cachedDbStateTime < DB_CACHE_TTL_MS)) {
-      return cachedDbState;
-    }
     if (cachedPublicDbState && (now - cachedPublicDbStateTime < DB_CACHE_TTL_MS)) {
       return cachedPublicDbState;
     }
@@ -2246,7 +2263,7 @@ async function getPublicDbState(forceRefresh = false): Promise<ShopState> {
           ORDER BY id DESC;
         `),
         pool.query("SELECT product_id, image_url, order_index FROM public.product_images ORDER BY order_index ASC;").catch(() => ({ rows: [] })),
-        pool.query("SELECT id, product_id, sku, size_value, color_name, color_code, additional_price, stock, image_url, price FROM public.product_variants WHERE active = true;").catch(() => ({ rows: [] }))
+        pool.query("SELECT id, product_id, sku, size_value, color_name, color_code, additional_price, stock, image_url, imagenes, price FROM public.product_variants WHERE active = true;").catch(() => ({ rows: [] }))
       ]);
 
       const settings = settingsRes.rows.length > 0 ? settingsRes.rows[0].state : (currentStoreState.settings || DEFAULT_SHOP_STATE.settings);
@@ -2286,10 +2303,7 @@ async function getPublicDbState(forceRefresh = false): Promise<ShopState> {
       for (const vRow of variantsRes.rows) {
         const pid = vRow.product_id;
         if (!productVariantsMap[pid]) productVariantsMap[pid] = [];
-        let vImg = (vRow.image_url || "").trim();
-        if (vImg.includes("slticil8iylzbx8imcah") || vImg.includes("cm0vw6biwrvlqphuxr0i")) {
-          vImg = "";
-        }
+        const normGal = normalizeVariantGallery(vRow.imagenes, vRow.image_url);
         productVariantsMap[pid].push({
           id: String(vRow.id),
           sku: vRow.sku || "",
@@ -2298,7 +2312,8 @@ async function getPublicDbState(forceRefresh = false): Promise<ShopState> {
           colorCode: vRow.color_code || "",
           priceDelta: vRow.additional_price ? Number(vRow.additional_price) : 0,
           stock: vRow.stock ? Number(vRow.stock) : 0,
-          imageUrl: vImg,
+          imageUrl: normGal.imageUrl,
+          imagenes: normGal.imagenes,
           price: vRow.price !== null && vRow.price !== undefined ? Number(vRow.price) : undefined
         });
       }
@@ -2337,8 +2352,8 @@ async function getPublicDbState(forceRefresh = false): Promise<ShopState> {
           variants: variants.map(v => {
             const isGeneric = (!v.color || ["general", "unico", "único", "generico", "genérico", "estandar", "estándar", "-"].includes(v.color.toLowerCase().trim())) &&
                               (!v.size || ["unico", "único", "estandar", "estándar", "-"].includes(v.size.toLowerCase().trim()));
-            if (isGeneric && v.imageUrl && v.imageUrl !== row.image_url && !(productImagesMap[pid] || []).includes(v.imageUrl)) {
-              return { ...v, imageUrl: "" };
+            if (isGeneric && v.imageUrl && v.imageUrl !== row.image_url && !(productImagesMap[pid] || []).includes(v.imageUrl) && (!Array.isArray(v.imagenes) || v.imagenes.length <= 1)) {
+              return { ...v, imageUrl: "", imagenes: [] };
             }
             return v;
           }),
@@ -2361,12 +2376,11 @@ async function getPublicDbState(forceRefresh = false): Promise<ShopState> {
       const { products: sanitizedDbProducts } = sanitizeProductsImages(recalculatedProducts);
 
       const publicState: ShopState = {
-        ...currentStoreState,
         categories: dbCategories.map(c => c.nombre),
         dbCategories,
         dbSubcategories,
         settings,
-        products: sanitizedDbProducts,
+        products: sanitizedDbProducts.map((p: any) => stripConfidentialProductFields(p)),
         coupons
       };
 
@@ -2518,7 +2532,7 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
 
     // 6. Fetch products where active = true (logical soft delete)
     const prodRes = await pool.query(`
-      SELECT id, name, price, stock, category, featured, image_url, created_at, description, categoria_id, original_price, subcategoria_id, active, paused, sizes, colors, is_3d, hours_per_unit,
+      SELECT id, name, price, stock, category, featured, image_url, created_at, updated_at, description, categoria_id, original_price, subcategoria_id, active, paused, sizes, colors, is_3d, hours_per_unit,
              size_chart_enabled, size_chart_show_superior, size_chart_show_inferior, size_chart_show_calzado, size_chart_show_recommender, size_chart_data, consult_only,
              categorias_adicionales, subcategorias_adicionales, codigo, gtin,
              precio_compra, precio_con_40, comision_ml, comision_mp, precio_venta_ml, precio_web, descuento_porcentaje, stock_pinamar, stock_montevideo, is_combo, combo_components
@@ -2545,16 +2559,13 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
     // Fetch product variants
     const productVariantsMap: Record<number, any[]> = {};
     try {
-      const variantsRes = await pool.query("SELECT id, product_id, sku, size_value, color_name, color_code, additional_price, stock, image_url, price, stock_pinamar, stock_montevideo FROM public.product_variants WHERE active = true;");
+      const variantsRes = await pool.query("SELECT id, product_id, sku, size_value, color_name, color_code, additional_price, stock, image_url, imagenes, price, stock_pinamar, stock_montevideo FROM public.product_variants WHERE active = true;");
       for (const vRow of variantsRes.rows) {
         const pid = vRow.product_id;
         if (!productVariantsMap[pid]) {
           productVariantsMap[pid] = [];
         }
-        let vImg = (vRow.image_url || "").trim();
-        if (vImg.includes("slticil8iylzbx8imcah") || vImg.includes("cm0vw6biwrvlqphuxr0i")) {
-          vImg = "";
-        }
+        const normGal = normalizeVariantGallery(vRow.imagenes, vRow.image_url);
         productVariantsMap[pid].push({
           id: String(vRow.id),
           sku: vRow.sku || "",
@@ -2563,7 +2574,8 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
           colorCode: vRow.color_code || "",
           priceDelta: vRow.additional_price ? Number(vRow.additional_price) : 0,
           stock: vRow.stock ? Number(vRow.stock) : 0,
-          imageUrl: vImg,
+          imageUrl: normGal.imageUrl,
+          imagenes: normGal.imagenes,
           price: vRow.price !== null && vRow.price !== undefined ? Number(vRow.price) : undefined,
           stockPinamar: vRow.stock_pinamar ? Number(vRow.stock_pinamar) : 0,
           stockMontevideo: vRow.stock_montevideo ? Number(vRow.stock_montevideo) : 0
@@ -2598,6 +2610,7 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
         featured: row.featured === true,
         imageUrl: row.image_url || "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=600&q=80",
         createdAt: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
+        updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : (row.created_at ? new Date(row.created_at).toISOString() : undefined),
         description: row.description || "",
         categoria_id: row.categoria_id || "ropa",
         originalPrice: row.original_price ? Number(row.original_price) : Number(row.price),
@@ -2614,8 +2627,8 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
         variants: variants.map(v => {
           const isGeneric = (!v.color || ["general", "unico", "único", "generico", "genérico", "estandar", "estándar", "-"].includes(v.color.toLowerCase().trim())) &&
                             (!v.size || ["unico", "único", "estandar", "estándar", "-"].includes(v.size.toLowerCase().trim()));
-          if (isGeneric && v.imageUrl && v.imageUrl !== row.image_url && !(productImagesMap[pid] || []).includes(v.imageUrl)) {
-            return { ...v, imageUrl: "" };
+          if (isGeneric && v.imageUrl && v.imageUrl !== row.image_url && !(productImagesMap[pid] || []).includes(v.imageUrl) && (!Array.isArray(v.imagenes) || v.imagenes.length <= 1)) {
+            return { ...v, imageUrl: "", imagenes: [] };
           }
           return v;
         }),
@@ -2795,6 +2808,7 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
       stockAdjustments = currentStoreState.stockAdjustments || [];
     }
 
+    const stateVersion = computeProductsChecksum(sanitizedDbProducts);
     const finalDbState = {
       categories: dbCategories.map(c => c.nombre),
       dbCategories,
@@ -2807,7 +2821,8 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
       bills,
       shippings,
       shippingOrigins,
-      stockAdjustments
+      stockAdjustments,
+      stateVersion
     };
 
     try {
@@ -2818,8 +2833,7 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
 
     cachedDbState = finalDbState;
     cachedDbStateTime = Date.now();
-    cachedPublicDbState = finalDbState;
-    cachedPublicDbStateTime = cachedDbStateTime;
+    // Keep public cache strictly isolated from full admin payload
     cachedPublicStorePayload = null;
 
     return finalDbState;
@@ -2858,7 +2872,7 @@ function isProductEqual(p1: any, p2: any): boolean {
     'categoria_id', 'originalPrice', 'subcategoria_id', 'paused', 'is3D', 
     'hoursPerUnit', 'sizeChartEnabled', 'sizeChartShowSuperior', 'sizeChartShowInferior', 
     'sizeChartShowCalzado', 'sizeChartShowRecommender', 'consultOnly', 'codigo', 'gtin', 
-    'precioCompra', 'precioCon40', 'comisionML', 'precioVentaML', 'precioWeb', 
+    'precioCompra', 'precioCon40', 'comisionML', 'comisionMP', 'precioVentaML', 'precioWeb', 
     'descuentoPorcentaje', 'stockPinamar', 'stockMontevideo', 'isCombo', 'calcWebPriceFromML'
   ];
   
@@ -2889,6 +2903,7 @@ function isProductEqual(p1: any, p2: any): boolean {
       Number(var1.priceDelta || 0) !== Number(var2.priceDelta || 0) ||
       Math.floor(Number(var1.stock || 0)) !== Math.floor(Number(var2.stock || 0)) ||
       var1.imageUrl !== var2.imageUrl ||
+      JSON.stringify(var1.imagenes || []) !== JSON.stringify(var2.imagenes || []) ||
       var1.price !== var2.price ||
       Math.floor(Number(var1.stockPinamar || 0)) !== Math.floor(Number(var2.stockPinamar || 0)) ||
       Math.floor(Number(var1.stockMontevideo || 0)) !== Math.floor(Number(var2.stockMontevideo || 0))
@@ -2900,7 +2915,79 @@ function isProductEqual(p1: any, p2: any): boolean {
   return true;
 }
 
+function normalizeVariantGallery(rawImgs: any, rawImageUrl: any): { imageUrl: string; imagenes: string[] } {
+  const brokenTokens = ["slticil8iylzbx8imcah", "cm0vw6biwrvlqphuxr0i"];
+  const isClean = (u: string) => Boolean(u && !brokenTokens.some((t) => u.includes(t)));
+  let parsedList: any[] = [];
+  if (Array.isArray(rawImgs)) {
+    parsedList = rawImgs;
+  } else if (typeof rawImgs === "string" && rawImgs.trim().startsWith("[")) {
+    try {
+      const parsed = JSON.parse(rawImgs);
+      if (Array.isArray(parsed)) parsedList = parsed;
+    } catch {
+      parsedList = [];
+    }
+  }
+  const cleanGallery = Array.from(
+    new Set(
+      parsedList
+        .map((u) => (typeof u === "string" ? u.trim() : ""))
+        .filter(isClean)
+    )
+  );
+  const vImgRaw = typeof rawImageUrl === "string" ? rawImageUrl.trim() : "";
+  const vImg = isClean(vImgRaw) ? vImgRaw : "";
+  if (cleanGallery.length === 0 && vImg) {
+    cleanGallery.push(vImg);
+  }
+  return {
+    imageUrl: cleanGallery[0] || "",
+    imagenes: cleanGallery
+  };
+}
+
 let saveDbStatePromiseChain = Promise.resolve();
+
+async function saveAdminCredentialsOnly(creds: { username: string; passwordHash: string; sessionToken?: string }): Promise<boolean> {
+  try {
+    currentStoreState.adminCredentials = creds;
+    if (cachedDbState) {
+      cachedDbState.adminCredentials = creds;
+    }
+    if (lastSavedStoreState) {
+      lastSavedStoreState.adminCredentials = creds;
+    }
+
+    // Update ONLY adminCredentials inside STORE_FILE without overwriting products with anything stale
+    try {
+      if (fs.existsSync(STORE_FILE)) {
+        const raw = fs.readFileSync(STORE_FILE, "utf-8").trim();
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          parsed.adminCredentials = creds;
+          fs.writeFileSync(STORE_FILE, JSON.stringify(parsed, null, 2), "utf-8");
+        }
+      } else {
+        fs.writeFileSync(STORE_FILE, JSON.stringify(currentStoreState, null, 2), "utf-8");
+      }
+    } catch (fsErr) {
+      console.error("Error updating adminCredentials in STORE_FILE:", fsErr);
+    }
+
+    const pool = getDbPool();
+    if (pool && process.env.DATABASE_URL && !dbUnavailable) {
+      await pool.query(
+        "INSERT INTO admin_credentials (username, password_hash, session_token) VALUES ($1, $2, $3) ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash, session_token = EXCLUDED.session_token;",
+        [creds.username, creds.passwordHash, creds.sessionToken || null]
+      );
+    }
+    return true;
+  } catch (err: any) {
+    console.error("Error persisting admin_credentials only:", err);
+    return false;
+  }
+}
 
 async function saveDbState(state: ShopState): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
@@ -3031,16 +3118,30 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
         }
       }
 
+      const toNullableNum = (v: any): number | null => {
+        if (v === undefined || v === null || v === "") return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+      };
+      const toNullableInt = (v: any): number | null => {
+        if (v === undefined || v === null || v === "") return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? Math.floor(n) : null;
+      };
+
       const priceVal = Number(prod.price);
       const originalPriceVal = prod.originalPrice ? Number(prod.originalPrice) : priceVal;
       let stockVal = Math.floor(Number(prod.stock ?? 10));
-      let stockPinamarVal = prod.stockPinamar ? Math.floor(Number(prod.stockPinamar)) : 0;
-      let stockMontevideoVal = prod.stockMontevideo ? Math.floor(Number(prod.stockMontevideo)) : 0;
+      let stockPinamarVal = toNullableInt(prod.stockPinamar);
+      let stockMontevideoVal = toNullableInt(prod.stockMontevideo);
 
       if (Array.isArray(prod.variants) && prod.variants.length > 0) {
         stockVal = prod.variants.reduce((sum: number, v: any) => sum + Math.floor(Number(v.stock || 0)), 0);
-        stockPinamarVal = prod.variants.reduce((sum: number, v: any) => sum + Math.floor(Number(v.stockPinamar || 0)), 0);
-        stockMontevideoVal = prod.variants.reduce((sum: number, v: any) => sum + Math.floor(Number(v.stockMontevideo || 0)), 0);
+        const hasVarBranchData = prod.variants.some((v: any) => v.stockPinamar !== undefined || v.stockMontevideo !== undefined);
+        if (hasVarBranchData) {
+          stockPinamarVal = prod.variants.reduce((sum: number, v: any) => sum + Math.floor(Number(v.stockPinamar || 0)), 0);
+          stockMontevideoVal = prod.variants.reduce((sum: number, v: any) => sum + Math.floor(Number(v.stockMontevideo || 0)), 0);
+        }
       }
 
       const featuredVal = !!prod.featured;
@@ -3057,25 +3158,32 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
       const sizeChartDataVal = prod.sizeChartData ? JSON.stringify(prod.sizeChartData) : null;
       const consultOnlyVal = !!prod.consultOnly;
 
-      const precioCompraVal = prod.precioCompra ? Number(prod.precioCompra) : 0;
-      const precioCon40Val = prod.precioCon40 ? Number(prod.precioCon40) : 0;
-      const comisionMLVal = prod.comisionML ? Number(prod.comisionML) : 0;
-      const comisionMPVal = (prod.comisionMP !== undefined && prod.comisionMP !== null)
-        ? Number(prod.comisionMP)
-        : Number(((Number(prod.precioWeb || prod.price || 0)) * 0.12).toFixed(2));
-      const precioVentaMLVal = prod.precioVentaML ? Number(prod.precioVentaML) : 0;
-      const precioWebVal = prod.precioWeb ? Number(prod.precioWeb) : 0;
-      const descuentoPorcentajeVal = prod.descuentoPorcentaje ? Math.floor(Number(prod.descuentoPorcentaje)) : 0;
+      const precioCompraVal = toNullableNum(prod.precioCompra);
+      const precioCon40Val = toNullableNum(prod.precioCon40);
+      const comisionMLVal = toNullableNum(prod.comisionML);
+      const comisionMPVal = toNullableNum(prod.comisionMP);
+      const precioVentaMLVal = toNullableNum(prod.precioVentaML);
+      const precioWebVal = toNullableNum(prod.precioWeb);
+      const descuentoPorcentajeVal = toNullableInt(prod.descuentoPorcentaje);
       const isComboVal = !!prod.isCombo;
       const comboComponentsVal = prod.comboComponents ? JSON.stringify(prod.comboComponents) : '[]';
-      const calcWebPriceFromMLVal = prod.calcWebPriceFromML !== false;
+      const calcWebPriceFromMLVal: boolean | null =
+        prod.calcWebPriceFromML === undefined || prod.calcWebPriceFromML === null
+          ? null
+          : prod.calcWebPriceFromML !== false;
 
       let prodId: number;
       const catAdicionales = Array.isArray(prod.categorias_adicionales) ? prod.categorias_adicionales : [];
       const subcatAdicionales = Array.isArray(prod.subcategorias_adicionales) ? prod.subcategorias_adicionales : [];
 
-      const gtinVal = prod.gtin ? String(prod.gtin).trim().replace(/[-\s]/g, "") : "";
+      const gtinVal: string | null =
+        prod.gtin === undefined || prod.gtin === null
+          ? null
+          : String(prod.gtin).trim().replace(/[-\s]/g, "");
+
       if (isNew) {
+        const insertPrecioWeb = precioWebVal ?? 0;
+        const insertComisionMP = comisionMPVal ?? Number(((insertPrecioWeb || priceVal || 0) * 0.12).toFixed(2));
         const insertRes = await pool.query(`
           INSERT INTO public.products (
             name, price, stock, category, featured, image_url, description, categoria_id, original_price, subcategoria_id, active, paused, sizes, colors, is_3d, hours_per_unit,
@@ -3093,13 +3201,25 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
           catAdicionales,
           subcatAdicionales,
           prod.codigo || "",
-          precioCompraVal, precioCon40Val, comisionMLVal, comisionMPVal, precioVentaMLVal, precioWebVal, descuentoPorcentajeVal, stockPinamarVal, stockMontevideoVal,
-          isComboVal, comboComponentsVal, calcWebPriceFromMLVal, gtinVal
+          precioCompraVal ?? 0,
+          precioCon40Val ?? 0,
+          comisionMLVal ?? 0,
+          insertComisionMP,
+          precioVentaMLVal ?? 0,
+          insertPrecioWeb,
+          descuentoPorcentajeVal ?? 0,
+          stockPinamarVal ?? 0,
+          stockMontevideoVal ?? 0,
+          isComboVal,
+          comboComponentsVal,
+          calcWebPriceFromMLVal !== false,
+          gtinVal ?? ""
         ]);
         prodId = insertRes.rows[0].id;
         prod.id = String(prodId);
       } else {
         prodId = parseInt(prod.id);
+        // Never overwrite confidential/financial/branch fields with 0 when omitted/undefined in payload
         await pool.query(`
           UPDATE public.products SET
             name = $1, price = $2, stock = $3, category = $4, featured = $5, image_url = $6, description = $7,
@@ -3110,19 +3230,20 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
             categorias_adicionales = $23,
             subcategorias_adicionales = $24,
             codigo = $25,
-            precio_compra = $26,
-            precio_con_40 = $27,
-            comision_ml = $28,
-            comision_mp = $29,
-            precio_venta_ml = $30,
-            precio_web = $31,
-            descuento_porcentaje = $32,
-            stock_pinamar = $33,
-            stock_montevideo = $34,
+            precio_compra = COALESCE($26, precio_compra),
+            precio_con_40 = COALESCE($27, precio_con_40),
+            comision_ml = COALESCE($28, comision_ml),
+            comision_mp = COALESCE($29, comision_mp),
+            precio_venta_ml = COALESCE($30, precio_venta_ml),
+            precio_web = COALESCE($31, precio_web),
+            descuento_porcentaje = COALESCE($32, descuento_porcentaje),
+            stock_pinamar = COALESCE($33, stock_pinamar),
+            stock_montevideo = COALESCE($34, stock_montevideo),
             is_combo = $35,
             combo_components = $36,
-            calc_web_price_from_ml = $37,
-            gtin = $38
+            calc_web_price_from_ml = COALESCE($37, calc_web_price_from_ml),
+            gtin = COALESCE($38, gtin),
+            updated_at = NOW()
           WHERE id = $39;
         `, [
           prod.name, priceVal, stockVal, prod.category, featuredVal, prod.imageUrl,
@@ -3165,8 +3286,19 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
         throw imgErr;
       }
 
-      // Sync product variants
+      // Sync product variants (preserving existing branch stocks & galleries if incoming variant omits them)
       try {
+        const existingVarRes = await pool.query(
+          "SELECT id, sku, stock_pinamar, stock_montevideo, image_url, imagenes FROM public.product_variants WHERE product_id = $1;",
+          [prodId]
+        );
+        const existingVarById = new Map<string, any>();
+        const existingVarBySku = new Map<string, any>();
+        for (const ev of existingVarRes.rows) {
+          existingVarById.set(String(ev.id).toLowerCase(), ev);
+          if (ev.sku) existingVarBySku.set(String(ev.sku).trim().toUpperCase(), ev);
+        }
+
         await pool.query("DELETE FROM public.product_variants WHERE product_id = $1;", [prodId]);
         if (Array.isArray(prod.variants) && prod.variants.length > 0) {
           const insertedIds = new Set<string>();
@@ -3183,6 +3315,43 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
                 sku = `SKU-${prodId}-${Math.floor(Math.random() * 10000)}`;
               }
             }
+            const existingVar =
+              (variant.id ? existingVarById.get(String(variant.id).toLowerCase()) : undefined) ||
+              (sku ? existingVarBySku.get(String(sku).trim().toUpperCase()) : undefined);
+            const resolvedVarPinamar =
+              variant.stockPinamar !== undefined && variant.stockPinamar !== null
+                ? Math.floor(Number(variant.stockPinamar))
+                : Math.floor(Number(existingVar?.stock_pinamar || 0));
+            const resolvedVarMontevideo =
+              variant.stockMontevideo !== undefined && variant.stockMontevideo !== null
+                ? Math.floor(Number(variant.stockMontevideo))
+                : Math.floor(Number(existingVar?.stock_montevideo || 0));
+
+            let cleanVarImgs: string[] = [];
+            if (variant.imagenes !== undefined || variant.imageUrl !== undefined) {
+              if (Array.isArray(variant.imagenes)) {
+                cleanVarImgs = Array.from(
+                  new Set(
+                    variant.imagenes
+                      .map((u: any) => (typeof u === "string" ? u.trim() : ""))
+                      .filter(Boolean)
+                  )
+                );
+                const vImgStr = typeof variant.imageUrl === "string" ? variant.imageUrl.trim() : "";
+                if (cleanVarImgs.length === 0 && vImgStr) {
+                  cleanVarImgs = [vImgStr];
+                }
+              } else {
+                const vImgStr = typeof variant.imageUrl === "string" ? variant.imageUrl.trim() : "";
+                cleanVarImgs = vImgStr ? [vImgStr] : [];
+              }
+            } else if (existingVar) {
+              cleanVarImgs = normalizeVariantGallery(existingVar.imagenes, existingVar.image_url).imagenes;
+            }
+            const resolvedVarImageUrl = cleanVarImgs[0] || null;
+            variant.imagenes = cleanVarImgs;
+            variant.imageUrl = resolvedVarImageUrl || "";
+
             const variantPrice = typeof variant.price === "number" && variant.price > 0 ? variant.price : null;
             let isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(variant.id || ""));
             if (isUuid) {
@@ -3203,8 +3372,8 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
               const strId = String(variant.id).toLowerCase();
               insertedIds.add(strId);
               await pool.query(`
-                INSERT INTO public.product_variants (id, product_id, sku, size_value, color_name, color_code, additional_price, stock, image_url, price, active, stock_pinamar, stock_montevideo)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, $11, $12)
+                INSERT INTO public.product_variants (id, product_id, sku, size_value, color_name, color_code, additional_price, stock, image_url, imagenes, price, active, stock_pinamar, stock_montevideo)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, true, $12, $13)
                 ON CONFLICT (id) DO UPDATE SET
                   product_id = EXCLUDED.product_id,
                   sku = EXCLUDED.sku,
@@ -3214,6 +3383,7 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
                   additional_price = EXCLUDED.additional_price,
                   stock = EXCLUDED.stock,
                   image_url = EXCLUDED.image_url,
+                  imagenes = EXCLUDED.imagenes,
                   price = EXCLUDED.price,
                   active = EXCLUDED.active,
                   stock_pinamar = EXCLUDED.stock_pinamar,
@@ -3227,15 +3397,16 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
                 variant.colorCode || "",
                 Number(variant.priceDelta || 0),
                 Math.floor(Number(variant.stock || 0)),
-                variant.imageUrl || null,
+                resolvedVarImageUrl,
+                JSON.stringify(cleanVarImgs),
                 variantPrice,
-                Math.floor(Number(variant.stockPinamar || 0)),
-                Math.floor(Number(variant.stockMontevideo || 0))
+                resolvedVarPinamar,
+                resolvedVarMontevideo
               ]);
             } else {
               await pool.query(`
-                INSERT INTO public.product_variants (product_id, sku, size_value, color_name, color_code, additional_price, stock, image_url, price, active, stock_pinamar, stock_montevideo)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11);
+                INSERT INTO public.product_variants (product_id, sku, size_value, color_name, color_code, additional_price, stock, image_url, imagenes, price, active, stock_pinamar, stock_montevideo)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, true, $11, $12);
               `, [
                 prodId,
                 sku,
@@ -3244,10 +3415,11 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
                 variant.colorCode || "",
                 Number(variant.priceDelta || 0),
                 Math.floor(Number(variant.stock || 0)),
-                variant.imageUrl || null,
+                resolvedVarImageUrl,
+                JSON.stringify(cleanVarImgs),
                 variantPrice,
-                Math.floor(Number(variant.stockPinamar || 0)),
-                Math.floor(Number(variant.stockMontevideo || 0))
+                resolvedVarPinamar,
+                resolvedVarMontevideo
               ]);
             }
           }
@@ -3408,6 +3580,7 @@ async function initPostgresStore(): Promise<ShopState | null> {
         stock INTEGER NOT NULL DEFAULT 0,
         active BOOLEAN DEFAULT true,
         image_url TEXT,
+        imagenes JSONB NOT NULL DEFAULT '[]'::jsonb,
         created_at TIMESTAMPTZ DEFAULT NOW(),
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
@@ -3417,6 +3590,9 @@ async function initPostgresStore(): Promise<ShopState | null> {
     `);
     await pool.query(`
       ALTER TABLE public.product_variants ADD COLUMN IF NOT EXISTS image_url TEXT;
+    `);
+    await pool.query(`
+      ALTER TABLE public.product_variants ADD COLUMN IF NOT EXISTS imagenes JSONB NOT NULL DEFAULT '[]'::jsonb;
     `);
     await pool.query(`
       ALTER TABLE public.product_variants ADD COLUMN IF NOT EXISTS price NUMERIC(10, 2);
@@ -3962,6 +4138,102 @@ async function initPostgresStore(): Promise<ShopState | null> {
       CREATE INDEX IF NOT EXISTS idx_admin_goals_period ON public.admin_goals (period_type, period_value);
     `);
 
+    await ensureProtectionTables(pool);
+
+    // --- IDEMPOTENT SAFE MIGRATION: POPULATE VARIANT GALLERIES WITHOUT DATA LOSS ---
+    try {
+      const migCheck = await pool.query("SELECT state FROM shop_state WHERE id = 'variant_galleries_migrated_v1';");
+      if (migCheck.rows.length === 0) {
+        const preMigState = await getDbState(true);
+        if ((preMigState.products || []).length > 0) {
+          await createSystemBackup(pool, DATA_DIR, preMigState, {
+            backupType: "pre_bulk",
+            reason: "Respaldo automático previo a migración de galerías independientes por variante (v1)"
+          });
+        }
+        const isGenericVal = (val?: string, isSize?: boolean) => {
+          const norm = String(val || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+          if (!norm) return true;
+          const common = ["general", "estandar", "standard", "n/a", "unico", "-", "default", "ninguno", "no aplica"];
+          if (common.includes(norm)) return true;
+          if (isSize) return ["sin talle", "sin talles", "medida unica", "talle unico"].includes(norm);
+          return ["sin color", "unico color", "sin colores", "varios", "surtido", "color general"].includes(norm);
+        };
+        const prodRows = await pool.query("SELECT id, image_url FROM public.products WHERE active = true;");
+        const imgRows = await pool.query("SELECT product_id, image_url FROM public.product_images ORDER BY order_index ASC;");
+        const varRows = await pool.query("SELECT id, product_id, color_name, size_value, image_url, imagenes FROM public.product_variants WHERE active = true ORDER BY id ASC;");
+
+        const rootImgsMap: Record<number, string[]> = {};
+        for (const ir of imgRows.rows) {
+          if (!rootImgsMap[ir.product_id]) rootImgsMap[ir.product_id] = [];
+          const u = String(ir.image_url || "").trim();
+          if (u) rootImgsMap[ir.product_id].push(u);
+        }
+        const varsByProd: Record<number, any[]> = {};
+        for (const vr of varRows.rows) {
+          if (!varsByProd[vr.product_id]) varsByProd[vr.product_id] = [];
+          varsByProd[vr.product_id].push(vr);
+        }
+
+        let migratedVariantsCount = 0;
+        for (const pr of prodRows.rows) {
+          const pVars = varsByProd[pr.id] || [];
+          if (pVars.length === 0) continue;
+
+          if (pVars.length === 1) {
+            const v = pVars[0];
+            const genericColor = isGenericVal(v.color_name, false);
+            const genericSize = isGenericVal(v.size_value, true);
+            if (genericColor && genericSize) {
+              // Single generic variant keeps root shared gallery untouched
+              continue;
+            }
+            if (!genericColor) {
+              const existingImgs = Array.isArray(v.imagenes) ? v.imagenes : [];
+              if (existingImgs.length === 0) {
+                const combined = Array.from(
+                  new Set(
+                    [v.image_url, pr.image_url, ...(rootImgsMap[pr.id] || [])]
+                      .map((u) => String(u || "").trim())
+                      .filter(Boolean)
+                  )
+                );
+                if (combined.length > 0) {
+                  await pool.query(
+                    "UPDATE public.product_variants SET imagenes = $1::jsonb, image_url = COALESCE(NULLIF(TRIM(image_url), ''), $2), updated_at = NOW() WHERE id = $3;",
+                    [JSON.stringify(combined), combined[0], v.id]
+                  );
+                  migratedVariantsCount++;
+                }
+              }
+            }
+          } else {
+            // Multi-variant product: isolate each variant with its own imageUrl as gallery [0]
+            for (const v of pVars) {
+              const existingImgs = Array.isArray(v.imagenes) ? v.imagenes : [];
+              const vImg = String(v.image_url || "").trim();
+              if (existingImgs.length === 0 && vImg) {
+                await pool.query(
+                  "UPDATE public.product_variants SET imagenes = $1::jsonb, updated_at = NOW() WHERE id = $2;",
+                  [JSON.stringify([vImg]), v.id]
+                );
+                migratedVariantsCount++;
+              }
+            }
+          }
+        }
+
+        await pool.query(
+          "INSERT INTO shop_state (id, state) VALUES ('variant_galleries_migrated_v1', $1) ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state;",
+          [JSON.stringify({ migratedAt: new Date().toISOString(), migratedVariantsCount })]
+        );
+        invalidateDbCache();
+        console.log(`Migración de galerías por variante completada (${migratedVariantsCount} variantes actualizadas sin pérdida).`);
+      }
+    } catch (migErr) {
+      console.error("Error durante migración segura de galerías por variante:", migErr);
+    }
+
     // --- SEED TABLES IF EMPTY ---
     
     // Seed initial admin tasks if empty
@@ -4284,9 +4556,32 @@ async function startServer() {
 
         if (needsDbUpdate) {
           currentStoreState.settings = dbSettings;
-          await saveDbState(currentStoreState);
-          console.log("🟢 Configuración de correo sincronizada y guardada exitosamente en la base de datos.");
+          const pool = getDbPool();
+          if (pool && !dbUnavailable) {
+            await pool.query(
+              "INSERT INTO shop_state (id, state) VALUES ('settings', $1) ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state;",
+              [JSON.stringify(dbSettings)]
+            );
+          }
+          console.log("🟢 Configuración de correo sincronizada únicamente en shop_state (sin reescribir catálogo).");
         }
+
+        // Run automatic daily backup check & anomaly scan on boot
+        const bootPool = getDbPool();
+        ensureDailyBackup(bootPool, DATA_DIR, currentStoreState)
+          .then((resBkp) => {
+            if (resBkp.created) {
+              console.log(`🛡️ [Respaldo Diario Automático] Creado: ${resBkp.backupId}`);
+            }
+          })
+          .catch((bkpErr) => console.error("Error en respaldo automático diario:", bkpErr));
+
+        setInterval(() => {
+          const p = getDbPool();
+          ensureDailyBackup(p, DATA_DIR, currentStoreState).catch((err) =>
+            console.error("Error en scheduler de respaldo diario:", err)
+          );
+        }, 6 * 60 * 60 * 1000);
       }
     } catch (pgError) {
       console.error("🔴 Error: No se pudo cargar de Postgres en el inicio, usando cache local:", pgError);
@@ -4350,17 +4645,14 @@ async function startServer() {
         sessionToken = "session-" + crypto.randomBytes(16).toString("hex");
       }
 
-      currentStoreState.adminCredentials = {
+      const nextCreds = {
         username: authenticatedUsername,
         passwordHash: cleanPass === "#Uriel2049" ? hashPassword("#Uriel2049") : (creds?.passwordHash || hashPassword("olivera45")),
         sessionToken
       };
 
       try {
-        fs.writeFileSync(STORE_FILE, JSON.stringify(currentStoreState, null, 2), "utf-8");
-        if (process.env.DATABASE_URL) {
-          await saveDbState(currentStoreState);
-        }
+        await saveAdminCredentialsOnly(nextCreds);
       } catch (e) {
         console.error("Error al persistir credenciales de admin:", e);
       }
@@ -4504,17 +4796,14 @@ async function startServer() {
     const freshToken = "session-" + crypto.randomBytes(16).toString("hex");
     const newPasswordHash = hashPassword(newPassword);
 
-    currentStoreState.adminCredentials = {
+    const nextCreds = {
       username: trimmedUsername,
       passwordHash: newPasswordHash,
       sessionToken: freshToken
     };
 
     try {
-      fs.writeFileSync(STORE_FILE, JSON.stringify(currentStoreState, null, 2), "utf-8");
-      if (process.env.DATABASE_URL) {
-        await saveDbState(currentStoreState);
-      }
+      await saveAdminCredentialsOnly(nextCreds);
       res.json({
         success: true,
         message: "Credenciales actualizadas correctamente. Las sesiones anteriores se han cerrado con éxito.",
@@ -5256,6 +5545,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       res.setHeader("Expires", "0");
     }
 
+    let publicStateSnapshot: ShopState | null = null;
     if (process.env.DATABASE_URL) {
       if (dbUnavailable) {
         const now = Date.now();
@@ -5270,26 +5560,34 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
           const dbState = await getDbState();
           currentStoreState = dbState;
         } else {
-          const publicState = await getPublicDbState();
-          if (publicState && publicState.products) {
-            currentStoreState = { ...currentStoreState, ...publicState };
-          }
+          // IMPORTANT: Never overwrite currentStoreState with stripped publicState!
+          publicStateSnapshot = await getPublicDbState();
         }
       } catch (err) {
         console.error("No se pudo cargar de Postgres en GET, usando cache local:", err);
       }
     }
 
-    // Check and clear expired promotionBannerText
-    const activeStateSource = isAdminRequest ? currentStoreState : (cachedDbState || cachedPublicDbState || currentStoreState);
+    // Check and clear expired promotionBannerText safely without mutating products/financials
+    const activeStateSource = isAdminRequest
+      ? currentStoreState
+      : (publicStateSnapshot || cachedDbState || cachedPublicDbState || currentStoreState);
     const checkerResult = checkAndClearExpiredBannerText(activeStateSource);
     if (checkerResult.updated) {
-      currentStoreState = { ...currentStoreState, ...checkerResult.state };
+      currentStoreState = {
+        ...currentStoreState,
+        settings: {
+          ...currentStoreState.settings,
+          promotionBannerText: ""
+        }
+      };
       cachedPublicStorePayload = null;
-      try {
-        fs.writeFileSync(STORE_FILE, JSON.stringify(currentStoreState, null, 2), "utf-8");
-      } catch (fsErr) {
-        console.error("Error writing store.json on auto-check expiration:", fsErr);
+      if (isAdminRequest) {
+        try {
+          fs.writeFileSync(STORE_FILE, JSON.stringify(currentStoreState, null, 2), "utf-8");
+        } catch (fsErr) {
+          console.error("Error writing store.json on auto-check expiration:", fsErr);
+        }
       }
       if (process.env.DATABASE_URL && !dbUnavailable) {
         try {
@@ -5316,70 +5614,355 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     const { products: sanitizedAdminProducts } = sanitizeProductsImages(currentStoreState.products);
     res.json({
       ...currentStoreState,
-      products: sanitizedAdminProducts
+      products: sanitizedAdminProducts,
+      isAdminScope: true
     });
+  });
+
+  let storeWriteLockChain: Promise<void> = Promise.resolve();
+  function withStoreWriteLock<T>(fn: () => Promise<T>): Promise<T> {
+    const run = storeWriteLockChain.then(fn, fn);
+    storeWriteLockChain = run.then(
+      () => undefined,
+      () => undefined
+    );
+    return run;
+  }
+
+  // PATCH /api/products/:id - Atomic single-product update with optimistic concurrency & critical-field protection
+  app.patch("/api/products/:id", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    const pool = getDbPool();
+    if (!isValidToken(authHeader)) {
+      await recordSystemAlert(pool, DATA_DIR, {
+        severity: "warning",
+        alertType: "unauthorized_attempt",
+        productId: req.params.id,
+        message: `Intento no autorizado de modificar el producto ${req.params.id} vía PATCH.`,
+        details: { ip: req.ip, route: `/api/products/${req.params.id}` }
+      }).catch(() => {});
+      return res.status(403).json({ success: false, message: "Acceso no autorizado." });
+    }
+
+    const { id } = req.params;
+    const body = req.body || {};
+    const { expectedUpdatedAt, allowZeroFields, allowIntentionalZero, updates: rawUpdates, ...restBody } = body;
+    const incomingUpdates = (rawUpdates && typeof rawUpdates === "object" ? rawUpdates : restBody) as Record<string, any>;
+
+    if (!incomingUpdates || typeof incomingUpdates !== "object" || Object.keys(incomingUpdates).length === 0) {
+      return res.status(400).json({ success: false, message: "No se enviaron campos válidos para actualizar." });
+    }
+
+    try {
+      const outcome = await withStoreWriteLock(async () => {
+        const baselineState = process.env.DATABASE_URL
+          ? await getDbState(true)
+          : currentStoreState;
+
+        const existingIdx = (baselineState.products || []).findIndex((p: any) => String(p.id) === String(id));
+        if (existingIdx === -1) {
+          return { status: 404 as const, payload: { success: false, message: "Producto no encontrado." } };
+        }
+
+        const existingProd = JSON.parse(JSON.stringify(baselineState.products[existingIdx]));
+
+        // Concurrency protection: reject stale or concurrently modified product updates
+        if (expectedUpdatedAt && existingProd.updatedAt) {
+          const dbTime = new Date(existingProd.updatedAt).getTime();
+          const clientTime = new Date(expectedUpdatedAt).getTime();
+          if (!Number.isNaN(dbTime) && !Number.isNaN(clientTime) && dbTime > clientTime) {
+            await recordSystemAlert(pool, DATA_DIR, {
+              severity: "warning",
+              alertType: "concurrency_conflict",
+              productId: existingProd.id,
+              codigo: existingProd.codigo,
+              message: `Conflicto de concurrencia evitado al actualizar ${existingProd.codigo || existingProd.name} (versión obsoleta del cliente).`,
+              details: { expectedUpdatedAt, actualUpdatedAt: existingProd.updatedAt }
+            }).catch(() => {});
+            return {
+              status: 409 as const,
+              payload: {
+                success: false,
+                message: "El producto fue modificado recientemente en otra sesión o proceso. Recarga los datos antes de guardar.",
+                latestUpdatedAt: existingProd.updatedAt,
+                state: { ...baselineState, isAdminScope: true }
+              }
+            };
+          }
+        }
+
+        const blockedZeros: Array<{ productId: string; codigo: string; field: string; previousValue: number }> = [];
+        const mergedProd = mergeProtectedProductUpdate(existingProd, incomingUpdates, {
+          allowZeroFields: Array.isArray(allowZeroFields) ? allowZeroFields : undefined,
+          allowIntentionalZero: allowIntentionalZero === true,
+          onBlockedZero: (info) => blockedZeros.push(info)
+        });
+
+        // Keep stock consistent if variants or branch stocks changed, without zeroing 0-variant legacy stock
+        if (Array.isArray(mergedProd.variants) && mergedProd.variants.length > 0) {
+          const hasBranchData = mergedProd.variants.some((v: any) => v.stockPinamar !== undefined || v.stockMontevideo !== undefined);
+          if (hasBranchData) {
+            mergedProd.stockPinamar = mergedProd.variants.reduce((s: number, v: any) => s + Math.floor(Number(v.stockPinamar || 0)), 0);
+            mergedProd.stockMontevideo = mergedProd.variants.reduce((s: number, v: any) => s + Math.floor(Number(v.stockMontevideo || 0)), 0);
+          }
+          mergedProd.stock = mergedProd.variants.reduce((s: number, v: any) => s + Math.floor(Number(v.stock || 0)), 0);
+        } else if (
+          (incomingUpdates.stockPinamar !== undefined || incomingUpdates.stockMontevideo !== undefined) &&
+          incomingUpdates.stock === undefined
+        ) {
+          const sumBranch = Math.floor(Number(mergedProd.stockPinamar || 0)) + Math.floor(Number(mergedProd.stockMontevideo || 0));
+          if (sumBranch > 0 || Number(existingProd.stock || 0) === 0) {
+            mergedProd.stock = sumBranch;
+          }
+        }
+
+        for (const bz of blockedZeros) {
+          await recordSystemAlert(pool, DATA_DIR, {
+            severity: "critical",
+            alertType: "blocked_zero_overwrite",
+            productId: bz.productId,
+            codigo: bz.codigo,
+            message: `Se bloqueó sobrescritura accidental a $0 en '${bz.field}' de ${bz.codigo || mergedProd.name} (valor previo: $${bz.previousValue}).`,
+            details: { ...bz, route: `/api/products/${id}` }
+          }).catch(() => {});
+        }
+
+        const nextProductsList = baselineState.products.map((p: any, idx: number) =>
+          idx === existingIdx ? mergedProd : p
+        );
+        const sanitizedUpload = sanitizeProductsImages(recalculateComboStocks(nextProductsList));
+
+        const nextState: ShopState = {
+          ...baselineState,
+          products: sanitizedUpload.products
+        };
+
+        currentStoreState = nextState;
+        invalidateDbCache();
+
+        if (process.env.DATABASE_URL) {
+          const saved = await saveDbState(nextState);
+          if (saved) {
+            const dbState = await getDbState(true);
+            currentStoreState = dbState;
+          }
+        }
+
+        try {
+          fs.writeFileSync(STORE_FILE, JSON.stringify(currentStoreState, null, 2), "utf-8");
+        } catch (fsErr) {
+          console.error("Error al escribir respaldo local tras PATCH /api/products/:id:", fsErr);
+        }
+
+        const finalSavedProd = (currentStoreState.products || []).find((p: any) => String(p.id) === String(id)) || mergedProd;
+        await detectProductTransitionAnomalies(pool, DATA_DIR, existingProd, finalSavedProd, `PATCH /api/products/${id}`);
+        await logProductChanges(pool, DATA_DIR, existingProd, finalSavedProd, `PATCH /api/products/${id}`, "admin");
+
+        return {
+          status: 200 as const,
+          payload: {
+            success: true,
+            message: "Producto actualizado con éxito.",
+            product: finalSavedProd,
+            blockedZeros,
+            state: { ...currentStoreState, isAdminScope: true }
+          }
+        };
+      });
+
+      return res.status(outcome.status).json(outcome.payload);
+    } catch (err: any) {
+      console.error(`Error en PATCH /api/products/${id}:`, err);
+      return res.status(500).json({ success: false, message: err?.message || "Error al actualizar producto." });
+    }
   });
 
   // POST update store state
   app.post("/api/store", async (req, res) => {
     const authHeader = req.headers.authorization;
+    const pool = getDbPool();
     if (!isValidToken(authHeader)) {
+      await recordSystemAlert(pool, DATA_DIR, {
+        severity: "warning",
+        alertType: "unauthorized_attempt",
+        message: "Intento no autorizado de modificar catálogo vía POST /api/store.",
+        details: { ip: req.ip, route: "/api/store" }
+      }).catch(() => {});
       return res.status(403).json({ success: false, message: "Acceso no autorizado." });
     }
 
-    const { products, categories, settings, dbCategories, dbSubcategories, coupons, stockAdjustments } = req.body;
+    const {
+      products,
+      categories,
+      settings,
+      dbCategories,
+      dbSubcategories,
+      coupons,
+      stockAdjustments,
+      expectedStateVersion,
+      allowIntentionalZero
+    } = req.body;
     if (!products || !categories || !settings) {
       return res.status(400).json({ success: false, message: "Datos incompletos." });
     }
 
     try {
-      const sanitizedUpload = sanitizeProductsImages(recalculateComboStocks(products));
-      currentStoreState = { 
-        ...currentStoreState, // Preserve adminCredentials and any other configuration
-        products: sanitizedUpload.products, 
-        categories, 
-        settings,
-        dbCategories: Array.isArray(dbCategories) ? dbCategories : currentStoreState.dbCategories,
-        dbSubcategories: Array.isArray(dbSubcategories) ? dbSubcategories : currentStoreState.dbSubcategories,
-        coupons: Array.isArray(coupons) ? coupons : currentStoreState.coupons,
-        stockAdjustments: Array.isArray(stockAdjustments) ? stockAdjustments : currentStoreState.stockAdjustments
-      };
-      invalidateDbCache();
-      
-      // Check and clear expired promotionBannerText before saving
-      const checkerResult = checkAndClearExpiredBannerText(currentStoreState);
-      if (checkerResult.updated) {
-        currentStoreState = checkerResult.state;
-      }
+      const outcome = await withStoreWriteLock(async () => {
+        // Load authoritative full admin baseline so omitted/undefined fields or stale caches NEVER overwrite DB data
+        const baselineState = process.env.DATABASE_URL
+          ? await getDbState(true)
+          : currentStoreState;
 
-      // Guardar SIEMPRE en archivo local como respaldo y sincronizar con base de datos si existe
-      try {
-        fs.writeFileSync(STORE_FILE, JSON.stringify(currentStoreState, null, 2), "utf-8");
-        // Invalidate Google Reviews Cache to reflect new parameters instantly
-        reviewsCache = null;
-      } catch (fsErr) {
-        console.error("Error al escribir respaldo en archivo local:", fsErr);
-      }
-
-      if (process.env.DATABASE_URL) {
-        const saved = await saveDbState(currentStoreState);
-        if (saved) {
-          // Re-load to get actual database-assigned auto-incremented integer IDs!
-          const dbState = await getDbState();
-          currentStoreState = dbState;
+        if (
+          expectedStateVersion &&
+          baselineState.stateVersion &&
+          String(expectedStateVersion) !== String(baselineState.stateVersion)
+        ) {
+          await recordSystemAlert(pool, DATA_DIR, {
+            severity: "warning",
+            alertType: "concurrency_conflict",
+            message: "Conflicto de versión detectado en POST /api/store: se rechazó guardado desde caché obsoleta.",
+            details: { expectedStateVersion, actualStateVersion: baselineState.stateVersion }
+          }).catch(() => {});
+          return {
+            status: 409 as const,
+            payload: {
+              success: false,
+              message: "La base de datos fue actualizada desde otra sesión o proceso. Se rechaza el guardado obsoleto para proteger los datos.",
+              actualStateVersion: baselineState.stateVersion,
+              state: { ...baselineState, isAdminScope: true }
+            }
+          };
         }
-      }
 
-      // Auto-notify search engines of catalog and page changes (Google & Bing ping)
-      try {
-        const sitemapUrl = "https://juem.com.uy/sitemap.xml";
-        fetch(`https://www.google.com/ping?sitemap=${encodeURIComponent(sitemapUrl)}`).catch(() => {});
-        fetch(`https://www.bing.com/ping?sitemap=${encodeURIComponent(sitemapUrl)}`).catch(() => {});
-      } catch (pingErr) {
-        // Silently continue
-      }
+        const existingProdMap = new Map<string, any>();
+        for (const ep of baselineState.products || []) {
+          if (ep?.id !== undefined) existingProdMap.set(String(ep.id), ep);
+        }
 
-      res.json({ success: true, message: "Cambios guardados con éxito en el servidor.", state: currentStoreState });
+        const blockedZeros: Array<{ productId: string; codigo: string; field: string; previousValue: number }> = [];
+        const mergedIncomingProducts = (products || []).map((incoming: any) => {
+          if (!incoming) return incoming;
+          const existing = incoming.id !== undefined ? existingProdMap.get(String(incoming.id)) : undefined;
+          if (!existing) return incoming;
+
+          return mergeProtectedProductUpdate(existing, incoming, {
+            allowZeroFields: Array.isArray(incoming.allowZeroFields) ? incoming.allowZeroFields : undefined,
+            allowIntentionalZero: allowIntentionalZero === true,
+            onBlockedZero: (info) => blockedZeros.push(info)
+          });
+        });
+
+        for (const bz of blockedZeros) {
+          await recordSystemAlert(pool, DATA_DIR, {
+            severity: "critical",
+            alertType: "blocked_zero_overwrite",
+            productId: bz.productId,
+            codigo: bz.codigo,
+            message: `Se bloqueó sobrescritura accidental a $0 en '${bz.field}' de ${bz.codigo || bz.productId} vía POST /api/store (previo: $${bz.previousValue}).`,
+            details: { ...bz, route: "/api/store" }
+          }).catch(() => {});
+        }
+
+        // Count modifications & deletions to trigger pre_bulk backup cleanly before bulk mutations
+        const incomingIdsSet = new Set(mergedIncomingProducts.map((p: any) => String(p?.id || "")));
+        const deletedProducts = (baselineState.products || []).filter((ep: any) => !incomingIdsSet.has(String(ep.id)));
+        let modifiedProductsCount = 0;
+        for (const mp of mergedIncomingProducts) {
+          const ep = mp?.id !== undefined ? existingProdMap.get(String(mp.id)) : undefined;
+          if (!ep || !isProductEqual(mp, ep)) {
+            modifiedProductsCount++;
+          }
+        }
+
+        if (modifiedProductsCount >= 3 || deletedProducts.length > 0) {
+          await createSystemBackup(pool, DATA_DIR, baselineState, {
+            backupType: "pre_bulk",
+            reason: `Respaldo automático previo a actualización masiva (${modifiedProductsCount} modif., ${deletedProducts.length} elim.)`
+          }).catch((err) => console.error("Error creando respaldo pre_bulk:", err));
+        }
+
+        const sanitizedUpload = sanitizeProductsImages(recalculateComboStocks(mergedIncomingProducts));
+        currentStoreState = { 
+          ...baselineState, // Preserve adminCredentials and full baseline fields
+          products: sanitizedUpload.products, 
+          categories, 
+          settings,
+          dbCategories: Array.isArray(dbCategories) ? dbCategories : baselineState.dbCategories,
+          dbSubcategories: Array.isArray(dbSubcategories) ? dbSubcategories : baselineState.dbSubcategories,
+          coupons: Array.isArray(coupons) ? coupons : baselineState.coupons,
+          stockAdjustments: Array.isArray(stockAdjustments) ? stockAdjustments : baselineState.stockAdjustments
+        };
+        invalidateDbCache();
+        
+        // Check and clear expired promotionBannerText before saving
+        const checkerResult = checkAndClearExpiredBannerText(currentStoreState);
+        if (checkerResult.updated) {
+          currentStoreState = checkerResult.state;
+        }
+
+        if (process.env.DATABASE_URL) {
+          const saved = await saveDbState(currentStoreState);
+          if (saved) {
+            // Re-load to get actual database-assigned auto-incremented integer IDs and preserved fields
+            const dbState = await getDbState(true);
+            currentStoreState = dbState;
+          }
+        }
+
+        // Audit logs & anomaly detection for every created/modified/deleted product
+        for (const np of currentStoreState.products || []) {
+          const ep = existingProdMap.get(String(np.id));
+          if (!ep) {
+            await logProductChanges(pool, DATA_DIR, null, np, "POST /api/store", "admin");
+          } else if (!isProductEqual(ep, np)) {
+            await detectProductTransitionAnomalies(pool, DATA_DIR, ep, np, "POST /api/store");
+            await logProductChanges(pool, DATA_DIR, ep, np, "POST /api/store", "admin");
+          }
+        }
+        for (const dp of deletedProducts) {
+          await logProductChanges(pool, DATA_DIR, dp, null, "POST /api/store (delete)", "admin");
+        }
+
+        if (modifiedProductsCount >= 5 || deletedProducts.length >= 2) {
+          await recordSystemAlert(pool, DATA_DIR, {
+            severity: "warning",
+            alertType: "bulk_modification",
+            message: `Modificación masiva registrada vía POST /api/store (${modifiedProductsCount} productos actualizados, ${deletedProducts.length} eliminados).`,
+            details: { modifiedProductsCount, deletedCount: deletedProducts.length }
+          }).catch(() => {});
+        }
+
+        // Guardar SIEMPRE en archivo local como respaldo completo (después de resolver DB IDs y campos preservados)
+        try {
+          fs.writeFileSync(STORE_FILE, JSON.stringify(currentStoreState, null, 2), "utf-8");
+          // Invalidate Google Reviews Cache to reflect new parameters instantly
+          reviewsCache = null;
+        } catch (fsErr) {
+          console.error("Error al escribir respaldo en archivo local:", fsErr);
+        }
+
+        // Auto-notify search engines of catalog and page changes (Google & Bing ping)
+        try {
+          const sitemapUrl = "https://juem.com.uy/sitemap.xml";
+          fetch(`https://www.google.com/ping?sitemap=${encodeURIComponent(sitemapUrl)}`).catch(() => {});
+          fetch(`https://www.bing.com/ping?sitemap=${encodeURIComponent(sitemapUrl)}`).catch(() => {});
+        } catch (pingErr) {
+          // Silently continue
+        }
+
+        return {
+          status: 200 as const,
+          payload: {
+            success: true,
+            message: "Cambios guardados con éxito en el servidor.",
+            blockedZeros,
+            state: { ...currentStoreState, isAdminScope: true }
+          }
+        };
+      });
+
+      return res.status(outcome.status).json(outcome.payload);
     } catch (err: any) {
       console.error("Error al guardar estado de la tienda:", err);
       let errMsg = "Error interno al guardar los datos.";
@@ -5395,7 +5978,14 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
   // POST /api/stock/adjust - Direct atomic stock adjustment for fast and reliable updates
   app.post("/api/stock/adjust", async (req, res) => {
     const authHeader = req.headers.authorization;
+    const pool = getDbPool();
     if (!isValidToken(authHeader)) {
+      await recordSystemAlert(pool, DATA_DIR, {
+        severity: "warning",
+        alertType: "unauthorized_attempt",
+        message: "Intento no autorizado en POST /api/stock/adjust.",
+        details: { ip: req.ip, route: "/api/stock/adjust" }
+      }).catch(() => {});
       return res.status(403).json({ success: false, message: "Acceso no autorizado." });
     }
 
@@ -5408,13 +5998,17 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     const targetPidStr = String(productId);
 
     try {
-      const pool = getDbPool();
+      if (process.env.DATABASE_URL) {
+        currentStoreState = await getDbState(true);
+      }
       let targetProduct: any = (currentStoreState.products || []).find((p: any) => String(p.id) === targetPidStr);
       let originalStock = 0;
 
       if (!targetProduct) {
         return res.status(404).json({ success: false, message: "Producto no encontrado." });
       }
+
+      const beforeProductSnapshot = JSON.parse(JSON.stringify(targetProduct));
 
       if (field === "stockMontevideo") {
         originalStock = Number(targetProduct.stockMontevideo) || 0;
@@ -5485,24 +6079,32 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
             for (const v of targetProduct.variants) {
               if (v.id) {
                 await pool.query(
-                  "UPDATE public.product_variants SET stock_montevideo = $1, stock_pinamar = $2, stock = $3 WHERE id = $4 AND product_id = $5",
+                  "UPDATE public.product_variants SET stock_montevideo = $1, stock_pinamar = $2, stock = $3, updated_at = NOW() WHERE id = $4 AND product_id = $5",
                   [v.stockMontevideo || 0, v.stockPinamar || 0, v.stock || 0, v.id, pidInt]
                 );
               } else if (v.sku) {
                 await pool.query(
-                  "UPDATE public.product_variants SET stock_montevideo = $1, stock_pinamar = $2, stock = $3 WHERE sku = $4 AND product_id = $5",
+                  "UPDATE public.product_variants SET stock_montevideo = $1, stock_pinamar = $2, stock = $3, updated_at = NOW() WHERE sku = $4 AND product_id = $5",
                   [v.stockMontevideo || 0, v.stockPinamar || 0, v.stock || 0, v.sku, pidInt]
                 );
               }
             }
           }
           await pool.query(
-            "UPDATE public.products SET stock_montevideo = $1, stock_pinamar = $2, stock = $3 WHERE id = $4",
+            "UPDATE public.products SET stock_montevideo = $1, stock_pinamar = $2, stock = $3, updated_at = NOW() WHERE id = $4",
             [targetProduct.stockMontevideo || 0, targetProduct.stockPinamar || 0, targetProduct.stock || 0, pidInt]
           );
+          await pool.query(
+            "INSERT INTO shop_state (id, state) VALUES ('stock_adjustments', $1) ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state;",
+            [JSON.stringify(currentStoreState.stockAdjustments.slice(0, 500))]
+          ).catch(() => {});
         }
         invalidateDbCache();
+        currentStoreState = await getDbState(true);
+        targetProduct = (currentStoreState.products || []).find((p: any) => String(p.id) === targetPidStr) || targetProduct;
       }
+
+      await logProductChanges(pool, DATA_DIR, beforeProductSnapshot, targetProduct, "POST /api/stock/adjust", "admin");
 
       // Save local backup file
       try {
@@ -5511,7 +6113,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         console.error("Error saving store.json in stock adjust:", fsErr);
       }
 
-      return res.json({ success: true, product: targetProduct, state: currentStoreState });
+      return res.json({ success: true, product: targetProduct, state: { ...currentStoreState, isAdminScope: true } });
     } catch (err: any) {
       console.error("Error en /api/stock/adjust:", err);
       return res.status(500).json({ success: false, message: err.message || "Error al actualizar stock." });
@@ -5521,9 +6123,16 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
   // POST integration stock sync
   app.post("/api/integrations/sync-stock", async (req, res) => {
     const { productId, codigo, stock, stock_montevideo, stock_pinamar, secretKey } = req.body;
+    const pool = getDbPool();
 
     const INTEGRATION_SECRET = process.env.INTEGRATION_SECRET || "sync_stock_default_secret_3322";
     if (secretKey !== INTEGRATION_SECRET && secretKey !== "sync_stock_default_secret_3322") {
+      await recordSystemAlert(pool, DATA_DIR, {
+        severity: "warning",
+        alertType: "unauthorized_attempt",
+        message: "Intento no autorizado en POST /api/integrations/sync-stock.",
+        details: { ip: req.ip, route: "/api/integrations/sync-stock" }
+      }).catch(() => {});
       return res.status(403).json({ success: false, message: "Llave secreta de integración inválida." });
     }
 
@@ -5531,10 +6140,15 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       return res.status(400).json({ success: false, message: "El campo 'stock' es requerido y debe ser un número entero válido." });
     }
 
-    const targetStock = Math.floor(Number(stock));
+    const targetStock = Math.max(0, Math.floor(Number(stock)));
 
     try {
+      if (process.env.DATABASE_URL) {
+        currentStoreState = await getDbState(true);
+      }
       let found = false;
+      let oldProdSnapshot: any = null;
+      let newProdSnapshot: any = null;
       const targetIdStr = productId ? String(productId) : null;
       const targetCodigo = codigo ? String(codigo).trim() : null;
 
@@ -5548,7 +6162,9 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
 
         if (matchesId || matchesCodigo) {
           found = true;
-          return { ...p, stock: targetStock };
+          oldProdSnapshot = JSON.parse(JSON.stringify(p));
+          newProdSnapshot = { ...p, stock: targetStock };
+          return newProdSnapshot;
         }
         return p;
       });
@@ -5557,27 +6173,37 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         return res.status(404).json({ success: false, message: "Producto no encontrado con el identificador o código provisto." });
       }
 
-      try {
-        fs.writeFileSync(STORE_FILE, JSON.stringify(currentStoreState, null, 2), "utf-8");
-      } catch (fsErr) {
-        console.error("Error al guardar respaldo en archivo local durante sync:", fsErr);
-      }
-
-      const pool = getDbPool();
+      invalidateDbCache();
       if (pool && !dbUnavailable) {
         if (targetIdStr && !isNaN(parseInt(targetIdStr))) {
           await pool.query(
-            "UPDATE public.products SET stock = $1 WHERE id = $2;",
+            "UPDATE public.products SET stock = $1, updated_at = NOW() WHERE id = $2;",
             [targetStock, parseInt(targetIdStr)]
           );
         } else if (targetCodigo) {
           await pool.query(
-            "UPDATE public.products SET stock = $1 WHERE codigo = $2 AND active = true;",
+            "UPDATE public.products SET stock = $1, updated_at = NOW() WHERE codigo = $2 AND active = true;",
             [targetStock, targetCodigo]
           );
         }
-        const dbState = await getDbState();
+        const dbState = await getDbState(true);
         currentStoreState = dbState;
+        const savedMatch = (currentStoreState.products || []).find((p: any) =>
+          (targetIdStr && String(p.id) === targetIdStr) ||
+          (targetCodigo && p.codigo && String(p.codigo).trim().toUpperCase() === targetCodigo.toUpperCase())
+        );
+        if (savedMatch) newProdSnapshot = savedMatch;
+      }
+
+      if (oldProdSnapshot && newProdSnapshot) {
+        await detectProductTransitionAnomalies(pool, DATA_DIR, oldProdSnapshot, newProdSnapshot, "POST /api/integrations/sync-stock");
+        await logProductChanges(pool, DATA_DIR, oldProdSnapshot, newProdSnapshot, "POST /api/integrations/sync-stock", "integration");
+      }
+
+      try {
+        fs.writeFileSync(STORE_FILE, JSON.stringify(currentStoreState, null, 2), "utf-8");
+      } catch (fsErr) {
+        console.error("Error al guardar respaldo en archivo local durante sync:", fsErr);
       }
 
       console.log(`[SYNC EXTR] Producto (Código: ${targetCodigo || targetIdStr}) actualizado con éxito. Nuevo stock: ${targetStock} (Montevideo: ${stock_montevideo || 'N/D'}, Pinamar: ${stock_pinamar || 'N/D'}).`);
@@ -5626,8 +6252,15 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     const rawSizes = sizes || talles || tallas || [];
     const rawColors = colors || colores || [];
 
+    const syncPool = getDbPool();
     const INTEGRATION_SECRET = process.env.INTEGRATION_SECRET || "sync_stock_default_secret_3322";
     if (secretKey !== INTEGRATION_SECRET && secretKey !== "sync_stock_default_secret_3322") {
+      await recordSystemAlert(syncPool, DATA_DIR, {
+        severity: "warning",
+        alertType: "unauthorized_attempt",
+        message: "Intento no autorizado en POST /api/integrations/sync-product.",
+        details: { ip: req.ip, route: "/api/integrations/sync-product" }
+      }).catch(() => {});
       return res.status(403).json({ success: false, message: "Llave secreta de integración inválida." });
     }
 
@@ -5637,10 +6270,14 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     }
 
     try {
+      if (process.env.DATABASE_URL) {
+        currentStoreState = await getDbState(true);
+      }
       // 1. Find product in state or DB (Case-insensitive check for base SKU/codigo matching)
       const existingProduct = currentStoreState.products.find(
         (p) => p.codigo && String(p.codigo).trim().toUpperCase() === targetCodigo.toUpperCase()
       );
+      const oldProductSnapshot = existingProduct ? JSON.parse(JSON.stringify(existingProduct)) : null;
 
       const isNew = !existingProduct;
 
@@ -5783,7 +6420,12 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
             ? Number(v.priceDelta ?? v.price_delta) 
             : undefined;
           
+          const rawVImgs = Array.isArray(v.imagenes)
+            ? v.imagenes.map((u: any) => String(u || "").trim()).filter(Boolean)
+            : [];
           const vImgUrl = String(v.imageUrl || v.image_url || v.imagen || v.url || "").trim();
+          const finalVImgs = Array.from(new Set(rawVImgs.length > 0 ? rawVImgs : (vImgUrl ? [vImgUrl] : [])));
+          const finalVPrimary = finalVImgs[0] || vImgUrl || undefined;
           const vSku = String(v.sku || "").trim();
           const vColorCode = String(v.colorCode || v.color_code || v.codigo_color || "").trim();
 
@@ -5795,7 +6437,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
             colorCode: vColorCode || undefined,
             priceDelta,
             stock: stockVal,
-            imageUrl: vImgUrl || undefined,
+            imageUrl: finalVPrimary,
+            imagenes: finalVImgs,
             price: priceOverride
           };
         }).filter((v: any) => v.size || v.color);
@@ -5835,7 +6478,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         )
       );
 
-      const updatedProduct = {
+      const rawUpdatedProduct = {
+        ...(existingProduct || {}),
         id: existingProduct ? existingProduct.id : "prod-" + Date.now(),
         codigo: targetCodigo,
         name: name || (existingProduct ? existingProduct.name : ""),
@@ -5860,6 +6504,21 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         createdAt: existingProduct ? existingProduct.createdAt : new Date().toISOString()
       };
 
+      const updatedProduct = existingProduct
+        ? mergeProtectedProductUpdate(existingProduct, rawUpdatedProduct, {
+            onBlockedZero: (info) => {
+              recordSystemAlert(syncPool, DATA_DIR, {
+                severity: "critical",
+                alertType: "blocked_zero_overwrite",
+                productId: info.productId,
+                codigo: info.codigo,
+                message: `Se bloqueó sobrescritura a $0 en '${info.field}' durante sync-product (${info.codigo}).`,
+                details: { ...info, route: "/api/integrations/sync-product" }
+              }).catch(() => {});
+            }
+          })
+        : rawUpdatedProduct;
+
       // 4. Update memory list state
       if (isNew) {
         currentStoreState.products.push(updatedProduct);
@@ -5869,25 +6528,29 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         );
       }
 
-      // 5. Commit to local file & DB
+      // 5. Commit to DB first, then full local backup
+      invalidateDbCache();
+      if (process.env.DATABASE_URL) {
+        const saved = await saveDbState(currentStoreState);
+        if (saved) {
+          const dbState = await getDbState(true);
+          currentStoreState = dbState;
+        }
+      }
+
       try {
         fs.writeFileSync(STORE_FILE, JSON.stringify(currentStoreState, null, 2), "utf-8");
       } catch (fsErr) {
         console.error("Error al guardar respaldo local tras sync-product:", fsErr);
       }
 
-      if (process.env.DATABASE_URL) {
-        const saved = await saveDbState(currentStoreState);
-        if (saved) {
-          const dbState = await getDbState();
-          currentStoreState = dbState;
-        }
-      }
-
       // Find the final created/updated product representation with real ID from Database in case of inserts
       const finalProductObj = currentStoreState.products.find(
         (p) => p.codigo && String(p.codigo).trim() === targetCodigo
       ) || updatedProduct;
+
+      await detectProductTransitionAnomalies(syncPool, DATA_DIR, oldProductSnapshot, finalProductObj, "POST /api/integrations/sync-product");
+      await logProductChanges(syncPool, DATA_DIR, oldProductSnapshot, finalProductObj, "POST /api/integrations/sync-product", "integration");
 
       console.log(`[DYNAMIC SYNC] Artículo con código '${targetCodigo}' sincronizado con éxito. Acción: ${isNew ? 'CREADO' : 'ACTUALIZADO'}.`);
 
@@ -6219,6 +6882,12 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
   app.post("/api/stock-transfers", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!isValidToken(authHeader)) {
+      await recordSystemAlert(getDbPool(), DATA_DIR, {
+        severity: "warning",
+        alertType: "unauthorized_attempt",
+        message: "Intento no autorizado en POST /api/stock-transfers.",
+        details: { ip: req.ip, route: "/api/stock-transfers" }
+      }).catch(() => {});
       return res.status(403).json({ success: false, message: "Acceso denegado. Se requiere autenticación de administrador principal." });
     }
     
@@ -6559,6 +7228,12 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
   app.delete("/api/stock-transfers/:id", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!isValidToken(authHeader)) {
+      await recordSystemAlert(getDbPool(), DATA_DIR, {
+        severity: "warning",
+        alertType: "unauthorized_attempt",
+        message: "Intento no autorizado en DELETE /api/stock-transfers.",
+        details: { ip: req.ip, route: `/api/stock-transfers/${req.params.id}` }
+      }).catch(() => {});
       return res.status(403).json({ success: false, message: "Acceso denegado. Se requiere autenticación de administrador principal." });
     }
     const { id } = req.params;
@@ -6726,6 +7401,12 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
   app.put("/api/stock-transfers/:id", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!isValidToken(authHeader)) {
+      await recordSystemAlert(getDbPool(), DATA_DIR, {
+        severity: "warning",
+        alertType: "unauthorized_attempt",
+        message: "Intento no autorizado en PUT /api/stock-transfers.",
+        details: { ip: req.ip, route: `/api/stock-transfers/${req.params.id}` }
+      }).catch(() => {});
       return res.status(403).json({ success: false, message: "Acceso denegado. Se requiere autenticación de administrador principal." });
     }
     const { id } = req.params;
@@ -9727,25 +10408,15 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       // Update quote with the created product ID and status
       await pool.query("UPDATE public.quotes_3d SET product_id = $1, status = 'approved', updated_at = NOW() WHERE id = $2;", [String(createdProduct.id), id]);
 
-      // Synchronize in-memory store state if available
-      if (currentStoreState && Array.isArray(currentStoreState.products)) {
-        const prodModel = {
-          id: String(createdProduct.id),
-          name: createdProduct.name,
-          price: parseFloat(createdProduct.price) || 0,
-          stock: createdProduct.stock || 0,
-          category: createdProduct.category || "Impresión 3D",
-          featured: false,
-          description: createdProduct.description || "",
-          imageUrl: createdProduct.image_url || "",
-          createdAt: new Date().toISOString(),
-          is3D: true,
-          hoursPerUnit: totalHours,
-          precioCompra: prodCost,
-          codigo: createdProduct.codigo || undefined
-        };
-        currentStoreState.products.unshift(prodModel as any);
-      }
+      invalidateDbCache();
+      const refreshedState = await getDbState(true);
+      currentStoreState = refreshedState;
+      try {
+        fs.writeFileSync(STORE_FILE, JSON.stringify(currentStoreState, null, 2), "utf-8");
+      } catch {}
+
+      const createdMapped = (currentStoreState.products || []).find((p: any) => String(p.id) === String(createdProduct.id)) || createdProduct;
+      await logProductChanges(pool, DATA_DIR, null, createdMapped, `POST /api/3d/quotes/${id}/convert-to-product`, "admin");
 
       res.json({
         success: true,
@@ -12379,6 +13050,341 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       console.error("[MercadoPago Webhook Critical Error]", err);
       // Return 200 with success: false so Mercado Pago stops polling if it's fatal, or tries again for networking
       res.status(200).json({ success: false, error: err.message || String(err) });
+    }
+  });
+
+  // --- SISTEMA DE RESPALDOS AUTOMÁTICOS, AUDITORÍA Y ALERTAS DE INTEGRIDAD ---
+
+  app.get("/api/admin/backups", async (req, res) => {
+    const pool = getDbPool();
+    if (!isValidToken(req.headers.authorization)) {
+      await recordSystemAlert(pool, DATA_DIR, {
+        severity: "warning",
+        alertType: "unauthorized_attempt",
+        message: "Intento no autorizado en GET /api/admin/backups.",
+        details: { ip: req.ip, route: "/api/admin/backups" }
+      }).catch(() => {});
+      return res.status(403).json({ success: false, message: "Acceso no autorizado." });
+    }
+    try {
+      const backups = await listBackups(pool, DATA_DIR);
+      return res.json({ success: true, backups });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: err?.message || "Error al listar respaldos." });
+    }
+  });
+
+  app.post("/api/admin/backups", async (req, res) => {
+    const pool = getDbPool();
+    if (!isValidToken(req.headers.authorization)) {
+      await recordSystemAlert(pool, DATA_DIR, {
+        severity: "warning",
+        alertType: "unauthorized_attempt",
+        message: "Intento no autorizado en POST /api/admin/backups.",
+        details: { ip: req.ip, route: "/api/admin/backups" }
+      }).catch(() => {});
+      return res.status(403).json({ success: false, message: "Acceso no autorizado." });
+    }
+    try {
+      const baselineState = process.env.DATABASE_URL ? await getDbState(true) : currentStoreState;
+      const reason = String(req.body?.reason || "Respaldo manual administrativo");
+      const created = await createSystemBackup(pool, DATA_DIR, baselineState, {
+        backupType: "manual",
+        reason
+      });
+      const verification = await verifyBackupIntegrity(pool, DATA_DIR, created.id);
+      return res.json({ success: true, backup: created, verification });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: err?.message || "Error al generar respaldo." });
+    }
+  });
+
+  app.post("/api/admin/backups/:id/verify", async (req, res) => {
+    const pool = getDbPool();
+    if (!isValidToken(req.headers.authorization)) {
+      await recordSystemAlert(pool, DATA_DIR, {
+        severity: "warning",
+        alertType: "unauthorized_attempt",
+        message: `Intento no autorizado al verificar respaldo ${req.params.id}.`,
+        details: { ip: req.ip, route: `/api/admin/backups/${req.params.id}/verify` }
+      }).catch(() => {});
+      return res.status(403).json({ success: false, message: "Acceso no autorizado." });
+    }
+    try {
+      const result = await verifyBackupIntegrity(pool, DATA_DIR, req.params.id);
+      return res.json({ success: result.valid, ...result });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: err?.message || "Error al verificar respaldo." });
+    }
+  });
+
+  app.get("/api/admin/backups/:id/diff", async (req, res) => {
+    const pool = getDbPool();
+    if (!isValidToken(req.headers.authorization)) {
+      await recordSystemAlert(pool, DATA_DIR, {
+        severity: "warning",
+        alertType: "unauthorized_attempt",
+        message: `Intento no autorizado en diff de respaldo ${req.params.id}.`,
+        details: { ip: req.ip, route: `/api/admin/backups/${req.params.id}/diff` }
+      }).catch(() => {});
+      return res.status(403).json({ success: false, message: "Acceso no autorizado." });
+    }
+    try {
+      const bkp = await getBackupById(pool, DATA_DIR, req.params.id);
+      if (!bkp) return res.status(404).json({ success: false, message: "Respaldo no encontrado." });
+      const liveState = process.env.DATABASE_URL ? await getDbState(true) : currentStoreState;
+      const diffs = diffProductsAgainstSnapshot(liveState.products || [], bkp.snapshot?.products || []);
+      return res.json({ success: true, backupId: req.params.id, diffCount: diffs.length, diffs });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: err?.message || "Error al comparar respaldo." });
+    }
+  });
+
+  app.post("/api/admin/backups/:id/restore-product", async (req, res) => {
+    const pool = getDbPool();
+    if (!isValidToken(req.headers.authorization)) {
+      await recordSystemAlert(pool, DATA_DIR, {
+        severity: "warning",
+        alertType: "unauthorized_attempt",
+        message: `Intento no autorizado de restaurar producto desde respaldo ${req.params.id}.`,
+        details: { ip: req.ip, route: `/api/admin/backups/${req.params.id}/restore-product` }
+      }).catch(() => {});
+      return res.status(403).json({ success: false, message: "Acceso no autorizado." });
+    }
+
+    const { productId, codigo, fields } = req.body || {};
+    if (!productId && !codigo) {
+      return res.status(400).json({ success: false, message: "Se requiere 'productId' o 'codigo' para restaurar un producto individual." });
+    }
+
+    try {
+      const verification = await verifyBackupIntegrity(pool, DATA_DIR, req.params.id);
+      if (!verification.valid) {
+        return res.status(400).json({ success: false, message: "El respaldo no pasó la verificación de integridad.", verification });
+      }
+
+      const bkp = await getBackupById(pool, DATA_DIR, req.params.id);
+      const snapProducts: any[] = bkp?.snapshot?.products || [];
+      const bkpProd = snapProducts.find((p: any) =>
+        (productId && String(p.id) === String(productId)) ||
+        (codigo && p.codigo && String(p.codigo).trim().toUpperCase() === String(codigo).trim().toUpperCase())
+      );
+
+      if (!bkpProd) {
+        return res.status(404).json({ success: false, message: "El producto indicado no existe en el respaldo seleccionado." });
+      }
+
+      const liveState = process.env.DATABASE_URL ? await getDbState(true) : currentStoreState;
+      const preRestoreBackup = await createSystemBackup(pool, DATA_DIR, liveState, {
+        backupType: "pre_restore",
+        reason: `Respaldo automático previo a restauración individual de ${bkpProd.codigo || bkpProd.id} desde ${req.params.id}`
+      });
+
+      const liveIdx = (liveState.products || []).findIndex((p: any) =>
+        (productId && String(p.id) === String(productId)) ||
+        (codigo && p.codigo && String(p.codigo).trim().toUpperCase() === String(codigo).trim().toUpperCase()) ||
+        String(p.id) === String(bkpProd.id)
+      );
+
+      const oldLiveProd = liveIdx >= 0 ? JSON.parse(JSON.stringify(liveState.products[liveIdx])) : null;
+      let restoredProd: any;
+      let fieldsRestored: string[] = [];
+
+      if (oldLiveProd && Array.isArray(fields) && fields.length > 0) {
+        restoredProd = { ...oldLiveProd };
+        for (const f of fields) {
+          const fname = String(f);
+          if (bkpProd[fname] !== undefined) {
+            restoredProd[fname] = JSON.parse(JSON.stringify(bkpProd[fname]));
+            fieldsRestored.push(fname);
+          }
+        }
+      } else {
+        restoredProd = JSON.parse(JSON.stringify(bkpProd));
+        fieldsRestored = ["ALL_FIELDS"];
+      }
+
+      const nextProducts =
+        liveIdx >= 0
+          ? liveState.products.map((p: any, i: number) => (i === liveIdx ? restoredProd : p))
+          : [restoredProd, ...(liveState.products || [])];
+
+      const nextState: ShopState = { ...liveState, products: nextProducts };
+      currentStoreState = nextState;
+      invalidateDbCache();
+
+      if (process.env.DATABASE_URL) {
+        const saved = await saveDbState(nextState);
+        if (saved) {
+          currentStoreState = await getDbState(true);
+        }
+      }
+
+      try {
+        fs.writeFileSync(STORE_FILE, JSON.stringify(currentStoreState, null, 2), "utf-8");
+      } catch {}
+
+      const finalRestoredProd =
+        (currentStoreState.products || []).find((p: any) => String(p.id) === String(restoredProd.id)) || restoredProd;
+
+      await logProductChanges(
+        pool,
+        DATA_DIR,
+        oldLiveProd,
+        finalRestoredProd,
+        `restore-product:${req.params.id}`,
+        "admin"
+      );
+
+      return res.json({
+        success: true,
+        message: `Producto ${finalRestoredProd.codigo || finalRestoredProd.id} restaurado correctamente desde ${req.params.id}.`,
+        preRestoreBackupId: preRestoreBackup.id,
+        fieldsRestored,
+        restoredProduct: finalRestoredProd
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: err?.message || "Error al restaurar producto individual." });
+    }
+  });
+
+  app.get("/api/admin/audit-logs", async (req, res) => {
+    const pool = getDbPool();
+    if (!isValidToken(req.headers.authorization)) {
+      await recordSystemAlert(pool, DATA_DIR, {
+        severity: "warning",
+        alertType: "unauthorized_attempt",
+        message: "Intento no autorizado en GET /api/admin/audit-logs.",
+        details: { ip: req.ip, route: "/api/admin/audit-logs" }
+      }).catch(() => {});
+      return res.status(403).json({ success: false, message: "Acceso no autorizado." });
+    }
+
+    const { productId, codigo } = req.query;
+    const limit = Math.min(500, Math.max(1, Number(req.query.limit || 100)));
+
+    try {
+      if (pool && !dbUnavailable) {
+        const conditions: string[] = [];
+        const params: any[] = [];
+        if (productId) {
+          params.push(Number(productId));
+          conditions.push(`product_id = $${params.length}`);
+        }
+        if (codigo) {
+          params.push(String(codigo).trim());
+          conditions.push(`UPPER(codigo) = UPPER($${params.length})`);
+        }
+        params.push(limit);
+        const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+        const q = `SELECT id, product_id, codigo, product_name, field_name, old_value, new_value, operation, actor, created_at FROM public.product_audit_logs ${whereClause} ORDER BY created_at DESC, id DESC LIMIT $${params.length};`;
+        const rowsRes = await pool.query(q, params);
+        return res.json({
+          success: true,
+          logs: rowsRes.rows.map((r: any) => ({
+            id: r.id,
+            productId: r.product_id,
+            codigo: r.codigo,
+            productName: r.product_name,
+            fieldName: r.field_name,
+            oldValue: r.old_value,
+            newValue: r.new_value,
+            operation: r.operation,
+            actor: r.actor,
+            createdAt: r.created_at ? new Date(r.created_at).toISOString() : undefined
+          }))
+        });
+      }
+
+      const file = path.join(DATA_DIR, "audit_logs.json");
+      let logs: any[] = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf-8")) : [];
+      if (productId) logs = logs.filter((l: any) => String(l.productId) === String(productId));
+      if (codigo) logs = logs.filter((l: any) => String(l.codigo || "").toUpperCase() === String(codigo).toUpperCase());
+      return res.json({ success: true, logs: logs.slice(0, limit) });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: err?.message || "Error al consultar historial de auditoría." });
+    }
+  });
+
+  app.get("/api/admin/alerts", async (req, res) => {
+    const pool = getDbPool();
+    if (!isValidToken(req.headers.authorization)) {
+      await recordSystemAlert(pool, DATA_DIR, {
+        severity: "warning",
+        alertType: "unauthorized_attempt",
+        message: "Intento no autorizado en GET /api/admin/alerts.",
+        details: { ip: req.ip, route: "/api/admin/alerts" }
+      }).catch(() => {});
+      return res.status(403).json({ success: false, message: "Acceso no autorizado." });
+    }
+
+    try {
+      if (pool && !dbUnavailable) {
+        const rowsRes = await pool.query(
+          `SELECT id, severity, alert_type, product_id, codigo, message, details, acknowledged, created_at
+           FROM public.system_alerts
+           ORDER BY created_at DESC, id DESC
+           LIMIT 200;`
+        );
+        return res.json({
+          success: true,
+          alerts: rowsRes.rows.map((r: any) => ({
+            id: r.id,
+            severity: r.severity,
+            alertType: r.alert_type,
+            productId: r.product_id,
+            codigo: r.codigo,
+            message: r.message,
+            details: r.details,
+            acknowledged: !!r.acknowledged,
+            createdAt: r.created_at ? new Date(r.created_at).toISOString() : undefined
+          }))
+        });
+      }
+      const file = path.join(DATA_DIR, "system_alerts.json");
+      const alerts: any[] = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf-8")) : [];
+      return res.json({ success: true, alerts });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: err?.message || "Error al consultar alertas." });
+    }
+  });
+
+  app.post("/api/admin/alerts/:id/acknowledge", async (req, res) => {
+    const pool = getDbPool();
+    if (!isValidToken(req.headers.authorization)) {
+      return res.status(403).json({ success: false, message: "Acceso no autorizado." });
+    }
+    try {
+      if (pool && !dbUnavailable && !isNaN(Number(req.params.id))) {
+        await pool.query("UPDATE public.system_alerts SET acknowledged = true WHERE id = $1;", [Number(req.params.id)]);
+      }
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: err?.message || "Error al confirmar alerta." });
+    }
+  });
+
+  app.post("/api/admin/anomalies/scan", async (req, res) => {
+    const pool = getDbPool();
+    if (!isValidToken(req.headers.authorization)) {
+      await recordSystemAlert(pool, DATA_DIR, {
+        severity: "warning",
+        alertType: "unauthorized_attempt",
+        message: "Intento no autorizado en POST /api/admin/anomalies/scan.",
+        details: { ip: req.ip, route: "/api/admin/anomalies/scan" }
+      }).catch(() => {});
+      return res.status(403).json({ success: false, message: "Acceso no autorizado." });
+    }
+    try {
+      const liveState = process.env.DATABASE_URL ? await getDbState(true) : currentStoreState;
+      const scanResult = await scanCatalogAnomaliesAgainstBackup(pool, DATA_DIR, liveState.products || []);
+      return res.json({
+        success: true,
+        autoRestored: false,
+        ...scanResult
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: err?.message || "Error al escanear anomalías." });
     }
   });
 

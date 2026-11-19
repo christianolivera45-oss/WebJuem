@@ -611,6 +611,7 @@ export default function App() {
     } catch {}
     setActiveTab("storefront");
     window.history.pushState(null, "", "/");
+    fetchStoreData(true, "");
   };
 
   useEffect(() => {
@@ -1064,8 +1065,8 @@ export default function App() {
   const fetchStoreData = async (isSilent: boolean = false, explicitToken?: string): Promise<ShopState | null> => {
     try {
       if (!isSilent) setLoading(true);
-      let activeToken = explicitToken || authToken;
-      if (!activeToken) {
+      let activeToken = explicitToken !== undefined ? explicitToken : authToken;
+      if (explicitToken === undefined && !activeToken) {
         try {
           activeToken = localStorage.getItem("apex_admin_token");
         } catch {}
@@ -1098,7 +1099,37 @@ export default function App() {
         }
       }
       try {
-        localStorage.setItem("juem_store_cache_v1", JSON.stringify(data));
+        const publicCacheProducts = (data.products || []).map((p: any) => {
+          const {
+            precioCompra,
+            precioCon40,
+            comisionML,
+            comisionMP,
+            precioVentaML,
+            stockPinamar,
+            stockMontevideo,
+            calcWebPriceFromML,
+            ...rest
+          } = p;
+          if (Array.isArray(rest.variants)) {
+            rest.variants = rest.variants.map((v: any) => {
+              const { stockPinamar: _vp, stockMontevideo: _vm, ...cleanVar } = v;
+              return cleanVar;
+            });
+          }
+          return rest;
+        });
+        localStorage.setItem(
+          "juem_store_cache_v1",
+          JSON.stringify({
+            categories: data.categories,
+            dbCategories: data.dbCategories,
+            dbSubcategories: data.dbSubcategories,
+            settings: data.settings,
+            coupons: data.coupons,
+            products: publicCacheProducts
+          })
+        );
       } catch {}
       hasFullStoreRef.current = true;
       setStore(data);
