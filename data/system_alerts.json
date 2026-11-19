@@ -1,0 +1,255 @@
+[
+  {
+    "id": "local-1795103638246-299",
+    "severity": "warning",
+    "alertType": "unauthorized_attempt",
+    "message": "Intento no autorizado al verificar respaldo bkp-manual-2026-11-19T15-52-19-131Z.",
+    "details": {
+      "ip": "127.0.0.1",
+      "route": "/api/admin/backups/bkp-manual-2026-11-19T15-52-19-131Z/verify"
+    },
+    "productId": null,
+    "acknowledged": false,
+    "createdAt": "2026-11-19T15:53:58.246Z"
+  },
+  {
+    "id": "local-1795102809372-62",
+    "severity": "warning",
+    "alertType": "unauthorized_attempt",
+    "message": "Intento no autorizado de restaurar producto desde respaldo bkp-manual-2026-11-19T15-39-56-778Z.",
+    "details": {
+      "ip": "127.0.0.1",
+      "route": "/api/admin/backups/bkp-manual-2026-11-19T15-39-56-778Z/restore-product"
+    },
+    "productId": null,
+    "acknowledged": false,
+    "createdAt": "2026-11-19T15:40:09.372Z"
+  },
+  {
+    "id": "local-1795102809339-969",
+    "severity": "warning",
+    "alertType": "unauthorized_attempt",
+    "message": "Intento no autorizado en POST /api/stock/adjust.",
+    "details": {
+      "ip": "127.0.0.1",
+      "route": "/api/stock/adjust"
+    },
+    "productId": null,
+    "acknowledged": false,
+    "createdAt": "2026-11-19T15:40:09.339Z"
+  },
+  {
+    "id": "local-1795102809306-262",
+    "severity": "warning",
+    "alertType": "unauthorized_attempt",
+    "message": "Intento no autorizado de modificar catálogo vía POST /api/store.",
+    "details": {
+      "ip": "127.0.0.1",
+      "route": "/api/store"
+    },
+    "productId": null,
+    "acknowledged": false,
+    "createdAt": "2026-11-19T15:40:09.306Z"
+  },
+  {
+    "id": "local-1795102809273-719",
+    "severity": "warning",
+    "alertType": "unauthorized_attempt",
+    "productId": 65,
+    "message": "Intento no autorizado de modificar el producto 65 vía PATCH.",
+    "details": {
+      "ip": "127.0.0.1",
+      "route": "/api/products/65"
+    },
+    "acknowledged": false,
+    "createdAt": "2026-11-19T15:40:09.273Z"
+  },
+  {
+    "id": "local-1795102809214-630",
+    "severity": "warning",
+    "alertType": "concurrency_conflict",
+    "productId": 65,
+    "codigo": "J011",
+    "message": "Conflicto de concurrencia evitado al actualizar J011 (versión obsoleta del cliente).",
+    "details": {
+      "expectedUpdatedAt": "2026-11-19T15:40:03.521Z",
+      "actualUpdatedAt": "2026-11-19T15:40:08.178Z"
+    },
+    "acknowledged": false,
+    "createdAt": "2026-11-19T15:40:09.214Z"
+  },
+  {
+    "id": "local-1795102806847-731",
+    "severity": "warning",
+    "alertType": "concurrency_conflict",
+    "message": "Conflicto de versión detectado en POST /api/store: se rechazó guardado desde caché obsoleta.",
+    "details": {
+      "expectedStateVersion": "dfdf9bc4eefeda785b0964f93e270568e2b00d34cf0c23193ce8809a37e701bb",
+      "actualStateVersion": "a3ae1b28bf5d284f7f06c7c419df41ac1f1006127b2551af8818732de71ec671"
+    },
+    "productId": null,
+    "acknowledged": false,
+    "createdAt": "2026-11-19T15:40:06.847Z"
+  },
+  {
+    "id": "local-1795102806375-200",
+    "severity": "warning",
+    "alertType": "concurrency_conflict",
+    "productId": 65,
+    "codigo": "J011",
+    "message": "Conflicto de concurrencia evitado al actualizar J011 (versión obsoleta del cliente).",
+    "details": {
+      "expectedUpdatedAt": "2026-11-19T15:38:13.293Z",
+      "actualUpdatedAt": "2026-11-19T15:40:03.521Z"
+    },
+    "acknowledged": false,
+    "createdAt": "2026-11-19T15:40:06.375Z"
+  },
+  {
+    "id": "local-1795102804578-485",
+    "severity": "critical",
+    "alertType": "blocked_zero_overwrite",
+    "productId": 65,
+    "codigo": "J011",
+    "message": "Se bloqueó sobrescritura accidental a $0 en 'precioVentaML' de J011 (valor previo: $365).",
+    "details": {
+      "productId": "65",
+      "codigo": "J011",
+      "field": "precioVentaML",
+      "previousValue": 365,
+      "route": "/api/products/65"
+    },
+    "acknowledged": false,
+    "createdAt": "2026-11-19T15:40:04.578Z"
+  },
+  {
+    "id": "local-1795102804549-993",
+    "severity": "critical",
+    "alertType": "blocked_zero_overwrite",
+    "productId": 65,
+    "codigo": "J011",
+    "message": "Se bloqueó sobrescritura accidental a $0 en 'precioCompra' de J011 (valor previo: $209).",
+    "details": {
+      "productId": "65",
+      "codigo": "J011",
+      "field": "precioCompra",
+      "previousValue": 209,
+      "route": "/api/products/65"
+    },
+    "acknowledged": false,
+    "createdAt": "2026-11-19T15:40:04.549Z"
+  },
+  {
+    "id": "local-1795102691547-603",
+    "severity": "warning",
+    "alertType": "unauthorized_attempt",
+    "message": "Intento no autorizado de restaurar producto desde respaldo bkp-manual-2026-11-19T15-37-58-785Z.",
+    "details": {
+      "ip": "127.0.0.1",
+      "route": "/api/admin/backups/bkp-manual-2026-11-19T15-37-58-785Z/restore-product"
+    },
+    "productId": null,
+    "acknowledged": false,
+    "createdAt": "2026-11-19T15:38:11.547Z"
+  },
+  {
+    "id": "local-1795102691509-253",
+    "severity": "warning",
+    "alertType": "unauthorized_attempt",
+    "message": "Intento no autorizado en POST /api/stock/adjust.",
+    "details": {
+      "ip": "127.0.0.1",
+      "route": "/api/stock/adjust"
+    },
+    "productId": null,
+    "acknowledged": false,
+    "createdAt": "2026-11-19T15:38:11.509Z"
+  },
+  {
+    "id": "local-1795102691473-36",
+    "severity": "warning",
+    "alertType": "unauthorized_attempt",
+    "message": "Intento no autorizado de modificar catálogo vía POST /api/store.",
+    "details": {
+      "ip": "127.0.0.1",
+      "route": "/api/store"
+    },
+    "productId": null,
+    "acknowledged": false,
+    "createdAt": "2026-11-19T15:38:11.473Z"
+  },
+  {
+    "id": "local-1795102691436-168",
+    "severity": "warning",
+    "alertType": "unauthorized_attempt",
+    "productId": 65,
+    "message": "Intento no autorizado de modificar el producto 65 vía PATCH.",
+    "details": {
+      "ip": "127.0.0.1",
+      "route": "/api/products/65"
+    },
+    "acknowledged": false,
+    "createdAt": "2026-11-19T15:38:11.436Z"
+  },
+  {
+    "id": "local-1795102688315-252",
+    "severity": "warning",
+    "alertType": "concurrency_conflict",
+    "message": "Conflicto de versión detectado en POST /api/store: se rechazó guardado desde caché obsoleta.",
+    "details": {
+      "expectedStateVersion": "dfdf9bc4eefeda785b0964f93e270568e2b00d34cf0c23193ce8809a37e701bb",
+      "actualStateVersion": "a3ae1b28bf5d284f7f06c7c419df41ac1f1006127b2551af8818732de71ec671"
+    },
+    "productId": null,
+    "acknowledged": false,
+    "createdAt": "2026-11-19T15:38:08.315Z"
+  },
+  {
+    "id": "local-1795102687896-28",
+    "severity": "warning",
+    "alertType": "concurrency_conflict",
+    "productId": 65,
+    "codigo": "J011",
+    "message": "Conflicto de concurrencia evitado al actualizar J011 (versión obsoleta del cliente).",
+    "details": {
+      "expectedUpdatedAt": "2026-11-19T14:54:03.040Z",
+      "actualUpdatedAt": "2026-11-19T15:38:05.163Z"
+    },
+    "acknowledged": false,
+    "createdAt": "2026-11-19T15:38:07.896Z"
+  },
+  {
+    "id": "local-1795102686248-621",
+    "severity": "critical",
+    "alertType": "blocked_zero_overwrite",
+    "productId": 65,
+    "codigo": "J011",
+    "message": "Se bloqueó sobrescritura accidental a $0 en 'precioVentaML' de J011 (valor previo: $365).",
+    "details": {
+      "productId": "65",
+      "codigo": "J011",
+      "field": "precioVentaML",
+      "previousValue": 365,
+      "route": "/api/products/65"
+    },
+    "acknowledged": false,
+    "createdAt": "2026-11-19T15:38:06.248Z"
+  },
+  {
+    "id": "local-1795102686213-116",
+    "severity": "critical",
+    "alertType": "blocked_zero_overwrite",
+    "productId": 65,
+    "codigo": "J011",
+    "message": "Se bloqueó sobrescritura accidental a $0 en 'precioCompra' de J011 (valor previo: $209).",
+    "details": {
+      "productId": "65",
+      "codigo": "J011",
+      "field": "precioCompra",
+      "previousValue": 209,
+      "route": "/api/products/65"
+    },
+    "acknowledged": false,
+    "createdAt": "2026-11-19T15:38:06.213Z"
+  }
+]
