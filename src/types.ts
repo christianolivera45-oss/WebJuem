@@ -605,10 +605,11 @@ export function getVariantGalleryImages(variant?: ProductVariant | null): string
 /**
  * Normalizes a variant object so imageUrl (index 0) and imagenes (ordered gallery) stay in sync.
  */
-export function withNormalizedVariantGallery(variant: ProductVariant, nextImages: string[]): ProductVariant {
+export function withNormalizedVariantGallery(variant: ProductVariant, nextImages?: string[]): ProductVariant {
+  const sourceImages = nextImages !== undefined ? nextImages : getVariantGalleryImages(variant);
   const cleaned = Array.from(
     new Set(
-      (nextImages || [])
+      (sourceImages || [])
         .map((u) => (typeof u === "string" ? u.trim() : ""))
         .filter(Boolean)
     )
