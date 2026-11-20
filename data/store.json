@@ -1198,13 +1198,13 @@
       "codigo": "J088",
       "gtin": "",
       "name": "Distribuidor Nivelador De Cafe Espresso 51mm Portafiltro",
-      "price": 378.3,
-      "stock": 0,
+      "price": 387,
+      "stock": 6,
       "category": "Hogar",
       "featured": false,
       "imageUrl": "/api/inline-media/347b4626dc2a49dd.jpg",
       "createdAt": "2026-09-25T15:38:51.906Z",
-      "updatedAt": "2026-11-20T13:14:43.912Z",
+      "updatedAt": "2026-11-20T14:03:55.576Z",
       "description": "**Distribuidor Nivelador De Café Espresso 51mm Para Portafiltro**\nLográ una distribución más uniforme del café antes de la extracción.\nSu **altura regulable** permite ajustar el nivelador según la cantidad de café utilizada, ayudando a conseguir una superficie pareja dentro del portafiltro y una preparación más prolija.\n**Características:**\n- Altura regulable\n- Diámetro inferior: 48 mm\n- Diámetro de los anillos: 60 mm\n- Altura de los 2 anillos: 30 mm\n- Ideal para nivelar café en el portafiltro\nPráctico, ajustable y fácil de utilizar. Ideal para mejorar la preparación de tu café espresso",
       "categoria_id": "hogar",
       "originalPrice": 378.3,
@@ -1213,7 +1213,8 @@
       "paused": false,
       "sizes": [],
       "colors": [
-        "Negro"
+        "Negro",
+        "Cobre"
       ],
       "categorias_adicionales": [],
       "subcategorias_adicionales": [
@@ -1234,7 +1235,7 @@
           "color": "Negro",
           "colorCode": "#000000",
           "priceDelta": 0,
-          "stock": 0,
+          "stock": 1,
           "imageUrl": "/api/inline-media/347b4626dc2a49dd.jpg",
           "imagenes": [
             "/api/inline-media/347b4626dc2a49dd.jpg",
@@ -1244,7 +1245,24 @@
             "/api/inline-media/e4d4e968b9c7a49e.jpg",
             "/api/inline-media/f3ede5d74cfa13bf.jpg"
           ],
-          "stockPinamar": 0,
+          "stockPinamar": 1,
+          "stockMontevideo": 0
+        },
+        {
+          "id": "40ecfedf-8776-4867-aa52-4cabce81b5f4",
+          "sku": "J088CO",
+          "size": "Único",
+          "color": "Cobre",
+          "colorCode": "#9ca3af",
+          "priceDelta": 0,
+          "stock": 5,
+          "imageUrl": "https://res.cloudinary.com/dwqzjqjwz/image/upload/v1795182260/ventas_juem_cloudinary/rhp8st1bomjhixbnxvuk.webp",
+          "imagenes": [
+            "https://res.cloudinary.com/dwqzjqjwz/image/upload/v1795182260/ventas_juem_cloudinary/rhp8st1bomjhixbnxvuk.webp",
+            "https://res.cloudinary.com/dwqzjqjwz/image/upload/v1795182262/ventas_juem_cloudinary/olvfzdotuor37gmxdnky.webp",
+            "https://res.cloudinary.com/dwqzjqjwz/image/upload/v1795182264/ventas_juem_cloudinary/fhoktsc3xetqdpgvrpwp.webp"
+          ],
+          "stockPinamar": 5,
           "stockMontevideo": 0
         }
       ],
@@ -1268,9 +1286,9 @@
       "comisionML": 63,
       "comisionMP": 45.4,
       "precioVentaML": 450,
-      "precioWeb": 378.3,
+      "precioWeb": 387,
       "descuentoPorcentaje": 0,
-      "stockPinamar": 0,
+      "stockPinamar": 6,
       "stockMontevideo": 0,
       "isCombo": false,
       "comboComponents": [],
@@ -8105,5 +8123,5 @@
       "stockAnterior": 0
     }
   ],
-  "stateVersion": "809fca641b217287d8fd3f3df45a0e2b0e05dbbbbab05781e649da933ebbc73c"
+  "stateVersion": "601b1bf547896f5d55a09126e8cbbb8cbfb2b4ca3dcfc0d2a4db3d0b138b75b8"
 }
