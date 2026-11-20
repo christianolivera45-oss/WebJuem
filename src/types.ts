@@ -37,6 +37,7 @@ export interface Product {
   subcategorias_adicionales?: string[]; // Additional Subcategory IDs
   imageUrl: string;
   imagenes?: string[]; // List of multiple product images
+  cardRotationImages?: string[]; // Ordered list of image URLs shown in catalog card carousel (1 = fixed, 2+ = custom rotation; undefined/empty = auto)
   variants?: ProductVariant[]; // Advanced dyn sub-variants with stock
   stock: number;
   featured: boolean;
@@ -631,6 +632,59 @@ export function productUsesVariantGalleries(product?: Product | null): boolean {
     if (isGenericColor(v.color) && isGenericSize(v.size)) return false;
     return getVariantGalleryImages(v).length > 0;
   });
+}
+
+/**
+ * Automatic fallback list of images for the catalog card carousel when no custom
+ * cardRotationImages selection has been configured by the administrator.
+ */
+export function getDefaultCardRotationImages(product?: Product | null): string[] {
+  if (!product) return [];
+  const list: string[] = [];
+  const addUnique = (raw?: string) => {
+    const u = typeof raw === "string" ? raw.trim() : "";
+    if (u && !list.includes(u)) {
+      list.push(u);
+    }
+  };
+
+  addUnique(product.imageUrl);
+  if (Array.isArray(product.imagenes)) {
+    product.imagenes.forEach((img) => addUnique(img));
+  }
+
+  const variants = Array.isArray(product.variants) ? product.variants : [];
+  if (variants.length > 1) {
+    for (const v of variants) {
+      if (isGenericColor(v?.color) && isGenericSize(v?.size)) continue;
+      const vGallery = getVariantGalleryImages(v);
+      if (vGallery.length > 0) {
+        addUnique(vGallery[0]);
+      }
+    }
+  }
+
+  return list;
+}
+
+/**
+ * Returns the exact ordered image list that ProductCard should rotate through.
+ * Uses product.cardRotationImages strictly when configured (length >= 1),
+ * falling back to automatic gallery + variant primary images otherwise.
+ */
+export function getProductCardRotationImages(product?: Product | null): string[] {
+  if (!product) return [];
+  if (Array.isArray(product.cardRotationImages) && product.cardRotationImages.length > 0) {
+    const custom: string[] = [];
+    for (const raw of product.cardRotationImages) {
+      const u = typeof raw === "string" ? raw.trim() : "";
+      if (u && !custom.includes(u)) {
+        custom.push(u);
+      }
+    }
+    if (custom.length > 0) return custom;
+  }
+  return getDefaultCardRotationImages(product);
 }
 
 /**

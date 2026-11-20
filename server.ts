@@ -367,12 +367,24 @@ function sanitizeProductsImages(products: any[] | undefined): { products: any[];
       });
     }
 
+    let nextCardRot = p.cardRotationImages;
+    if (Array.isArray(p.cardRotationImages)) {
+      nextCardRot = p.cardRotationImages.map((img: any) => {
+        if (typeof img === "string" && img.startsWith("data:image/")) {
+          pMod = true;
+          return externalizeBase64Url(img);
+        }
+        return img;
+      });
+    }
+
     if (pMod) {
       modified = true;
       return {
         ...p,
         imageUrl: nextImageUrl,
         imagenes: nextImagenes,
+        cardRotationImages: nextCardRot,
         variants: nextVariants
       };
     }
@@ -2257,7 +2269,7 @@ async function getPublicDbState(forceRefresh = false): Promise<ShopState> {
         pool.query(`
           SELECT id, name, price, stock, category, featured, image_url, created_at, description, categoria_id, original_price, subcategoria_id, active, paused, sizes, colors, is_3d, hours_per_unit,
                  size_chart_enabled, size_chart_show_superior, size_chart_show_inferior, size_chart_show_calzado, size_chart_show_recommender, size_chart_data, consult_only,
-                 categorias_adicionales, subcategorias_adicionales, codigo, gtin, descuento_porcentaje, is_combo, combo_components
+                 categorias_adicionales, subcategorias_adicionales, codigo, gtin, descuento_porcentaje, is_combo, combo_components, card_rotation_images
           FROM public.products
           WHERE active = true
           ORDER BY id DESC;
@@ -2349,6 +2361,11 @@ async function getPublicDbState(forceRefresh = false): Promise<ShopState> {
           imagenes: Array.from(new Set(productImagesMap[pid] || []))
             .map(u => String(u || "").trim())
             .filter(u => u && u !== String(row.image_url || "").trim()),
+          cardRotationImages: (() => {
+            const rawList = Array.isArray(row.card_rotation_images) ? row.card_rotation_images : [];
+            const cleaned = rawList.map((u: any) => String(u || "").trim()).filter(Boolean);
+            return cleaned.length > 0 ? cleaned : undefined;
+          })(),
           variants: variants.map(v => {
             const isGeneric = (!v.color || ["general", "unico", "único", "generico", "genérico", "estandar", "estándar", "-"].includes(v.color.toLowerCase().trim())) &&
                               (!v.size || ["unico", "único", "estandar", "estándar", "-"].includes(v.size.toLowerCase().trim()));
@@ -2535,7 +2552,7 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
       SELECT id, name, price, stock, category, featured, image_url, created_at, updated_at, description, categoria_id, original_price, subcategoria_id, active, paused, sizes, colors, is_3d, hours_per_unit,
              size_chart_enabled, size_chart_show_superior, size_chart_show_inferior, size_chart_show_calzado, size_chart_show_recommender, size_chart_data, consult_only,
              categorias_adicionales, subcategorias_adicionales, codigo, gtin,
-             precio_compra, precio_con_40, comision_ml, comision_mp, precio_venta_ml, precio_web, descuento_porcentaje, stock_pinamar, stock_montevideo, is_combo, combo_components
+             precio_compra, precio_con_40, comision_ml, comision_mp, precio_venta_ml, precio_web, descuento_porcentaje, stock_pinamar, stock_montevideo, is_combo, combo_components, card_rotation_images
       FROM public.products 
       WHERE active = true 
       ORDER BY id DESC;
@@ -2624,6 +2641,11 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
         imagenes: Array.from(new Set(productImagesMap[pid] || []))
           .map(u => String(u || "").trim())
           .filter(u => u && u !== String(row.image_url || "").trim()),
+        cardRotationImages: (() => {
+          const rawList = Array.isArray(row.card_rotation_images) ? row.card_rotation_images : [];
+          const cleaned = rawList.map((u: any) => String(u || "").trim()).filter(Boolean);
+          return cleaned.length > 0 ? cleaned : undefined;
+        })(),
         variants: variants.map(v => {
           const isGeneric = (!v.color || ["general", "unico", "único", "generico", "genérico", "estandar", "estándar", "-"].includes(v.color.toLowerCase().trim())) &&
                             (!v.size || ["unico", "único", "estandar", "estándar", "-"].includes(v.size.toLowerCase().trim()));
@@ -2885,6 +2907,7 @@ function isProductEqual(p1: any, p2: any): boolean {
   if (JSON.stringify(p1.categorias_adicionales || []) !== JSON.stringify(p2.categorias_adicionales || [])) return false;
   if (JSON.stringify(p1.subcategorias_adicionales || []) !== JSON.stringify(p2.subcategorias_adicionales || [])) return false;
   if (JSON.stringify(p1.imagenes || []) !== JSON.stringify(p2.imagenes || [])) return false;
+  if (JSON.stringify(p1.cardRotationImages || []) !== JSON.stringify(p2.cardRotationImages || [])) return false;
   if (JSON.stringify(p1.sizeChartData || null) !== JSON.stringify(p2.sizeChartData || null)) return false;
   if (JSON.stringify(p1.comboComponents || []) !== JSON.stringify(p2.comboComponents || [])) return false;
 
@@ -3199,6 +3222,21 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
           ? null
           : String(prod.gtin).trim().replace(/[-\s]/g, "");
 
+      const hasIncomingCardRotation = prod.cardRotationImages !== undefined;
+      const cleanedCardRotation = hasIncomingCardRotation
+        ? Array.from(
+            new Set(
+              (Array.isArray(prod.cardRotationImages) ? prod.cardRotationImages : [])
+                .map((u: any) => (typeof u === "string" ? u.trim() : ""))
+                .filter(Boolean)
+            )
+          )
+        : null;
+      const cardRotationJsonVal: string | null = cleanedCardRotation !== null ? JSON.stringify(cleanedCardRotation) : null;
+      if (hasIncomingCardRotation) {
+        prod.cardRotationImages = cleanedCardRotation && cleanedCardRotation.length > 0 ? cleanedCardRotation : undefined;
+      }
+
       if (isNew) {
         const insertPrecioWeb = precioWebVal ?? 0;
         const insertComisionMP = comisionMPVal ?? Number(((insertPrecioWeb || priceVal || 0) * 0.12).toFixed(2));
@@ -3207,8 +3245,8 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
             name, price, stock, category, featured, image_url, description, categoria_id, original_price, subcategoria_id, active, paused, sizes, colors, is_3d, hours_per_unit,
             size_chart_enabled, size_chart_show_superior, size_chart_show_inferior, size_chart_show_calzado, size_chart_show_recommender, size_chart_data, consult_only,
             categorias_adicionales, subcategorias_adicionales, codigo,
-            precio_compra, precio_con_40, comision_ml, comision_mp, precio_venta_ml, precio_web, descuento_porcentaje, stock_pinamar, stock_montevideo, is_combo, combo_components, calc_web_price_from_ml, gtin
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38)
+            precio_compra, precio_con_40, comision_ml, comision_mp, precio_venta_ml, precio_web, descuento_porcentaje, stock_pinamar, stock_montevideo, is_combo, combo_components, calc_web_price_from_ml, gtin, card_rotation_images
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39::jsonb)
           RETURNING id;
         `, [
           prod.name, priceVal, stockVal, prod.category, featuredVal, prod.imageUrl,
@@ -3231,7 +3269,8 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
           isComboVal,
           comboComponentsVal,
           calcWebPriceFromMLVal !== false,
-          gtinVal ?? ""
+          gtinVal ?? "",
+          cardRotationJsonVal ?? "[]"
         ]);
         prodId = insertRes.rows[0].id;
         prod.id = String(prodId);
@@ -3261,8 +3300,9 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
             combo_components = $36,
             calc_web_price_from_ml = COALESCE($37, calc_web_price_from_ml),
             gtin = COALESCE($38, gtin),
+            card_rotation_images = COALESCE($39::jsonb, card_rotation_images),
             updated_at = NOW()
-          WHERE id = $39;
+          WHERE id = $40;
         `, [
           prod.name, priceVal, stockVal, prod.category, featuredVal, prod.imageUrl,
           prod.description || "", prod.categoria_id, originalPriceVal, prod.subcategoria_id,
@@ -3276,6 +3316,7 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
           isComboVal, comboComponentsVal,
           calcWebPriceFromMLVal,
           gtinVal,
+          cardRotationJsonVal,
           prodId
         ]);
       }
@@ -3571,6 +3612,7 @@ async function initPostgresStore(): Promise<ShopState | null> {
       ALTER TABLE public.products ADD COLUMN IF NOT EXISTS is_combo BOOLEAN DEFAULT false;
       ALTER TABLE public.products ADD COLUMN IF NOT EXISTS combo_components JSONB DEFAULT '[]';
       ALTER TABLE public.products ADD COLUMN IF NOT EXISTS calc_web_price_from_ml BOOLEAN DEFAULT true;
+      ALTER TABLE public.products ADD COLUMN IF NOT EXISTS card_rotation_images JSONB DEFAULT NULL;
     `);
 
     // Create product_images table if not exists

@@ -1893,6 +1893,10 @@ export default function AdminWorkspace({
         : (newProduct.colors || []),
       variants: preparedVariants,
       imagenes: newProduct.imagenes || [],
+      cardRotationImages:
+        Array.isArray(newProduct.cardRotationImages) && newProduct.cardRotationImages.length > 0
+          ? Array.from(new Set(newProduct.cardRotationImages.map((u) => String(u || "").trim()).filter(Boolean)))
+          : undefined,
       isCombo: !!newProduct.isCombo,
       comboComponents: newProduct.comboComponents || [],
       precioCompra: Number(newProduct.precioCompra || 0),
@@ -1951,6 +1955,7 @@ export default function AdminWorkspace({
         colors: [],
         variants: [],
         imagenes: [],
+        cardRotationImages: undefined,
         precioCompra: 0,
         precioCon40: 0,
         comisionML: 0,
@@ -2025,6 +2030,11 @@ export default function AdminWorkspace({
           finalProduct.imageUrl = firstVariantImg;
         }
       }
+    }
+    if (Array.isArray(finalProduct.cardRotationImages)) {
+      finalProduct.cardRotationImages = Array.from(
+        new Set(finalProduct.cardRotationImages.map((u) => String(u || "").trim()).filter(Boolean))
+      );
     }
 
     const previousProd = store.products.find((p) => String(p.id) === String(finalProduct.id));

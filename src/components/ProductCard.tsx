@@ -1,5 +1,12 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { Product, SiteSettings, getProductAvailableStock, isGenericSize, isGenericColor } from "../types";
+import {
+  Product,
+  SiteSettings,
+  getProductAvailableStock,
+  isGenericSize,
+  isGenericColor,
+  getProductCardRotationImages
+} from "../types";
 import { ShoppingCart, Eye, Tag, Phone } from "lucide-react";
 import ImageWatermark from "./ImageWatermark";
 import { optimizeImageUrl, buildImageSrcSet, buildAvifSrcSet, IMAGE_SIZES } from "../utils/imageOptimizer";
@@ -85,50 +92,25 @@ Precio: $${Math.round(product.price)}
   }, [product]);
 
   const variantsStr = useMemo(() => {
-    return (product.variants || []).map(v => `${v.id}-${v.imageUrl}`).join("|");
+    return (product.variants || [])
+      .map((v) => `${v.id}-${v.color}-${v.size}-${v.imageUrl || ""}-${(v.imagenes || []).join(",")}`)
+      .join("|");
   }, [product.variants]);
 
   const imagenesStr = useMemo(() => {
     return (product.imagenes || []).join("|");
   }, [product.imagenes]);
 
-  // List of all unique image URLs for rotation:
-  // Shows product.imageUrl and any added gallery photos in product.imagenes.
-  // Distinct color variant photos are only included if the product has genuine multiple variants.
+  const cardRotationImagesStr = useMemo(() => {
+    return (product.cardRotationImages || []).join("|");
+  }, [product.cardRotationImages]);
+
+  // Controlled list of images for catalog card rotation:
+  // If admin configured cardRotationImages (1 = fixed, 2+ = custom rotation/combination), use it strictly.
+  // Otherwise, fall back to automatic gallery + distinct variant primary images.
   const allImages = useMemo(() => {
-    const list: string[] = [];
-    
-    // Always start with primary image
-    if (product.imageUrl && typeof product.imageUrl === "string" && product.imageUrl.trim()) {
-      list.push(product.imageUrl.trim());
-    }
-
-    // Include explicitly added additional photos from the gallery
-    if (Array.isArray(product.imagenes)) {
-      product.imagenes.forEach(img => {
-        if (img && typeof img === "string" && img.trim() && !list.includes(img.trim())) {
-          list.push(img.trim());
-        }
-      });
-    }
-
-    // Only include variant images if the product has multiple genuine variants with distinct colors
-    const hasMultipleVariants = (product.variants || []).length > 1;
-    if (hasMultipleVariants) {
-      const distinctVariantImages = (product.variants || [])
-        .filter(v => v.imageUrl && !isGenericColor(v.color) && !isGenericSize(v.size))
-        .map(v => (v.imageUrl || "").trim())
-        .filter(Boolean);
-
-      distinctVariantImages.forEach(img => {
-        if (!list.includes(img)) {
-          list.push(img);
-        }
-      });
-    }
-    
-    return list;
-  }, [product.imageUrl, imagenesStr, variantsStr]);
+    return getProductCardRotationImages(product);
+  }, [product.imageUrl, imagenesStr, variantsStr, cardRotationImagesStr]);
 
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
   const [imageIndex, setImageIndex] = useState<number>(0);
@@ -138,11 +120,11 @@ Precio: $${Math.round(product.price)}
     return filtered.length > 0 ? filtered : ["https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=600&q=80"];
   }, [allImages, failedImages]);
 
-  // When product changes, reset index and failures
+  // When product or custom card rotation changes, reset index and failures
   useEffect(() => {
     setImageIndex(0);
     setFailedImages(new Set());
-  }, [product.id, product.imageUrl]);
+  }, [product.id, product.imageUrl, cardRotationImagesStr]);
 
   // Interval timer for automatic image rotation (constantly active, faster on hover)
   const validImagesStr = useMemo(() => validImages.join("|"), [validImages]);

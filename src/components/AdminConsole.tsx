@@ -131,6 +131,7 @@ const DashboardTraceability = lazy(() => import("./DashboardTraceability").then(
 const ImageGalleryEditor = lazy(() => import("./ImageGalleryEditor"));
 const CloudinaryExplorer = lazy(() => import("./CloudinaryExplorer"));
 const VariantGalleryManager = lazy(() => import("./VariantGalleryManager"));
+const CardRotationImagesSelector = lazy(() => import("./CardRotationImagesSelector"));
 const ComboComponentsBuilder = lazy(() => import("./ComboComponentsBuilder"));
 
 export interface AdminConsoleProps {
@@ -1114,6 +1115,8 @@ export default function AdminConsole({ ctx }: AdminConsoleProps) {
                           categoria_id: (store.dbCategories || [])[0]?.id || "",
                           subcategoria_id: "all",
                           imageUrl: "",
+                          imagenes: [],
+                          cardRotationImages: undefined,
                           stock: 0,
                           featured: false,
                           precioCompra: 0,
@@ -5693,6 +5696,12 @@ export default function AdminConsole({ ctx }: AdminConsoleProps) {
                               });
                             }}
                           />
+                          <Suspense fallback={<div className="p-3 text-xs text-zinc-400">Cargando control de rotación...</div>}>
+                            <CardRotationImagesSelector
+                              product={newProduct}
+                              onChange={(nextImages) => setNewProduct({ ...newProduct, cardRotationImages: nextImages })}
+                            />
+                          </Suspense>
                         </div>
                       </div>
                     )}
@@ -6626,6 +6635,12 @@ export default function AdminConsole({ ctx }: AdminConsoleProps) {
                     </div>
                           </>
                         )}
+                        <Suspense fallback={<div className="p-3 text-xs text-zinc-400">Cargando control de rotación...</div>}>
+                          <CardRotationImagesSelector
+                            product={newProduct}
+                            onChange={(nextImages) => setNewProduct((prev) => ({ ...prev, cardRotationImages: nextImages }))}
+                          />
+                        </Suspense>
                   </div>
                 )}
 
@@ -7713,6 +7728,12 @@ export default function AdminConsole({ ctx }: AdminConsoleProps) {
                               });
                             }}
                           />
+                          <Suspense fallback={<div className="p-3 text-xs text-zinc-400">Cargando control de rotación...</div>}>
+                            <CardRotationImagesSelector
+                              product={editingProduct}
+                              onChange={(nextImages) => setEditingProduct({ ...editingProduct, cardRotationImages: nextImages })}
+                            />
+                          </Suspense>
                         </div>
                       </div>
                     )}
@@ -8683,6 +8704,16 @@ export default function AdminConsole({ ctx }: AdminConsoleProps) {
                     </div>
                   </>
                 )}
+                        <Suspense fallback={<div className="p-3 text-xs text-zinc-400">Cargando control de rotación...</div>}>
+                          <CardRotationImagesSelector
+                            product={editingProduct}
+                            onChange={(nextImages) =>
+                              setEditingProduct((prev: Product | null) =>
+                                prev ? { ...prev, cardRotationImages: nextImages } : prev
+                              )
+                            }
+                          />
+                        </Suspense>
                       </div>
                     )}
 

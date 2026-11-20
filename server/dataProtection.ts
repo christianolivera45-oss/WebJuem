@@ -162,6 +162,11 @@ export function mergeProtectedProductUpdate(
     });
   }
 
+  // Preserve custom card rotation image selection when omitted from partial updates
+  if (incoming.cardRotationImages === undefined && existing.cardRotationImages !== undefined) {
+    merged.cardRotationImages = existing.cardRotationImages;
+  }
+
   return merged;
 }
 
@@ -407,6 +412,12 @@ export async function logProductChanges(
     );
     if (oldVarGalleries !== newVarGalleries) {
       changes.push({ fieldName: "variant_galleries", oldValue: oldVarGalleries, newValue: newVarGalleries });
+    }
+
+    const oldCardRot = JSON.stringify(Array.isArray(oldProd.cardRotationImages) ? oldProd.cardRotationImages : []);
+    const newCardRot = JSON.stringify(Array.isArray(newProd.cardRotationImages) ? newProd.cardRotationImages : []);
+    if (oldCardRot !== newCardRot) {
+      changes.push({ fieldName: "card_rotation_images", oldValue: oldCardRot, newValue: newCardRot });
     }
   }
 
