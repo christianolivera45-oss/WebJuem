@@ -133,22 +133,39 @@ export default function ProductDetails({
     relatedProducts = [...relatedProducts, ...extra].slice(0, 4);
   }
 
+  const rawVariantSizes = Array.from(new Set(variants.map(v => (v.size || "").trim()).filter(Boolean)));
+  const nonGenericVariantSizes = rawVariantSizes.filter(s => !isGenericSize(s));
+  const rawVariantColors = Array.from(new Set(variants.map(v => (v.color || "").trim()).filter(Boolean)));
+  const nonGenericVariantColors = rawVariantColors.filter(c => !isGenericColor(c));
+
   const sizes = (is3D
     ? (product.sizes && product.sizes.length > 0 ? product.sizes : ["PLA", "PETG", "ABS", "TPU"])
-    : (product.sizes && product.sizes.length > 0 
-      ? product.sizes 
-      : (hasVariants ? Array.from(new Set(variants.map(v => v.size))).filter(Boolean) : (isClothing ? ["S", "M", "L", "XL"] : [])))
+    : hasVariants && nonGenericVariantSizes.length > 0
+      ? Array.from(new Set([
+          ...nonGenericVariantSizes,
+          ...((product.sizes || []).map(s => String(s || "").trim()).filter(s => s && !isGenericSize(s)))
+        ]))
+      : (product.sizes && product.sizes.length > 0
+        ? product.sizes
+        : (hasVariants ? rawVariantSizes : (isClothing ? ["S", "M", "L", "XL"] : [])))
   ).filter(Boolean);
 
-  const colors = (product.colors && product.colors.length > 0
-    ? product.colors
-    : (is3D 
-      ? ["Negro mate", "Blanco tiza", "Gris plata", "Rojo fuego", "Azul cobalto", "Verde bosque", "Naranja", "Amarillo sol"]
-      : (hasVariants ? Array.from(new Set(variants.map(v => v.color))).filter(Boolean) : (isClothing 
-        ? ["Negro", "Gris", "Blanco"] 
-        : isElectronics 
-        ? ["Negro mate", "Plata espacial", "Azul cobalto"] 
-        : [])))
+  const colors = (is3D
+    ? (product.colors && product.colors.length > 0
+      ? Array.from(new Set([...(product.colors || []).map(c => String(c || "").trim()).filter(Boolean), ...nonGenericVariantColors]))
+      : ["Negro mate", "Blanco tiza", "Gris plata", "Rojo fuego", "Azul cobalto", "Verde bosque", "Naranja", "Amarillo sol"])
+    : hasVariants && nonGenericVariantColors.length > 0
+      ? Array.from(new Set([
+          ...nonGenericVariantColors,
+          ...((product.colors || []).map(c => String(c || "").trim()).filter(c => c && !isGenericColor(c)))
+        ]))
+      : (product.colors && product.colors.length > 0
+        ? product.colors
+        : (hasVariants ? rawVariantColors : (isClothing
+          ? ["Negro", "Gris", "Blanco"]
+          : isElectronics
+          ? ["Negro mate", "Plata espacial", "Azul cobalto"]
+          : [])))
   ).filter(Boolean);
 
   const shouldShowSizes = !product.hideSizes && (is3D 

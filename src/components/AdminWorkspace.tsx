@@ -12,7 +12,9 @@ import {
   AdminTask,
   Coupon,
   withNormalizedVariantGallery,
-  getVariantGalleryImages
+  getVariantGalleryImages,
+  isGenericColor,
+  isGenericSize
 } from "../types";
 import { DEFAULT_SETTINGS, normalizeText } from "../utils/shopLogic.tsx";
 import { getComboDynamicStocks } from "../utils/storefrontHelpers";
@@ -1877,8 +1879,18 @@ export default function AdminWorkspace({
       hoursPerUnit: newProduct.hoursPerUnit,
       consultOnly: !!newProduct.consultOnly,
       createdAt: new Date().toISOString(),
-      sizes: newProduct.sizes || [],
-      colors: newProduct.colors || [],
+      sizes: preparedVariants.length > 0
+        ? Array.from(new Set([
+            ...preparedVariants.map((v) => String(v.size || "").trim()).filter((s) => s && !isGenericSize(s)),
+            ...(newProduct.sizes || []).map((s) => String(s || "").trim()).filter(Boolean)
+          ]))
+        : (newProduct.sizes || []),
+      colors: preparedVariants.length > 0
+        ? Array.from(new Set([
+            ...preparedVariants.map((v) => String(v.color || "").trim()).filter((c) => c && !isGenericColor(c)),
+            ...(newProduct.colors || []).map((c) => String(c || "").trim()).filter(Boolean)
+          ]))
+        : (newProduct.colors || []),
       variants: preparedVariants,
       imagenes: newProduct.imagenes || [],
       isCombo: !!newProduct.isCombo,
@@ -1989,6 +2001,22 @@ export default function AdminWorkspace({
     }
     if (Array.isArray(finalProduct.variants)) {
       finalProduct.variants = finalProduct.variants.map((v) => withNormalizedVariantGallery(v));
+      if (finalProduct.variants.length > 0) {
+        const varColors = finalProduct.variants.map((v) => String(v.color || "").trim()).filter((c) => c && !isGenericColor(c));
+        const varSizes = finalProduct.variants.map((v) => String(v.size || "").trim()).filter((s) => s && !isGenericSize(s));
+        if (varColors.length > 0) {
+          finalProduct.colors = Array.from(new Set([
+            ...varColors,
+            ...(finalProduct.colors || []).map((c) => String(c || "").trim()).filter((c) => c && varColors.includes(c))
+          ]));
+        }
+        if (varSizes.length > 0) {
+          finalProduct.sizes = Array.from(new Set([
+            ...varSizes,
+            ...(finalProduct.sizes || []).map((s) => String(s || "").trim()).filter((s) => s && varSizes.includes(s))
+          ]));
+        }
+      }
       if (!finalProduct.imageUrl) {
         const firstVariantImg = finalProduct.variants
           .map((v) => getVariantGalleryImages(v)[0])

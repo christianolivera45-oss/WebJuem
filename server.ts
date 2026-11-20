@@ -3146,8 +3146,26 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
 
       const featuredVal = !!prod.featured;
       const pausedVal = !!prod.paused;
-      const sizesVal = Array.isArray(prod.sizes) ? prod.sizes : [];
-      const colorsVal = Array.isArray(prod.colors) ? prod.colors : [];
+      const rawSizes = Array.isArray(prod.sizes) ? prod.sizes.map((s: any) => String(s || "").trim()).filter(Boolean) : [];
+      const rawColors = Array.isArray(prod.colors) ? prod.colors.map((c: any) => String(c || "").trim()).filter(Boolean) : [];
+      const varNonGenericSizes = Array.isArray(prod.variants)
+        ? prod.variants
+            .map((v: any) => String(v?.size || "").trim())
+            .filter((s: string) => s && !["general", "estandar", "standard", "n/a", "unico", "único", "-", "default", "ninguno", "no aplica", "sin talle", "sin talles", "medida unica", "talle unico"].includes(s.toLowerCase()))
+        : [];
+      const varNonGenericColors = Array.isArray(prod.variants)
+        ? prod.variants
+            .map((v: any) => String(v?.color || "").trim())
+            .filter((c: string) => c && !["general", "estandar", "standard", "n/a", "unico", "único", "-", "default", "ninguno", "no aplica", "sin color", "unico color", "sin colores", "varios", "surtido", "color general"].includes(c.toLowerCase()))
+        : [];
+      const sizesVal = varNonGenericSizes.length > 0
+        ? Array.from(new Set([...varNonGenericSizes, ...rawSizes.filter((s: string) => varNonGenericSizes.includes(s))]))
+        : rawSizes;
+      const colorsVal = varNonGenericColors.length > 0
+        ? Array.from(new Set([...varNonGenericColors, ...rawColors.filter((c: string) => varNonGenericColors.includes(c))]))
+        : rawColors;
+      prod.sizes = sizesVal;
+      prod.colors = colorsVal;
       const is3DVal = !!prod.is3D;
       const hoursPerUnitVal = prod.hoursPerUnit ? Math.floor(prod.hoursPerUnit) : null;
       const sizeChartEnabledVal = prod.sizeChartEnabled !== false;
