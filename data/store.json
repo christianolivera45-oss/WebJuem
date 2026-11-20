@@ -68,30 +68,6 @@
   ],
   "dbSubcategories": [
     {
-      "id": "monitores",
-      "nombre": "Monitores",
-      "categoria_id": "gamer",
-      "active": true
-    },
-    {
-      "id": "celulares",
-      "nombre": "Celulares",
-      "categoria_id": "electronica",
-      "active": true
-    },
-    {
-      "id": "mouse",
-      "nombre": "Mouse",
-      "categoria_id": "gamer",
-      "active": true
-    },
-    {
-      "id": "impresion-3d",
-      "nombre": "impresión 3d",
-      "categoria_id": "impresion-3d",
-      "active": true
-    },
-    {
       "id": "accesorios",
       "nombre": "Accesorios",
       "categoria_id": "electronica",
@@ -155,6 +131,30 @@
       "id": "pc",
       "nombre": "PC ",
       "categoria_id": "electronica",
+      "active": true
+    },
+    {
+      "id": "monitores",
+      "nombre": "Monitores",
+      "categoria_id": "gamer",
+      "active": true
+    },
+    {
+      "id": "celulares",
+      "nombre": "Celulares",
+      "categoria_id": "electronica",
+      "active": true
+    },
+    {
+      "id": "mouse",
+      "nombre": "Mouse",
+      "categoria_id": "gamer",
+      "active": true
+    },
+    {
+      "id": "impresion-3d",
+      "nombre": "impresión 3d",
+      "categoria_id": "impresion-3d",
       "active": true
     }
   ],
@@ -320,7 +320,7 @@
       "featured": true,
       "imageUrl": "/api/inline-media/3c65d35d6d622f30.jpg",
       "createdAt": "2026-11-18T15:55:35.266Z",
-      "updatedAt": "2026-11-20T13:14:40.440Z",
+      "updatedAt": "2026-11-20T14:36:49.544Z",
       "description": "PALA EXCAVADORA MANUAL DE ARENA PARA PLAYA\n\n¡Convertí los días de playa en una divertida aventura!\n\nPala excavadora manual con ruedas, ideal para que los niños jueguen a excavar, recoger y transportar arena. Su diseño permite manipularla fácilmente y disfrutar de juegos de construcción tanto en la playa como en areneros.\n\nFabricada en plástico, con un diseño compacto, liviano y práctico para acompañar las aventuras de los más pequeños.\n\nCARACTERÍSTICAS\n\nDiseño de excavadora con ruedas.\n\nFuncionamiento manual.\n\nIdeal para jugar y mover arena.\n\nFácil de manipular.\n\nLiviana y práctica.\n\nMEDIDAS\n\nAncho: 6 cm.\n\nAlto: 8 cm.\n\nProfundidad: 16 cm.\n\nPeso aproximado: 102 g.\n\nIDEAL PARA\n\nJuegos de playa.\n\nAreneros.\n\nJuegos de construcción y excavación.\n\nRegalos para niños.\n\n¡Un juguete divertido para pequeños constructores!",
       "categoria_id": "juguetes",
       "originalPrice": 650,
@@ -346,7 +346,9 @@
           "stock": 4,
           "imageUrl": "/api/inline-media/3c65d35d6d622f30.jpg",
           "imagenes": [
-            "/api/inline-media/3c65d35d6d622f30.jpg"
+            "/api/inline-media/3c65d35d6d622f30.jpg",
+            "https://res.cloudinary.com/dwqzjqjwz/image/upload/v1795017303/ventas_juem_cloudinary/hwwa5xtoozq5k0qqasbd.png",
+            "https://res.cloudinary.com/dwqzjqjwz/image/upload/v1795016410/ventas_juem_cloudinary/nqzfadq5hhuevsjp9dvo.png"
           ],
           "stockPinamar": 4,
           "stockMontevideo": 0

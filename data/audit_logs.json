@@ -1,5 +1,60 @@
 [
   {
+    "productId": 124,
+    "codigo": "TESTROT99",
+    "productName": "Producto Test Rotación",
+    "fieldName": "active",
+    "oldValue": "true",
+    "newValue": "false",
+    "operation": "POST /api/store (delete)",
+    "actor": "admin",
+    "createdAt": "2026-11-20T14:45:05.243Z"
+  },
+  {
+    "productId": 124,
+    "codigo": "TESTROT99",
+    "productName": "Producto Test Rotación",
+    "fieldName": "card_rotation_images",
+    "oldValue": "[\"https://res.cloudinary.com/dwqzjqjwz/image/upload/v1/test-cob-1.jpg\"]",
+    "newValue": "[]",
+    "operation": "PATCH /api/products/124",
+    "actor": "admin",
+    "createdAt": "2026-11-20T14:45:03.044Z"
+  },
+  {
+    "productId": 124,
+    "codigo": "TESTROT99",
+    "productName": "Producto Test Rotación",
+    "fieldName": "card_rotation_images",
+    "oldValue": "[\"https://res.cloudinary.com/dwqzjqjwz/image/upload/v1/test-gen-1.jpg\",\"https://res.cloudinary.com/dwqzjqjwz/image/upload/v1/test-neg-1.jpg\",\"https://res.cloudinary.com/dwqzjqjwz/image/upload/v1/test-cob-1.jpg\"]",
+    "newValue": "[\"https://res.cloudinary.com/dwqzjqjwz/image/upload/v1/test-cob-1.jpg\"]",
+    "operation": "PATCH /api/products/124",
+    "actor": "admin",
+    "createdAt": "2026-11-20T14:45:00.778Z"
+  },
+  {
+    "productId": 124,
+    "codigo": "TESTROT99",
+    "productName": "Producto Test Rotación",
+    "fieldName": "paused",
+    "oldValue": "false",
+    "newValue": "true",
+    "operation": "PATCH /api/products/124",
+    "actor": "admin",
+    "createdAt": "2026-11-20T14:44:58.522Z"
+  },
+  {
+    "productId": 124,
+    "codigo": "TESTROT99",
+    "productName": "Producto Test Rotación",
+    "fieldName": "created",
+    "oldValue": "",
+    "newValue": "{\"codigo\":\"TESTROT99\",\"precioCompra\":500,\"precioVentaML\":0,\"precioWeb\":1500,\"stock\":4}",
+    "operation": "POST /api/store",
+    "actor": "admin",
+    "createdAt": "2026-11-20T14:44:56.015Z"
+  },
+  {
     "productId": 59,
     "codigo": "J001",
     "productName": "Funda Neopreno 11 Plan Ceibal",
