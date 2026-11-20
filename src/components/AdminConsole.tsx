@@ -130,7 +130,6 @@ const Dashboard3DCalculator = lazy(() => import("./Dashboard3DCalculator").then(
 const DashboardTraceability = lazy(() => import("./DashboardTraceability").then(m => ({ default: m.DashboardTraceability })));
 const ImageGalleryEditor = lazy(() => import("./ImageGalleryEditor"));
 const CloudinaryExplorer = lazy(() => import("./CloudinaryExplorer"));
-const VariantImagePicker = lazy(() => import("./VariantImagePicker"));
 const VariantGalleryManager = lazy(() => import("./VariantGalleryManager"));
 const ComboComponentsBuilder = lazy(() => import("./ComboComponentsBuilder"));
 

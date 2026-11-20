@@ -1,5 +1,31 @@
 [
   {
+    "id": "local-1795180508751-830",
+    "severity": "warning",
+    "alertType": "bulk_modification",
+    "message": "Modificación masiva registrada vía POST /api/store (53 productos actualizados, 0 eliminados).",
+    "details": {
+      "modifiedProductsCount": 53,
+      "deletedCount": 0
+    },
+    "productId": null,
+    "acknowledged": false,
+    "createdAt": "2026-11-20T13:15:08.751Z"
+  },
+  {
+    "id": "local-1795180220324-721",
+    "severity": "warning",
+    "alertType": "bulk_modification",
+    "message": "Modificación masiva registrada vía POST /api/store (0 productos actualizados, 4 eliminados).",
+    "details": {
+      "modifiedProductsCount": 0,
+      "deletedCount": 4
+    },
+    "productId": null,
+    "acknowledged": false,
+    "createdAt": "2026-11-20T13:10:20.324Z"
+  },
+  {
     "id": "local-1795103638246-299",
     "severity": "warning",
     "alertType": "unauthorized_attempt",
