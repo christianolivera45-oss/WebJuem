@@ -4,7 +4,7 @@ import { ICON_LABELS, THEME_PRESETS, generateSlug, getCategoryIcon, getProductSi
 import { AnimatePresence, motion } from "motion/react";
 import CommaSeparatedInput from "../components/CommaSeparatedInput";
 import { createPortal } from "react-dom";
-import { AdminTask, Category, Coupon, Product, ProductVariant, Shipping, ShippingOrigin, SiteSettings, StockAdjustment, StockTransfer, Subcategory, getVariantGalleryImages, is3DProduct, withNormalizedVariantGallery } from "../types";
+import { AdminTask, Category, Coupon, Product, ProductVariant, Shipping, ShippingOrigin, SiteSettings, StockAdjustment, StockTransfer, Subcategory, calculateMlCommission, getVariantGalleryImages, is3DProduct, withNormalizedVariantGallery } from "../types";
 import { validateGtin } from "../utils/googleSeo";
 
 interface StockReasonOption {
@@ -5301,7 +5301,16 @@ export default function AdminConsole({ ctx }: AdminConsoleProps) {
                                 value={newProduct.precioVentaML ?? ""}
                                 onChange={(e) => {
                                   const val = e.target.value === "" ? "" : Number(e.target.value);
-                                  setNewProduct(updateProductCalculations({ ...newProduct, precioVentaML: val as any }));
+                                  const pct = Number(newProduct.comisionMLPorcentaje || 0);
+                                  const fixedFee = Number(newProduct.costoFijoML ?? 15);
+                                  const nextComML = pct > 0 && val !== ""
+                                    ? calculateMlCommission(Number(val), pct, fixedFee)
+                                    : newProduct.comisionML;
+                                  setNewProduct(updateProductCalculations({
+                                    ...newProduct,
+                                    precioVentaML: val as any,
+                                    comisionML: nextComML as any
+                                  }));
                                 }}
                                 className="w-full px-3 py-1.5 h-9 bg-[#050B1A] border border-zinc-800 hover:border-amber-500/40 focus:border-amber-500 rounded-lg text-xs outline-none focus:ring-1 focus:ring-amber-500/20 text-[#F4EAD7] font-mono font-bold transition-all"
                               />
@@ -5446,6 +5455,70 @@ export default function AdminConsole({ ctx }: AdminConsoleProps) {
                                 })()}
                               </div>
                             </div>
+                          </div>
+
+                          {/* Regla opcional de Comisión ML (% + Fijo) para recalcular promos automáticamente */}
+                          <div className="mt-3 p-3 rounded-xl bg-amber-500/[0.04] border border-amber-500/20 flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex flex-wrap items-center gap-3">
+                              <span className="text-[9px] font-black uppercase tracking-wider text-amber-400">
+                                Regla ML opcional (% + Fijo):
+                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <label className="text-[9px] font-bold text-zinc-400 uppercase">% ML</label>
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  min="0"
+                                  max="100"
+                                  placeholder="Ej: 14"
+                                  value={newProduct.comisionMLPorcentaje ?? ""}
+                                  onChange={(e) => {
+                                    const raw = e.target.value;
+                                    const pct = raw === "" ? 0 : Math.max(0, Number(raw));
+                                    const fixedFee = Number(newProduct.costoFijoML ?? 15);
+                                    const mlPrice = Number(newProduct.precioVentaML || 0);
+                                    const nextPayload: Partial<Product> = {
+                                      ...newProduct,
+                                      comisionMLPorcentaje: raw === "" ? 0 : pct
+                                    };
+                                    if (pct > 0 && mlPrice > 0) {
+                                      nextPayload.comisionML = calculateMlCommission(mlPrice, pct, fixedFee);
+                                    }
+                                    setNewProduct(updateProductCalculations(nextPayload));
+                                  }}
+                                  className="w-20 px-2 py-1 h-7 bg-[#050B1A] border border-zinc-800 focus:border-amber-500 rounded-lg text-[11px] font-mono font-bold text-amber-300 outline-none"
+                                />
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <label className="text-[9px] font-bold text-zinc-400 uppercase">Fijo ($)</label>
+                                <input
+                                  type="number"
+                                  step="1"
+                                  min="0"
+                                  placeholder="15"
+                                  value={newProduct.costoFijoML ?? 15}
+                                  onChange={(e) => {
+                                    const fixedFee = e.target.value === "" ? 0 : Math.max(0, Number(e.target.value));
+                                    const pct = Number(newProduct.comisionMLPorcentaje || 0);
+                                    const mlPrice = Number(newProduct.precioVentaML || 0);
+                                    const nextPayload: Partial<Product> = {
+                                      ...newProduct,
+                                      costoFijoML: fixedFee
+                                    };
+                                    if (pct > 0 && mlPrice > 0) {
+                                      nextPayload.comisionML = calculateMlCommission(mlPrice, pct, fixedFee);
+                                    }
+                                    setNewProduct(updateProductCalculations(nextPayload));
+                                  }}
+                                  className="w-20 px-2 py-1 h-7 bg-[#050B1A] border border-zinc-800 focus:border-amber-500 rounded-lg text-[11px] font-mono font-bold text-zinc-200 outline-none"
+                                />
+                              </div>
+                            </div>
+                            <span className="text-[9px] text-zinc-400 font-medium">
+                              {Number(newProduct.comisionMLPorcentaje || 0) > 0
+                                ? `Auto: ${newProduct.comisionMLPorcentaje}% de Venta ML + $${newProduct.costoFijoML ?? 15} fijo (se usa también en promos de Ventas)`
+                                : "Si cargás % ML, al cambiar precios o aplicar promos en Ventas se recalcula la comisión exacta."}
+                            </span>
                           </div>
 
                           {/* PANEL DE CONTROL DE RENTABILIDAD PRO */}
@@ -7281,7 +7354,16 @@ export default function AdminConsole({ ctx }: AdminConsoleProps) {
                                 value={(editingProduct.precioVentaML !== undefined && editingProduct.precioVentaML !== "") ? editingProduct.precioVentaML : ""}
                                 onChange={(e) => {
                                   const val = e.target.value === "" ? "" : Number(e.target.value);
-                                  setEditingProduct(updateProductCalculations({ ...editingProduct, precioVentaML: val as any }) as Product);
+                                  const pct = Number(editingProduct.comisionMLPorcentaje || 0);
+                                  const fixedFee = Number(editingProduct.costoFijoML ?? 15);
+                                  const nextComML = pct > 0 && val !== ""
+                                    ? calculateMlCommission(Number(val), pct, fixedFee)
+                                    : editingProduct.comisionML;
+                                  setEditingProduct(updateProductCalculations({
+                                    ...editingProduct,
+                                    precioVentaML: val as any,
+                                    comisionML: nextComML as any
+                                  }) as Product);
                                 }}
                                 className="w-full px-3 py-1.5 h-9 bg-[#050B1A] border border-zinc-800 hover:border-amber-500/40 focus:border-amber-500 rounded-lg text-xs outline-none focus:ring-1 focus:ring-amber-500/20 text-[#F4EAD7] font-mono font-bold transition-all"
                               />
@@ -7426,6 +7508,70 @@ export default function AdminConsole({ ctx }: AdminConsoleProps) {
                                 })()}
                               </div>
                             </div>
+                          </div>
+
+                          {/* Regla opcional de Comisión ML (% + Fijo) para recalcular promos automáticamente */}
+                          <div className="mt-3 p-3 rounded-xl bg-amber-500/[0.04] border border-amber-500/20 flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex flex-wrap items-center gap-3">
+                              <span className="text-[9px] font-black uppercase tracking-wider text-amber-400">
+                                Regla ML opcional (% + Fijo):
+                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <label className="text-[9px] font-bold text-zinc-400 uppercase">% ML</label>
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  min="0"
+                                  max="100"
+                                  placeholder="Ej: 14"
+                                  value={editingProduct.comisionMLPorcentaje !== undefined && editingProduct.comisionMLPorcentaje !== null ? editingProduct.comisionMLPorcentaje : ""}
+                                  onChange={(e) => {
+                                    const raw = e.target.value;
+                                    const pct = raw === "" ? 0 : Math.max(0, Number(raw));
+                                    const fixedFee = Number(editingProduct.costoFijoML ?? 15);
+                                    const mlPrice = Number(editingProduct.precioVentaML || 0);
+                                    const nextPayload: Product = {
+                                      ...editingProduct,
+                                      comisionMLPorcentaje: raw === "" ? 0 : pct
+                                    };
+                                    if (pct > 0 && mlPrice > 0) {
+                                      nextPayload.comisionML = calculateMlCommission(mlPrice, pct, fixedFee);
+                                    }
+                                    setEditingProduct(updateProductCalculations(nextPayload) as Product);
+                                  }}
+                                  className="w-20 px-2 py-1 h-7 bg-[#050B1A] border border-zinc-800 focus:border-amber-500 rounded-lg text-[11px] font-mono font-bold text-amber-300 outline-none"
+                                />
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <label className="text-[9px] font-bold text-zinc-400 uppercase">Fijo ($)</label>
+                                <input
+                                  type="number"
+                                  step="1"
+                                  min="0"
+                                  placeholder="15"
+                                  value={editingProduct.costoFijoML ?? 15}
+                                  onChange={(e) => {
+                                    const fixedFee = e.target.value === "" ? 0 : Math.max(0, Number(e.target.value));
+                                    const pct = Number(editingProduct.comisionMLPorcentaje || 0);
+                                    const mlPrice = Number(editingProduct.precioVentaML || 0);
+                                    const nextPayload: Product = {
+                                      ...editingProduct,
+                                      costoFijoML: fixedFee
+                                    };
+                                    if (pct > 0 && mlPrice > 0) {
+                                      nextPayload.comisionML = calculateMlCommission(mlPrice, pct, fixedFee);
+                                    }
+                                    setEditingProduct(updateProductCalculations(nextPayload) as Product);
+                                  }}
+                                  className="w-20 px-2 py-1 h-7 bg-[#050B1A] border border-zinc-800 focus:border-amber-500 rounded-lg text-[11px] font-mono font-bold text-zinc-200 outline-none"
+                                />
+                              </div>
+                            </div>
+                            <span className="text-[9px] text-zinc-400 font-medium">
+                              {Number(editingProduct.comisionMLPorcentaje || 0) > 0
+                                ? `Auto: ${editingProduct.comisionMLPorcentaje}% de Venta ML + $${editingProduct.costoFijoML ?? 15} fijo (se usa también en promos de Ventas)`
+                                : "Opcional: conserva tu Com. ML ($) actual, o cargá % ML para recalcular promos automáticamente."}
+                            </span>
                           </div>
 
                           {/* PANEL DE CONTROL DE RENTABILIDAD PRO PARA EDITAR */}

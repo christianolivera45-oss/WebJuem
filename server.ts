@@ -2552,7 +2552,7 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
       SELECT id, name, price, stock, category, featured, image_url, created_at, updated_at, description, categoria_id, original_price, subcategoria_id, active, paused, sizes, colors, is_3d, hours_per_unit,
              size_chart_enabled, size_chart_show_superior, size_chart_show_inferior, size_chart_show_calzado, size_chart_show_recommender, size_chart_data, consult_only,
              categorias_adicionales, subcategorias_adicionales, codigo, gtin,
-             precio_compra, precio_con_40, comision_ml, comision_mp, precio_venta_ml, precio_web, descuento_porcentaje, stock_pinamar, stock_montevideo, is_combo, combo_components, card_rotation_images
+             precio_compra, precio_con_40, comision_ml, comision_ml_porcentaje, costo_fijo_ml, comision_mp, precio_venta_ml, precio_web, descuento_porcentaje, stock_pinamar, stock_montevideo, is_combo, combo_components, card_rotation_images
       FROM public.products 
       WHERE active = true 
       ORDER BY id DESC;
@@ -2666,6 +2666,8 @@ async function getDbState(forceRefresh = false): Promise<ShopState> {
         precioCompra: row.precio_compra !== null && row.precio_compra !== undefined ? Number(row.precio_compra) : undefined,
         precioCon40: row.precio_con_40 !== null && row.precio_con_40 !== undefined ? Number(row.precio_con_40) : undefined,
         comisionML: row.comision_ml !== null && row.comision_ml !== undefined ? Number(row.comision_ml) : undefined,
+        comisionMLPorcentaje: row.comision_ml_porcentaje !== null && row.comision_ml_porcentaje !== undefined ? Number(row.comision_ml_porcentaje) : undefined,
+        costoFijoML: row.costo_fijo_ml !== null && row.costo_fijo_ml !== undefined ? Number(row.costo_fijo_ml) : undefined,
         comisionMP: row.comision_mp !== null && row.comision_mp !== undefined ? Number(row.comision_mp) : (row.precio_web ? Number((Number(row.precio_web) * 0.12).toFixed(2)) : undefined),
         precioVentaML: row.precio_venta_ml !== null && row.precio_venta_ml !== undefined ? Number(row.precio_venta_ml) : undefined,
         precioWeb: row.precio_web !== null && row.precio_web !== undefined ? Number(row.precio_web) : undefined,
@@ -2894,7 +2896,7 @@ function isProductEqual(p1: any, p2: any): boolean {
     'categoria_id', 'originalPrice', 'subcategoria_id', 'paused', 'is3D', 
     'hoursPerUnit', 'sizeChartEnabled', 'sizeChartShowSuperior', 'sizeChartShowInferior', 
     'sizeChartShowCalzado', 'sizeChartShowRecommender', 'consultOnly', 'codigo', 'gtin', 
-    'precioCompra', 'precioCon40', 'comisionML', 'comisionMP', 'precioVentaML', 'precioWeb', 
+    'precioCompra', 'precioCon40', 'comisionML', 'comisionMLPorcentaje', 'costoFijoML', 'comisionMP', 'precioVentaML', 'precioWeb', 
     'descuentoPorcentaje', 'stockPinamar', 'stockMontevideo', 'isCombo', 'calcWebPriceFromML'
   ];
   
@@ -3202,6 +3204,8 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
       const precioCompraVal = toNullableNum(prod.precioCompra);
       const precioCon40Val = toNullableNum(prod.precioCon40);
       const comisionMLVal = toNullableNum(prod.comisionML);
+      const comisionMLPorcentajeVal = toNullableNum(prod.comisionMLPorcentaje);
+      const costoFijoMLVal = toNullableNum(prod.costoFijoML);
       const comisionMPVal = toNullableNum(prod.comisionMP);
       const precioVentaMLVal = toNullableNum(prod.precioVentaML);
       const precioWebVal = toNullableNum(prod.precioWeb);
@@ -3245,8 +3249,9 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
             name, price, stock, category, featured, image_url, description, categoria_id, original_price, subcategoria_id, active, paused, sizes, colors, is_3d, hours_per_unit,
             size_chart_enabled, size_chart_show_superior, size_chart_show_inferior, size_chart_show_calzado, size_chart_show_recommender, size_chart_data, consult_only,
             categorias_adicionales, subcategorias_adicionales, codigo,
-            precio_compra, precio_con_40, comision_ml, comision_mp, precio_venta_ml, precio_web, descuento_porcentaje, stock_pinamar, stock_montevideo, is_combo, combo_components, calc_web_price_from_ml, gtin, card_rotation_images
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39::jsonb)
+            precio_compra, precio_con_40, comision_ml, comision_mp, precio_venta_ml, precio_web, descuento_porcentaje, stock_pinamar, stock_montevideo, is_combo, combo_components, calc_web_price_from_ml, gtin, card_rotation_images,
+            comision_ml_porcentaje, costo_fijo_ml
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39::jsonb, $40, $41)
           RETURNING id;
         `, [
           prod.name, priceVal, stockVal, prod.category, featuredVal, prod.imageUrl,
@@ -3270,7 +3275,9 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
           comboComponentsVal,
           calcWebPriceFromMLVal !== false,
           gtinVal ?? "",
-          cardRotationJsonVal ?? "[]"
+          cardRotationJsonVal ?? "[]",
+          comisionMLPorcentajeVal,
+          costoFijoMLVal ?? 15
         ]);
         prodId = insertRes.rows[0].id;
         prod.id = String(prodId);
@@ -3301,8 +3308,10 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
             calc_web_price_from_ml = COALESCE($37, calc_web_price_from_ml),
             gtin = COALESCE($38, gtin),
             card_rotation_images = COALESCE($39::jsonb, card_rotation_images),
+            comision_ml_porcentaje = COALESCE($40, comision_ml_porcentaje),
+            costo_fijo_ml = COALESCE($41, costo_fijo_ml),
             updated_at = NOW()
-          WHERE id = $40;
+          WHERE id = $42;
         `, [
           prod.name, priceVal, stockVal, prod.category, featuredVal, prod.imageUrl,
           prod.description || "", prod.categoria_id, originalPriceVal, prod.subcategoria_id,
@@ -3317,6 +3326,8 @@ async function saveDbStateInternal(state: ShopState): Promise<boolean> {
           calcWebPriceFromMLVal,
           gtinVal,
           cardRotationJsonVal,
+          comisionMLPorcentajeVal,
+          costoFijoMLVal,
           prodId
         ]);
       }
@@ -3613,6 +3624,8 @@ async function initPostgresStore(): Promise<ShopState | null> {
       ALTER TABLE public.products ADD COLUMN IF NOT EXISTS combo_components JSONB DEFAULT '[]';
       ALTER TABLE public.products ADD COLUMN IF NOT EXISTS calc_web_price_from_ml BOOLEAN DEFAULT true;
       ALTER TABLE public.products ADD COLUMN IF NOT EXISTS card_rotation_images JSONB DEFAULT NULL;
+      ALTER TABLE public.products ADD COLUMN IF NOT EXISTS comision_ml_porcentaje NUMERIC(6, 2) DEFAULT NULL;
+      ALTER TABLE public.products ADD COLUMN IF NOT EXISTS costo_fijo_ml NUMERIC(10, 2) DEFAULT 15.00;
     `);
 
     // Create product_images table if not exists
@@ -11647,10 +11660,10 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         }
 
         const qty = Math.max(1, parseInt(item.quantity) || 1);
-        const itemTot = correctUnitPrice * qty;
-        serverSubtotal += itemTot;
+        const itemTot = Number((correctUnitPrice * qty).toFixed(2));
+        serverSubtotal = Number((serverSubtotal + itemTot).toFixed(2));
 
-        const commML = item.comisionML !== undefined && !isNaN(Number(item.comisionML))
+        const commML = (isAdmin && item.comisionML !== undefined && !isNaN(Number(item.comisionML)))
           ? Number(item.comisionML)
           : Number((dbProd as any).comisionML || (dbProd as any).comision_ml || 0);
 
@@ -11705,7 +11718,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
         serverSurchargeAmount = Math.round((serverSubtotal - serverDiscountAmount + verifiedShippingCost) * mercadopagoSurchargePercent / 100);
       }
 
-      const serverTotal = Math.max(0, serverSubtotal - serverDiscountAmount + verifiedShippingCost + serverSurchargeAmount);
+      const serverTotal = Number(Math.max(0, serverSubtotal - serverDiscountAmount + verifiedShippingCost + serverSurchargeAmount).toFixed(2));
 
       if (pool && !dbUnavailable) {
         const client = await pool.connect();
@@ -11872,7 +11885,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
             colorSelected: i.colorSelected || undefined,
             unitPrice: i.unitPrice,
             quantity: i.quantity,
-            totalPrice: i.totalPrice
+            totalPrice: i.totalPrice,
+            comisionML: Number(i.comisionML || 0)
           }))
         };
 
@@ -11987,8 +12001,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
       let activeVariantId = item.variantId;
 
       const qty = Math.max(1, parseInt(item.quantity) || 1);
-      const itemTot = correctUnitPrice * qty;
-      serverSubtotal += itemTot;
+      const itemTot = Number((correctUnitPrice * qty).toFixed(2));
+      serverSubtotal = Number((serverSubtotal + itemTot).toFixed(2));
 
       const commML = item.comisionML !== undefined && !isNaN(Number(item.comisionML))
         ? Number(item.comisionML)
@@ -12029,7 +12043,7 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
     }
 
     const verifiedShippingCost = Number(shippingCost || 0);
-    const serverTotal = Math.max(0, serverSubtotal - serverDiscountAmount + verifiedShippingCost);
+    const serverTotal = Number(Math.max(0, serverSubtotal - serverDiscountAmount + verifiedShippingCost).toFixed(2));
 
     try {
       const pool = getDbPool();
@@ -12162,7 +12176,8 @@ No añadas formato markdown (como \`\`\`json) ni texto explicativo. Solo el JSON
                   colorSelected: i.colorSelected || undefined,
                   unitPrice: i.unitPrice,
                   quantity: i.quantity,
-                  totalPrice: i.totalPrice
+                  totalPrice: i.totalPrice,
+                  comisionML: Number(i.comisionML || 0)
                 }))
               };
             }

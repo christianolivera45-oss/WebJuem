@@ -203,6 +203,8 @@ export default function AdminWorkspace({
     precioCompra: 0,
     precioCon40: 0,
     comisionML: 0,
+    comisionMLPorcentaje: undefined,
+    costoFijoML: 15,
     comisionMP: 0,
     precioVentaML: 0,
     precioWeb: 0,
@@ -657,6 +659,8 @@ export default function AdminWorkspace({
       precioCompra,
       precioCon40,
       comisionML,
+      comisionMLPorcentaje: p.comisionMLPorcentaje,
+      costoFijoML: p.costoFijoML !== undefined ? p.costoFijoML : 15,
       comisionMP,
       precioVentaML,
       precioWeb,
@@ -1902,6 +1906,14 @@ export default function AdminWorkspace({
       precioCompra: Number(newProduct.precioCompra || 0),
       precioCon40: Number(newProduct.precioCon40 || 0),
       comisionML: Number(newProduct.comisionML || 0),
+      comisionMLPorcentaje:
+        newProduct.comisionMLPorcentaje !== undefined && (newProduct.comisionMLPorcentaje as any) !== ""
+          ? Number(newProduct.comisionMLPorcentaje)
+          : undefined,
+      costoFijoML:
+        newProduct.costoFijoML !== undefined && (newProduct.costoFijoML as any) !== ""
+          ? Number(newProduct.costoFijoML)
+          : 15,
       comisionMP: Number(
         newProduct.comisionMP !== undefined ? newProduct.comisionMP : (Number(newProduct.precioWeb || 0) * 0.12).toFixed(2)
       ),
@@ -1959,6 +1971,8 @@ export default function AdminWorkspace({
         precioCompra: 0,
         precioCon40: 0,
         comisionML: 0,
+        comisionMLPorcentaje: undefined,
+        costoFijoML: 15,
         comisionMP: 0,
         precioVentaML: 0,
         precioWeb: 0,

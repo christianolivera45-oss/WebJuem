@@ -59,6 +59,8 @@ export interface Product {
   precioCompra?: number;
   precioCon40?: number;
   comisionML?: number;
+  comisionMLPorcentaje?: number;
+  costoFijoML?: number;
   comisionMP?: number;
   precioVentaML?: number;
   precioWeb?: number;
@@ -728,6 +730,24 @@ export function getProductAvailableStock(product?: Product | null): number {
  */
 export function isProductInStock(product?: Product | null): boolean {
   return getProductAvailableStock(product) > 0;
+}
+
+/**
+ * Calculates Mercado Libre commission per unit from sale price, percentage fee, and fixed fee.
+ * Default fixed fee in ML Uruguay is $15 UYU per unit.
+ */
+export function calculateMlCommission(
+  unitPrice: number,
+  ratePercent?: number | null,
+  fixedFee: number = 15
+): number {
+  const cleanPrice = Math.max(0, Number(unitPrice) || 0);
+  const cleanRate = Number(ratePercent);
+  const cleanFixed = Math.max(0, Number(fixedFee) || 0);
+  if (!Number.isFinite(cleanRate) || cleanRate <= 0) {
+    return 0;
+  }
+  return Number(((cleanPrice * (cleanRate / 100)) + cleanFixed).toFixed(2));
 }
 
 // ==========================================

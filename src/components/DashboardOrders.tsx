@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { ShopState, Order, Product, ProductVariant } from "../types";
+import { ShopState, Order, Product, ProductVariant, calculateMlCommission } from "../types";
 import { normalizeText } from "../utils/shopLogic.tsx";
 import { 
   Search, 
@@ -48,6 +48,15 @@ interface DashboardOrdersProps {
   initialExpandedOrderId?: string | null;
   onNavigateAdminSection?: (section: any) => void;
 }
+
+const formatUYU = (val: number): string => {
+  const num = Number(val || 0);
+  const hasDecimals = Math.abs(num - Math.round(num)) > 0.004;
+  return num.toLocaleString("es-AR", {
+    minimumFractionDigits: hasDecimals ? 2 : 0,
+    maximumFractionDigits: 2
+  });
+};
 
 export const DashboardOrders: React.FC<DashboardOrdersProps> = ({ 
   store, 
@@ -493,6 +502,11 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
   const handleAddProductToSale = (item: any) => {
     const isML = newSaleCanal && newSaleCanal.toLowerCase() === "mercado libre";
     const initialPrice = (isML && item.product.precioVentaML) ? item.product.precioVentaML : item.price;
+    const ratePct = item.product.comisionMLPorcentaje;
+    const fixedFee = item.product.costoFijoML !== undefined && item.product.costoFijoML !== null ? Number(item.product.costoFijoML) : 15;
+    const initialComisionML = (isML && ratePct && Number(ratePct) > 0)
+      ? calculateMlCommission(initialPrice, Number(ratePct), fixedFee)
+      : (item.product.comisionML || 0);
 
     const isAlreadyAdded = newSaleItems.some(
       i => i.productId === item.product.id && 
@@ -505,7 +519,7 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
         if (i.productId === item.product.id && (!item.variant || i.variantId === item.variant.id)) {
           const newQty = i.quantity + 1;
           const numPrice = Number(i.unitPrice) || 0;
-          return { ...i, quantity: newQty, totalPrice: newQty * numPrice };
+          return { ...i, quantity: newQty, totalPrice: Number((newQty * numPrice).toFixed(2)) };
         }
         return i;
       }));
@@ -521,7 +535,10 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
           colorSelected: item.variant?.color || undefined,
           unitPrice: initialPrice,
           costPrice: item.cost, // kept for preview calculation
-          comisionML: item.product.comisionML || 0,
+          comisionML: initialComisionML,
+          comisionMLPorcentaje: ratePct && Number(ratePct) > 0 ? ratePct : "",
+          costoFijoML: fixedFee,
+          promoDiscountPct: "",
           quantity: 1,
           totalPrice: initialPrice
         }
@@ -538,20 +555,88 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
     setNewSaleItems(prev => prev.filter((_, idx) => idx !== index));
   };
 
-  // Update item price or quantity in transaction cart
-  const handleUpdateSaleItem = (index: number, field: "quantity" | "unitPrice", value: string | number) => {
+  // Update item price, quantity, promo discount, or ML commission in transaction cart
+  const handleUpdateSaleItem = (
+    index: number,
+    field: "quantity" | "unitPrice" | "comisionML" | "comisionMLPorcentaje" | "costoFijoML" | "promoDiscountPct",
+    value: string | number
+  ) => {
+    const isMLCanal = newSaleCanal && newSaleCanal.toLowerCase() === "mercado libre";
     setNewSaleItems(prev => prev.map((item, idx) => {
-      if (idx === index) {
-        let updatedVal = value;
-        if (field === "quantity") {
-          updatedVal = Math.max(0, parseInt(value as string) || 0);
-        }
-        const updatedItem = { ...item, [field]: updatedVal };
+      if (idx !== index) return item;
+
+      const updatedItem: any = { ...item };
+
+      if (field === "quantity") {
+        const qtyVal = Math.max(0, parseInt(value as string) || 0);
+        updatedItem.quantity = qtyVal;
         const numPrice = Number(updatedItem.unitPrice) || 0;
-        updatedItem.totalPrice = updatedItem.quantity * numPrice;
+        updatedItem.totalPrice = Number((qtyVal * numPrice).toFixed(2));
         return updatedItem;
       }
-      return item;
+
+      if (field === "promoDiscountPct") {
+        updatedItem.promoDiscountPct = value;
+        const pctNum = Number(value);
+        if (value !== "" && Number.isFinite(pctNum) && pctNum >= 0 && pctNum <= 100) {
+          const matchedProd = productsList.find(p => String(p.id) === String(item.productId));
+          const listBase = isMLCanal
+            ? Number(matchedProd?.precioVentaML || matchedProd?.precioWeb || matchedProd?.price || item.unitPrice || 0)
+            : Number(matchedProd?.precioWeb || matchedProd?.price || item.unitPrice || 0);
+          if (listBase > 0) {
+            const newPrice = Number((listBase * (1 - pctNum / 100)).toFixed(2));
+            updatedItem.unitPrice = newPrice;
+            updatedItem.totalPrice = Number((updatedItem.quantity * newPrice).toFixed(2));
+            const pctRate = Number(updatedItem.comisionMLPorcentaje || 0);
+            if (isMLCanal && pctRate > 0) {
+              updatedItem.comisionML = calculateMlCommission(newPrice, pctRate, Number(updatedItem.costoFijoML ?? 15));
+            }
+          }
+        }
+        return updatedItem;
+      }
+
+      if (field === "unitPrice") {
+        updatedItem.unitPrice = value;
+        updatedItem.promoDiscountPct = "";
+        const numPrice = Number(value) || 0;
+        updatedItem.totalPrice = Number((updatedItem.quantity * numPrice).toFixed(2));
+        const pctRate = Number(updatedItem.comisionMLPorcentaje || 0);
+        if (isMLCanal && pctRate > 0) {
+          updatedItem.comisionML = calculateMlCommission(numPrice, pctRate, Number(updatedItem.costoFijoML ?? 15));
+        }
+        return updatedItem;
+      }
+
+      if (field === "comisionMLPorcentaje") {
+        updatedItem.comisionMLPorcentaje = value;
+        const pctRate = Number(value);
+        if (value !== "" && Number.isFinite(pctRate) && pctRate > 0) {
+          updatedItem.comisionML = calculateMlCommission(
+            Number(updatedItem.unitPrice) || 0,
+            pctRate,
+            Number(updatedItem.costoFijoML ?? 15)
+          );
+        }
+        return updatedItem;
+      }
+
+      if (field === "costoFijoML") {
+        updatedItem.costoFijoML = value;
+        const pctRate = Number(updatedItem.comisionMLPorcentaje || 0);
+        if (pctRate > 0) {
+          updatedItem.comisionML = calculateMlCommission(
+            Number(updatedItem.unitPrice) || 0,
+            pctRate,
+            Number(value) || 0
+          );
+        }
+        return updatedItem;
+      }
+
+      // Direct override on comisionML
+      updatedItem.comisionML = value;
+      return updatedItem;
     }));
   };
 
@@ -592,7 +677,10 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
         totalPrice: i.totalPrice,
         quantity: i.quantity,
         costPrice: i.costPrice || (prod ? prod.precioCompra : 0) || 0,
-        comisionML: i.comisionML !== undefined ? i.comisionML : (prod ? (prod.comisionML || 0) : 0)
+        comisionML: i.comisionML !== undefined ? i.comisionML : (prod ? (prod.comisionML || 0) : 0),
+        comisionMLPorcentaje: prod?.comisionMLPorcentaje && Number(prod.comisionMLPorcentaje) > 0 ? prod.comisionMLPorcentaje : "",
+        costoFijoML: prod?.costoFijoML !== undefined && prod?.costoFijoML !== null ? Number(prod.costoFijoML) : 15,
+        promoDiscountPct: ""
       };
     });
     setNewSaleItems(prefilledItems);
@@ -618,7 +706,7 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
     setNewSaleErrorMessage(null);
 
     const activeToken = authToken || localStorage.getItem("apex_admin_token") || "admin-token-preview";
-    const subtotal = newSaleItems.reduce((acc, it) => acc + (Number(it.totalPrice) || 0), 0);
+    const subtotal = Number(newSaleItems.reduce((acc, it) => acc + (Number(it.totalPrice) || 0), 0).toFixed(2));
     // Discount amount calculation helper
     const discountAmount = 0; // standard manual cart discount is 0 unless coupon applied
 
@@ -640,6 +728,7 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
       items: newSaleItems.map(i => {
         const qty = Math.max(1, parseInt(String(i.quantity), 10) || 1);
         const uPrice = Number(i.unitPrice) || 0;
+        const commML = Number(i.comisionML) || 0;
         return {
           productId: i.productId,
           variantId: i.variantId,
@@ -649,7 +738,8 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
           colorSelected: i.colorSelected,
           unitPrice: uPrice,
           quantity: qty,
-          totalPrice: Number(i.totalPrice) || (qty * uPrice)
+          totalPrice: Number((qty * uPrice).toFixed(2)),
+          comisionML: commML
         };
       })
     };
@@ -704,7 +794,7 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
                 unitPrice: it.unitPrice,
                 quantity: it.quantity,
                 totalPrice: it.totalPrice,
-                comisionML: orig.comisionML,
+                comisionML: Number(it.comisionML) || 0,
                 costPrice: orig.costPrice
               };
             })
@@ -746,7 +836,7 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
                 unitPrice: it.unitPrice,
                 quantity: it.quantity,
                 totalPrice: it.totalPrice,
-                comisionML: orig.comisionML,
+                comisionML: Number(it.comisionML) || 0,
                 costPrice: orig.costPrice
               };
             })
@@ -1489,17 +1579,17 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
 
                         {/* P. VENTA */}
                         <td className="p-4 text-right font-mono text-xs font-black text-zinc-100">
-                          <div>$ {totalPriceProducts.toLocaleString("es-AR")}</div>
+                          <div>$ {formatUYU(totalPriceProducts)}</div>
                           {isML && mlNetTotal !== null && (
                             <div 
                               className="mt-1 flex items-center justify-end gap-1"
-                              title={`Total a cobrar en Mercado Libre: Venta ($${totalPriceProducts.toLocaleString("es-AR")}) - Comisión ($${totalComisionML.toLocaleString("es-AR")}) + Envío ($${(order.shippingCost || 0).toLocaleString("es-AR")}) = $${mlNetTotal.toLocaleString("es-AR")}`}
+                              title={`Total a cobrar en Mercado Libre: Venta ($${formatUYU(totalPriceProducts)}) - Comisión ($${formatUYU(totalComisionML)}) + Envío ($${formatUYU(order.shippingCost || 0)}) = $${formatUYU(mlNetTotal)}`}
                             >
                               <span className="px-1.5 py-0.5 text-[8px] bg-amber-500/15 text-amber-400 border border-amber-500/30 rounded font-black uppercase">
                                 Total ML
                               </span>
                               <span className="text-[11px] font-black text-amber-300">
-                                $ {mlNetTotal.toLocaleString("es-AR")}
+                                $ {formatUYU(mlNetTotal)}
                               </span>
                             </div>
                           )}
@@ -1639,7 +1729,11 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
                                   {order.items && order.items.map((item, idx) => {
                                     const p = productsList.find(x => String(x.id) === String(item.productId));
                                     const c = p?.precioCompra || 0;
-                                    const n = item.unitPrice - c;
+                                    const itemComUnit = isML ? Number(item.comisionML !== undefined ? item.comisionML : (p?.comisionML || 0)) : 0;
+                                    const itemComTotal = itemComUnit * (item.quantity || 1);
+                                    const listML = Number(p?.precioVentaML || 0);
+                                    const hasPromoML = isML && listML > 0 && Math.abs(item.unitPrice - listML) > 0.01;
+                                    const promoPct = hasPromoML ? (((listML - item.unitPrice) / listML) * 100) : 0;
                                     return (
                                       <div key={idx} className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-zinc-950/60 p-3.5 rounded-xl border border-zinc-850 gap-3 shadow-md hover:border-zinc-800 transition-all">
                                         <div>
@@ -1651,16 +1745,26 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
                                             {item.sizeSelected && <span className="bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800">Talle: {item.sizeSelected}</span>}
                                             {item.colorSelected && <span className="bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800">Color: {item.colorSelected}</span>}
                                             <span className="bg-indigo-500/10 text-indigo-300 px-1.5 py-0.5 rounded border border-indigo-500/20 font-mono">
-                                              {item.quantity} x $ {item.unitPrice.toLocaleString("es-AR")}
+                                              {item.quantity} x $ {formatUYU(item.unitPrice)}
                                             </span>
+                                            {hasPromoML && (
+                                              <span className="bg-rose-500/10 text-rose-300 px-1.5 py-0.5 rounded border border-rose-500/20 font-mono">
+                                                Lista ML: $ {formatUYU(listML)} ({promoPct > 0 ? `-${promoPct.toFixed(1)}%` : `+${Math.abs(promoPct).toFixed(1)}%`})
+                                              </span>
+                                            )}
+                                            {isML && (
+                                              <span className="bg-amber-500/10 text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/20 font-mono">
+                                                Cargo ML: -$ {formatUYU(itemComTotal)}{item.quantity > 1 ? ` ($${formatUYU(itemComUnit)}/u)` : ""}
+                                              </span>
+                                            )}
                                           </div>
                                         </div>
                                         <div className="text-right shrink-0 w-full sm:w-auto flex sm:flex-col justify-between items-center sm:items-end border-t sm:border-0 pt-2 sm:pt-0 border-zinc-850">
                                           <p className="text-xs font-mono font-black text-zinc-100">
-                                            $ {item.totalPrice.toLocaleString("es-AR")} P. Venta
+                                            $ {formatUYU(item.totalPrice)} P. Venta
                                           </p>
                                           <p className="text-[10px] font-mono text-zinc-500 font-bold mt-0.5">
-                                            Costo: $ {(c * item.quantity).toLocaleString("es-AR")}
+                                            Costo: $ {formatUYU(c * item.quantity)}
                                           </p>
                                         </div>
                                       </div>
@@ -1669,14 +1773,14 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
                                 </div>
 
                                 <div className="p-3.5 bg-zinc-950/80 border border-zinc-850 rounded-xl flex flex-wrap gap-4 text-[11px] text-zinc-400 justify-between items-center font-bold">
-                                  <p>Subtotal: <span className="font-mono text-xs text-zinc-100 font-black">$ {order.subtotal?.toLocaleString("es-AR")}</span></p>
+                                  <p>Subtotal: <span className="font-mono text-xs text-zinc-100 font-black">$ {formatUYU(order.subtotal)}</span></p>
                                   {order.discountAmount > 0 && (
                                     <p className="text-rose-400">
-                                      Descuento: <span className="font-mono font-black">-$ {order.discountAmount?.toLocaleString("es-AR")}</span>
+                                      Descuento: <span className="font-mono font-black">-$ {formatUYU(order.discountAmount)}</span>
                                     </p>
                                   )}
                                   <p className="text-white font-extrabold text-xs">
-                                    Total Facturado: <span className="font-mono text-sm text-indigo-400 font-black">$ {order.total?.toLocaleString("es-AR")}</span>
+                                    Total Facturado: <span className="font-mono text-sm text-indigo-400 font-black">$ {formatUYU(order.total)}</span>
                                   </p>
                                   {order.couponCode && (
                                     <p className="bg-sky-500/10 text-sky-400 border border-sky-500/20 px-1.5 py-0.5 rounded font-mono font-extrabold">
@@ -1705,19 +1809,19 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
                                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono pt-1">
                                       <div className="p-2.5 bg-zinc-950/60 rounded-xl border border-zinc-800">
                                         <span className="block text-[9.5px] font-sans font-bold text-zinc-400 uppercase">1. Precio del Producto</span>
-                                        <span className="text-sm font-black text-white">$ {totalPriceProducts.toLocaleString("es-AR")}</span>
+                                        <span className="text-sm font-black text-white">$ {formatUYU(totalPriceProducts)}</span>
                                       </div>
                                       <div className="p-2.5 bg-zinc-950/60 rounded-xl border border-amber-500/20">
                                         <span className="block text-[9.5px] font-sans font-bold text-amber-400 uppercase">2. Cargos por Venta</span>
-                                        <span className="text-sm font-black text-amber-400">-$ {totalComisionML.toLocaleString("es-AR")}</span>
+                                        <span className="text-sm font-black text-amber-400">-$ {formatUYU(totalComisionML)}</span>
                                       </div>
                                       <div className="p-2.5 bg-zinc-950/60 rounded-xl border border-sky-500/20">
                                         <span className="block text-[9.5px] font-sans font-bold text-sky-400 uppercase">3. Envíos</span>
-                                        <span className="text-sm font-black text-sky-400">+$ {(order.shippingCost || 0).toLocaleString("es-AR")}</span>
+                                        <span className="text-sm font-black text-sky-400">+$ {formatUYU(order.shippingCost || 0)}</span>
                                       </div>
                                       <div className="p-2.5 bg-amber-500/15 rounded-xl border border-amber-500/40 shadow-inner">
                                         <span className="block text-[9.5px] font-sans font-black text-amber-300 uppercase">Total a Cobrar ML</span>
-                                        <span className="text-base font-black text-amber-300">$ {mlNetTotal.toLocaleString("es-AR")} UYU</span>
+                                        <span className="text-base font-black text-amber-300">$ {formatUYU(mlNetTotal)} UYU</span>
                                       </div>
                                     </div>
                                   </div>
@@ -2198,14 +2302,22 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
                     <p className="text-[10px] text-zinc-500 mt-1 font-semibold">Busque y agregue artículos utilizando el buscador de arriba.</p>
                   </div>
                 ) : (
-                  <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
+                  <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
                     {newSaleItems.map((item, idx) => {
-                      const itemSubtotal = item.quantity * item.unitPrice;
-                      const itemCostoTotal = item.quantity * item.costPrice;
-                      const itemProfit = itemSubtotal - itemCostoTotal;
+                      const isMLCanal = newSaleCanal.toLowerCase() === "mercado libre";
+                      const numUnitPrice = Number(item.unitPrice) || 0;
+                      const numComUnit = Number(item.comisionML) || 0;
+                      const itemSubtotal = Number((item.quantity * numUnitPrice).toFixed(2));
+                      const itemCostoTotal = item.quantity * (Number(item.costPrice) || 0);
+                      const itemComisionTotal = isMLCanal ? Number((item.quantity * numComUnit).toFixed(2)) : 0;
+                      const itemProfit = itemSubtotal - itemCostoTotal - itemComisionTotal;
                       
-                      // Find matched product to retrieve its thumbnail image
+                      // Find matched product to retrieve its thumbnail image and ML list price
                       const matchedProduct = productsList.find(p => String(p.id) === String(item.productId));
+                      const listPriceML = Number(matchedProduct?.precioVentaML || 0);
+                      const hasPromoDiff = isMLCanal && listPriceML > 0 && Math.abs(numUnitPrice - listPriceML) > 0.01;
+                      const impliedPromoPct = hasPromoDiff ? (((listPriceML - numUnitPrice) / listPriceML) * 100) : 0;
+
                       let matchedImgUrl = matchedProduct?.imageUrl;
                       if (item.sizeSelected || item.colorSelected) {
                         const matchedVariant = matchedProduct?.variants?.find(v => 
@@ -2218,99 +2330,203 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
                       }
 
                       return (
-                        <div key={idx} className="p-3.5 bg-zinc-950/40 rounded-xl border border-zinc-800/70 flex flex-col md:flex-row justify-between items-start md:items-center gap-3 hover:border-zinc-750 transition-all">
-                          <div className="flex items-center gap-3">
-                            {/* Product Thumbnail inside cart list */}
-                            <div className="h-10 w-10 rounded-lg overflow-hidden border border-zinc-800/80 bg-zinc-900 shrink-0 flex items-center justify-center">
-                              {matchedImgUrl ? (
-                                <img 
-                                  src={matchedImgUrl} 
-                                  alt={item.productName} 
-                                  className="h-full w-full object-cover"
-                                  referrerPolicy="no-referrer"
-                                />
-                              ) : (
-                                <ShoppingBag className="h-4 w-4 text-zinc-600" />
-                              )}
-                            </div>
-                            <div className="space-y-1">
-                              <p className="text-xs font-bold text-zinc-100">{item.productName}</p>
-                              <div className="flex flex-wrap gap-1.5 text-[9.5px] text-zinc-450 font-bold">
-                                {item.sku && <span className="bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800">SKU: {item.sku}</span>}
-                                {item.sizeSelected && <span className="bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800">Talle: {item.sizeSelected}</span>}
-                                {item.colorSelected && <span className="bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800">Color: {item.colorSelected}</span>}
-                                <span className="bg-sky-500/10 text-sky-400 border border-sky-500/20 px-1.5 py-0.5 rounded font-mono">Costo Unit: $ {item.costPrice}</span>
+                        <div key={idx} className="p-3.5 bg-zinc-950/40 rounded-xl border border-zinc-800/70 space-y-2.5 hover:border-zinc-750 transition-all">
+                          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+                            <div className="flex items-center gap-3">
+                              {/* Product Thumbnail inside cart list */}
+                              <div className="h-10 w-10 rounded-lg overflow-hidden border border-zinc-800/80 bg-zinc-900 shrink-0 flex items-center justify-center">
+                                {matchedImgUrl ? (
+                                  <img 
+                                    src={matchedImgUrl} 
+                                    alt={item.productName} 
+                                    className="h-full w-full object-cover"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                ) : (
+                                  <ShoppingBag className="h-4 w-4 text-zinc-600" />
+                                )}
+                              </div>
+                              <div className="space-y-1">
+                                <p className="text-xs font-bold text-zinc-100">{item.productName}</p>
+                                <div className="flex flex-wrap gap-1.5 text-[9.5px] text-zinc-450 font-bold">
+                                  {item.sku && <span className="bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800">SKU: {item.sku}</span>}
+                                  {item.sizeSelected && <span className="bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800">Talle: {item.sizeSelected}</span>}
+                                  {item.colorSelected && <span className="bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800">Color: {item.colorSelected}</span>}
+                                  <span className="bg-sky-500/10 text-sky-400 border border-sky-500/20 px-1.5 py-0.5 rounded font-mono">Costo Unit: $ {formatUYU(item.costPrice)}</span>
+                                  {hasPromoDiff && (
+                                    <span className="bg-rose-500/10 text-rose-300 border border-rose-500/25 px-1.5 py-0.5 rounded font-mono">
+                                      Lista ML: ${formatUYU(listPriceML)} ({impliedPromoPct > 0 ? `-${impliedPromoPct.toFixed(1)}%` : `+${Math.abs(impliedPromoPct).toFixed(1)}%`})
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          </div>
 
-                          {/* Controls (quantity and price override) */}
-                          <div className="flex flex-wrap items-center gap-3 w-full md:w-auto md:shrink-0 justify-between md:justify-end">
-                            
-                            {/* Quantity */}
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-[9.5px] font-extrabold uppercase text-zinc-500">Cant</span>
-                              <div className="flex items-center border border-zinc-800 rounded-xl bg-zinc-950 overflow-hidden">
-                                <button
-                                  type="button"
-                                  onClick={() => handleUpdateSaleItem(idx, "quantity", item.quantity - 1)}
-                                  className="px-2.5 py-1 text-xs hover:bg-zinc-800 text-zinc-300 rounded-l cursor-pointer transition-colors"
-                                >
-                                  -
-                                </button>
+                            {/* Controls (quantity and price override) */}
+                            <div className="flex flex-wrap items-center gap-3 w-full md:w-auto md:shrink-0 justify-between md:justify-end">
+                              
+                              {/* Quantity */}
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[9.5px] font-extrabold uppercase text-zinc-500">Cant</span>
+                                <div className="flex items-center border border-zinc-800 rounded-xl bg-zinc-950 overflow-hidden">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateSaleItem(idx, "quantity", item.quantity - 1)}
+                                    className="px-2.5 py-1 text-xs hover:bg-zinc-800 text-zinc-300 rounded-l cursor-pointer transition-colors"
+                                  >
+                                    -
+                                  </button>
+                                  <input
+                                    type="number"
+                                    value={item.quantity}
+                                    onChange={(e) => handleUpdateSaleItem(idx, "quantity", parseInt(e.target.value) || 0)}
+                                    className="w-10 text-center text-xs font-bold outline-none border-x border-zinc-800 bg-zinc-950/60 text-white font-mono"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateSaleItem(idx, "quantity", item.quantity + 1)}
+                                    className="px-2.5 py-1 text-xs hover:bg-zinc-800 text-zinc-300 rounded-r cursor-pointer transition-colors"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Custom selling price override */}
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[9.5px] font-extrabold uppercase text-zinc-500">P. Venta UYU</span>
                                 <input
-                                  type="number"
-                                  value={item.quantity}
-                                  onChange={(e) => handleUpdateSaleItem(idx, "quantity", parseInt(e.target.value) || 0)}
-                                  className="w-10 text-center text-xs font-bold outline-none border-x border-zinc-800 bg-zinc-950/60 text-white font-mono"
+                                  type="text"
+                                  value={item.unitPrice}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    if (val === "" || /^[0-9]+([.,][0-9]*)?$/.test(val)) {
+                                      const normalized = val.replace(",", ".");
+                                      handleUpdateSaleItem(idx, "unitPrice", normalized);
+                                    }
+                                  }}
+                                  className="w-24 px-2 py-1 text-xs font-bold outline-none border border-zinc-800 focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/30 rounded-xl font-mono text-right bg-zinc-950/60 text-white shadow-inner"
                                 />
-                                <button
-                                  type="button"
-                                  onClick={() => handleUpdateSaleItem(idx, "quantity", item.quantity + 1)}
-                                  className="px-2.5 py-1 text-xs hover:bg-zinc-800 text-zinc-300 rounded-r cursor-pointer transition-colors"
-                                >
-                                  +
-                                </button>
+                              </div>
+
+                              {/* Subtotal of row */}
+                              <div className="text-right min-w-[100px] font-mono">
+                                <span className="block text-xs font-black text-zinc-100">
+                                  $ {formatUYU(itemSubtotal)}
+                                </span>
+                                <span className={`block text-[9.5px] font-bold ${itemProfit >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                                  Profit: {itemProfit >= 0 ? "+" : ""}$ {formatUYU(itemProfit)}
+                                </span>
+                              </div>
+
+                              {/* Remove item button */}
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveItemFromSale(idx)}
+                                className="p-2 text-rose-400 hover:bg-rose-500/15 rounded-lg transition-all border border-rose-500/10 hover:border-rose-500/30 cursor-pointer"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+
+                            </div>
+                          </div>
+
+                          {/* ML PROMO & REAL COMMISSION EDITOR ROW */}
+                          {isMLCanal && (
+                            <div className="pt-2 border-t border-amber-500/15 bg-amber-500/[0.03] -mx-1 px-2.5 py-2 rounded-lg flex flex-wrap items-center justify-between gap-2.5">
+                              <div className="flex flex-wrap items-center gap-2.5">
+                                <span className="text-[9px] font-black uppercase tracking-wider text-amber-400">
+                                  Mercado Libre:
+                                </span>
+
+                                {/* % Promo Quick Apply */}
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[9px] font-bold text-zinc-400 uppercase" title="Aplica descuento porcentual sobre el precio de lista ML del catálogo">
+                                    % Dto Promo
+                                  </span>
+                                  <input
+                                    type="text"
+                                    placeholder={impliedPromoPct > 0.05 ? impliedPromoPct.toFixed(0) : "0"}
+                                    value={item.promoDiscountPct ?? ""}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      if (val === "" || /^[0-9]+([.,][0-9]*)?$/.test(val)) {
+                                        handleUpdateSaleItem(idx, "promoDiscountPct", val.replace(",", "."));
+                                      }
+                                    }}
+                                    className="w-14 px-1.5 py-0.5 text-[11px] font-bold outline-none border border-zinc-800 focus:border-rose-400/70 rounded-lg font-mono text-right bg-zinc-950/80 text-rose-300"
+                                    title="Ej: 5 para aplicar 5% OFF al precio de lista ML"
+                                  />
+                                </div>
+
+                                {/* % ML Commission Rate */}
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[9px] font-bold text-zinc-400 uppercase" title="Porcentaje de comisión ML para recalcular sobre el precio promocional">
+                                    % ML
+                                  </span>
+                                  <input
+                                    type="text"
+                                    placeholder="%"
+                                    value={item.comisionMLPorcentaje ?? ""}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      if (val === "" || /^[0-9]+([.,][0-9]*)?$/.test(val)) {
+                                        handleUpdateSaleItem(idx, "comisionMLPorcentaje", val.replace(",", "."));
+                                      }
+                                    }}
+                                    className="w-14 px-1.5 py-0.5 text-[11px] font-bold outline-none border border-zinc-800 focus:border-amber-500/70 rounded-lg font-mono text-right bg-zinc-950/80 text-amber-300"
+                                    title="Ej: 14 (% ML + Fijo se recalcula automático)"
+                                  />
+                                </div>
+
+                                {/* Fixed ML Fee */}
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[9px] font-bold text-zinc-400 uppercase" title="Costo fijo por unidad que cobra Mercado Libre (por defecto $15 UYU)">
+                                    Fijo $
+                                  </span>
+                                  <input
+                                    type="text"
+                                    value={item.costoFijoML ?? 15}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      if (val === "" || /^[0-9]+([.,][0-9]*)?$/.test(val)) {
+                                        handleUpdateSaleItem(idx, "costoFijoML", val.replace(",", "."));
+                                      }
+                                    }}
+                                    className="w-12 px-1.5 py-0.5 text-[11px] font-bold outline-none border border-zinc-800 focus:border-amber-500/70 rounded-lg font-mono text-right bg-zinc-950/80 text-zinc-200"
+                                  />
+                                </div>
+
+                                {/* Exact Editable Commission ML per Unit */}
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[9px] font-extrabold text-amber-400 uppercase">
+                                    Com. ML / u $
+                                  </span>
+                                  <input
+                                    type="text"
+                                    value={item.comisionML ?? 0}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      if (val === "" || /^[0-9]+([.,][0-9]*)?$/.test(val)) {
+                                        handleUpdateSaleItem(idx, "comisionML", val.replace(",", "."));
+                                      }
+                                    }}
+                                    className="w-20 px-2 py-0.5 text-[11px] font-black outline-none border border-amber-500/40 focus:border-amber-400 rounded-lg font-mono text-right bg-zinc-950 text-amber-300 shadow-inner"
+                                    title="Cargo real de Mercado Libre por unidad (cargo % + costo fijo $15)"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="text-[10px] font-mono flex items-center gap-2.5 ml-auto">
+                                <span className="text-amber-400 font-bold">
+                                  Cargo: -$ {formatUYU(itemComisionTotal)}
+                                </span>
+                                <span className="text-emerald-300 font-black">
+                                  Neto ML: $ {formatUYU(itemSubtotal - itemComisionTotal)}
+                                </span>
                               </div>
                             </div>
-
-                            {/* Custom selling price override */}
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-[9.5px] font-extrabold uppercase text-zinc-500">P. Venta UYU</span>
-                              <input
-                                type="text"
-                                value={item.unitPrice}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  if (val === "" || /^[0-9]+([.,][0-9]*)?$/.test(val)) {
-                                    const normalized = val.replace(",", ".");
-                                    handleUpdateSaleItem(idx, "unitPrice", normalized);
-                                  }
-                                }}
-                                className="w-24 px-2 py-1 text-xs font-bold outline-none border border-zinc-800 focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/30 rounded-xl font-mono text-right bg-zinc-950/60 text-white shadow-inner"
-                              />
-                            </div>
-
-                            {/* Subtotal of row */}
-                            <div className="text-right min-w-[95px] font-mono">
-                              <span className="block text-xs font-black text-zinc-100">
-                                $ {itemSubtotal.toLocaleString("es-AR")}
-                              </span>
-                              <span className="block text-[9.5px] text-emerald-400 font-bold">
-                                Profit: +$ {itemProfit.toLocaleString("es-AR")}
-                              </span>
-                            </div>
-
-                            {/* Remove item button */}
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveItemFromSale(idx)}
-                              className="p-2 text-rose-400 hover:bg-rose-500/15 rounded-lg transition-all border border-rose-500/10 hover:border-rose-500/30 cursor-pointer"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
-
-                          </div>
+                          )}
                         </div>
                       );
                     })}
@@ -2472,10 +2688,16 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
                           if (!prod) return item;
                           
                           let updatedPrice = item.unitPrice;
+                          let updatedComML = item.comisionML;
+                          const ratePct = prod.comisionMLPorcentaje;
+                          const fixedFee = prod.costoFijoML !== undefined && prod.costoFijoML !== null ? Number(prod.costoFijoML) : 15;
                           if (isML) {
                             if (prod.precioVentaML && prod.precioVentaML > 0) {
                               updatedPrice = prod.precioVentaML;
                             }
+                            updatedComML = (ratePct && Number(ratePct) > 0)
+                              ? calculateMlCommission(Number(updatedPrice) || 0, Number(ratePct), fixedFee)
+                              : (item.comisionML !== undefined && Number(item.comisionML) > 0 ? item.comisionML : (prod.comisionML || 0));
                           } else {
                             // Restore to web price or variant override price
                             let basePrice = prod.precioWeb || prod.price || 0;
@@ -2491,7 +2713,10 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
                           return {
                             ...item,
                             unitPrice: updatedPrice,
-                            totalPrice: item.quantity * updatedPrice
+                            comisionML: updatedComML,
+                            comisionMLPorcentaje: ratePct && Number(ratePct) > 0 ? ratePct : (item.comisionMLPorcentaje ?? ""),
+                            costoFijoML: fixedFee,
+                            totalPrice: Number((item.quantity * (Number(updatedPrice) || 0)).toFixed(2))
                           };
                         }));
                       }}
@@ -2585,13 +2810,14 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
 
               {/* LIVE SIMULATED REVENUE DISTRIBUTION PREVIEW */}
               {newSaleItems.length > 0 && (() => {
-                const totalMontoVenta = newSaleItems.reduce((acc, it) => acc + it.totalPrice, 0);
-                const totalCostoProd = newSaleItems.reduce((acc, it) => acc + (it.quantity * it.costPrice), 0);
+                const totalMontoVenta = newSaleItems.reduce((acc, it) => acc + (Number(it.totalPrice) || 0), 0);
+                const totalCostoProd = newSaleItems.reduce((acc, it) => acc + (it.quantity * (Number(it.costPrice) || 0)), 0);
                 const isMLCanal = newSaleCanal.toLowerCase() === "mercado libre";
-                const totalComisionML = isMLCanal ? newSaleItems.reduce((acc, it) => acc + (it.quantity * (it.comisionML || 0)), 0) : 0;
+                const totalComisionML = isMLCanal ? newSaleItems.reduce((acc, it) => acc + (it.quantity * (Number(it.comisionML) || 0)), 0) : 0;
                 
                 const netMontoVenta = totalMontoVenta - totalComisionML;
                 const netProfit = netMontoVenta - totalCostoProd;
+                const totalACobrarML = totalMontoVenta - totalComisionML + Number(newSaleShippingCost || 0);
                 
                 return (
                   <div className="p-5 bg-indigo-500/5 backdrop-blur-md border border-indigo-500/15 rounded-xl space-y-3">
@@ -2602,20 +2828,20 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
                       <div>
                         <span className="block text-[9.5px] text-zinc-500 uppercase font-sans font-bold">Monto Venta</span>
                         <span className="text-sm font-black text-zinc-100">
-                          $ {totalMontoVenta.toLocaleString("es-AR")} UYU
+                          $ {formatUYU(totalMontoVenta)} UYU
                         </span>
                       </div>
                       <div>
                         <span className="block text-[9.5px] text-zinc-500 uppercase font-sans font-bold">Costo de Prod</span>
                         <span className="text-sm font-black text-zinc-100">
-                          $ {totalCostoProd.toLocaleString("es-AR")} UYU
+                          $ {formatUYU(totalCostoProd)} UYU
                         </span>
                       </div>
                       {isMLCanal && (
                         <div>
                           <span className="block text-[9.5px] text-amber-500 uppercase font-sans font-bold">Comisión ML</span>
                           <span className="text-sm font-black text-amber-500">
-                            -$ {totalComisionML.toLocaleString("es-AR")} UYU
+                            -$ {formatUYU(totalComisionML)} UYU
                           </span>
                         </div>
                       )}
@@ -2625,7 +2851,7 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
                             Total a Cobrar ML
                           </span>
                           <span className="text-sm font-black text-amber-300">
-                            $ {Math.round(totalMontoVenta - totalComisionML + Number(newSaleShippingCost || 0)).toLocaleString("es-AR")} UYU
+                            $ {formatUYU(totalACobrarML)} UYU
                           </span>
                           <span className="text-[8px] text-amber-400/80 font-sans font-bold">
                             Venta - Com. + Envío
@@ -2637,17 +2863,13 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
                           <div>
                             <span className="block text-[9.5px] text-emerald-400 uppercase font-sans font-bold">40% Fran. + Envíos</span>
                             <span className="text-sm font-black text-emerald-400">
-                              $ {Math.round(
-                                0.4 * netProfit + Number(newSaleShippingCost)
-                              ).toLocaleString("es-AR")} UYU
+                              $ {formatUYU(0.4 * netProfit + Number(newSaleShippingCost))} UYU
                             </span>
                           </div>
                           <div>
                             <span className="block text-[9.5px] text-indigo-400 uppercase font-sans font-bold font-sans">Cost + 60% JUEM</span>
                             <span className="text-sm font-black text-indigo-400">
-                              $ {Math.round(
-                                totalCostoProd + 0.6 * netProfit
-                              ).toLocaleString("es-AR")} UYU
+                              $ {formatUYU(totalCostoProd + 0.6 * netProfit)} UYU
                             </span>
                           </div>
                         </>
@@ -2660,9 +2882,7 @@ export const DashboardOrders: React.FC<DashboardOrdersProps> = ({
                           <div>
                             <span className="block text-[9.5px] text-indigo-400 uppercase font-sans font-bold">100% JUEM + Envío</span>
                             <span className="text-sm font-black text-indigo-400">
-                              $ {Math.round(
-                                netMontoVenta + Number(newSaleShippingCost)
-                              ).toLocaleString("es-AR")} UYU
+                              $ {formatUYU(netMontoVenta + Number(newSaleShippingCost))} UYU
                             </span>
                           </div>
                         </>
